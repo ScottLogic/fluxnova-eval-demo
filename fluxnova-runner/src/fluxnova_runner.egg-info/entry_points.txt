@@ -1,0 +1,3 @@
+[console_scripts]
+fluxnova-run = fluxnova_runner.main:main
+fluxnova-run-mock-workers = fluxnova_runner.mock_workers:main

@@ -1,0 +1,7 @@
+requests>=2.32
+pyyaml>=6.0
+camunda-external-task-client-python3>=2.3
+
+[dev]
+pytest>=8.0
+ruff>=0.5

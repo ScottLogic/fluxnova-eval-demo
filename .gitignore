@@ -1,0 +1,7 @@
+.idea/
+__pycache__/
+harness/.deepeval
+harness/.fluxnova
+.venv
+.fluxnova/
+*.db

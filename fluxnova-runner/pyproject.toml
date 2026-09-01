@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fluxnova-runner"
+version = "0.1.0"
+description = "Standalone service: deploys a BPMN, starts a process instance, registers mock service-task workers, and waits for completion"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.32",
+    "pyyaml>=6.0",
+    "camunda-external-task-client-python3>=2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+fluxnova-run = "fluxnova_runner.main:main"
+fluxnova-run-mock-workers = "fluxnova_runner.mock_workers:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fluxnova_runner"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short"

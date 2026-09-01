@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:agent="http://fluxnova.finos.org/schema/1.0/ai/agent" xmlns:modeler="http://fluxnova.finos.org/schema/modeler/1.0" id="Definitions_AgenticSubprocessExample" targetNamespace="http://fluxnova.finos.org/examples/agentic-subprocess" exporter="Fluxnova Modeler" exporterVersion="1.3.0-dev" modeler:executionPlatform="Fluxnova Platform" modeler:executionPlatformVersion="3.0.0">
+  <process id="loanAssessmentEvalProcess" name="Loan Application Assessment (Eval)" isExecutable="true" camunda:historyTimeToLive="180">
+    <startEvent id="StartEvent_ApplicationReceived" name="Loan Application&#10;Received">
+      <outgoing>Flow_Start_To_Validate</outgoing>
+    </startEvent>
+    <adHocSubProcess id="AdHocSubProcess_LoanAssessmentAgent" name="Loan Assessment Agent" ordering="Parallel" cancelRemainingInstances="false">
+      <documentation>AI agent responsible for assessing a loan application end-to-end. The agent must gather credit, employment, fraud, and collateral data before generating a structured assessment report with a clear APPROVE or REJECT recommendation.</documentation>
+      <extensionElements>
+        <agent:config provider="ollama" model="llama3.1" systemPrompt="You are a senior loan assessment analyst. Your goal is to gather enough evidence to make a well-reasoned, defensible lending decision for each applicant. You MUST complete ALL of the following checks before stopping — do not stop after a single tool result. Follow this sequence: (1) Always run Run Fraud Screening. (2) Always run Check Credit Score. (3) For EMPLOYED applicants, run Verify Employment; for SELF_EMPLOYED applicants, run Analyse Bank Statements instead. (4) Always run Assess Affordability after income has been confirmed. (5) If hasCollateral is true, also run Value Collateral. Only after all required checks are complete should you provide your final response. Your final response MUST end with a definitive recommendation stated as exactly one of the words APPROVE or REJECT — vague conclusions or deferred decisions such as 'next steps required' are not acceptable. You MUST justify that recommendation by explicitly citing the specific data points you gathered, such as the credit score, fraud risk score, affordability/debt-to-income result, and employment or income verification outcome. Do NOT embed tool calls as JSON text in your response — always use the tool-calling mechanism. A separate step will compile the final report." />
+        <agent:context>
+          <agent:variable name="applicationId" />
+          <agent:variable name="customerId" />
+          <agent:variable name="applicantName" />
+          <agent:variable name="requestedAmount" />
+          <agent:variable name="applicantType" />
+          <agent:variable name="hasCollateral" />
+          <agent:variable name="collateralDescription" />
+          <agent:variable name="loanPurpose" />
+          <agent:variable name="creditScore" />
+          <agent:variable name="creditRiskBand" />
+          <agent:variable name="employmentVerified" />
+          <agent:variable name="annualIncome" />
+          <agent:variable name="bankStatementScore" />
+          <agent:variable name="fraudRiskScore" />
+          <agent:variable name="collateralValue" />
+          <agent:variable name="debtToIncomeRatio" />
+          <agent:variable name="affordabilityPassed" />
+        </agent:context>
+      </extensionElements>
+      <incoming>Flow_Start_To_Validate</incoming>
+      <outgoing>Flow_0s3blcw</outgoing>
+      <serviceTask id="ServiceTask_CreditScoreCheck" name="Check Credit Score" camunda:type="external" camunda:topic="credit-score-check">
+        <documentation>Retrieves the applicant's current credit score from the credit bureau.         Returns a numeric score (300–850) and a risk band: LOW, MEDIUM, or HIGH.</documentation>
+        <extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="customerId">${customerId}</camunda:inputParameter>
+            <camunda:outputParameter name="creditScore">${creditScore}</camunda:outputParameter>
+            <camunda:outputParameter name="creditRiskBand">${creditRiskBand}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </extensionElements>
+      </serviceTask>
+      <serviceTask id="ServiceTask_VerifyEmployment" name="Verify Employment" camunda:type="external" camunda:topic="employment-verification">
+        <documentation>Verifies the applicant's current employment status with their stated employer.
+Returns employmentVerified (true/false) and confirmed annualIncome in GBP.</documentation>
+        <extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="customerId">${customerId}</camunda:inputParameter>
+            <camunda:outputParameter name="employmentVerified">${employmentVerified}</camunda:outputParameter>
+            <camunda:outputParameter name="annualIncome">${annualIncome}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </extensionElements>
+      </serviceTask>
+      <serviceTask id="ServiceTask_BankStatementAnalysis" name="Analyse Bank Statements" camunda:type="external" camunda:topic="bank-statement-analysis">
+        <documentation>Analyses 12 months of bank statements to confirm income for a self-employed or variable-income applicant. Returns bankStatementScore (0-100, higher is better) and annualIncome in GBP derived from average monthly deposits.</documentation>
+        <extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="customerId">${customerId}</camunda:inputParameter>
+            <camunda:outputParameter name="bankStatementScore">${bankStatementScore}</camunda:outputParameter>
+            <camunda:outputParameter name="annualIncome">${annualIncome}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </extensionElements>
+      </serviceTask>
+      <serviceTask id="ServiceTask_FraudScreening" name="Run Fraud Screening" camunda:type="external" camunda:topic="fraud-screening">
+        <documentation>Screens the application and applicant against known fraud patterns and watchlists. Returns fraudRiskScore (0–100); higher scores indicate greater risk.</documentation>
+        <extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="applicationId">${applicationId}</camunda:inputParameter>
+            <camunda:inputParameter name="customerId">${customerId}</camunda:inputParameter>
+            <camunda:outputParameter name="fraudRiskScore">${fraudRiskScore}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </extensionElements>
+      </serviceTask>
+      <serviceTask id="ServiceTask_CollateralValuation" name="Value Collateral" camunda:type="external" camunda:topic="collateral-valuation">
+        <documentation>Retrieves a current independent market valuation for any collateral offered against the loan. Returns collateralValue in GBP.
+        </documentation>
+        <extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="applicationId">${applicationId}</camunda:inputParameter>
+            <camunda:outputParameter name="collateralValue">${collateralValue}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </extensionElements>
+      </serviceTask>
+      <serviceTask id="ServiceTask_AffordabilityAssessment" name="Assess Affordability" camunda:type="external" camunda:topic="affordability-assessment">
+        <documentation>Calculates whether the applicant can afford the requested loan based on their confirmed income and existing financial commitments. Returns debtToIncomeRatio (0.0–1.0) and affordabilityPassed (true/false).
+        </documentation>
+        <extensionElements>
+          <camunda:inputOutput>
+            <camunda:inputParameter name="customerId">${customerId}</camunda:inputParameter>
+            <camunda:inputParameter name="requestedAmount">${requestedAmount}</camunda:inputParameter>
+            <camunda:outputParameter name="debtToIncomeRatio">${debtToIncomeRatio}</camunda:outputParameter>
+            <camunda:outputParameter name="affordabilityPassed">${affordabilityPassed}</camunda:outputParameter>
+          </camunda:inputOutput>
+        </extensionElements>
+      </serviceTask>
+      <completionCondition>${false}</completionCondition>
+    </adHocSubProcess>
+    <sequenceFlow id="Flow_Start_To_Validate" sourceRef="StartEvent_ApplicationReceived" targetRef="AdHocSubProcess_LoanAssessmentAgent" />
+    <serviceTask id="ServiceTask_EvaluateAgentOutput" name="Evaluate Agent Output" camunda:type="external" camunda:topic="agent-output-eval">
+      <documentation>Scores the just-completed agent run against the decision_quality MLflow judge (see eval-service-worker/ and EVAL-SERVICE-WORKER-PLAN.md). Reads trace data only — no input variables needed. Sets evalPassed (Boolean) and evalRationale (String) process variables used by the following gateway.</documentation>
+      <incoming>Flow_0s3blcw</incoming>
+      <outgoing>Flow_Eval_ToGateway</outgoing>
+    </serviceTask>
+    <exclusiveGateway id="ExclusiveGateway_EvalPassed" name="Eval Passed?" default="Flow_Eval_Failed">
+      <incoming>Flow_Eval_ToGateway</incoming>
+      <outgoing>Flow_Eval_Passed</outgoing>
+      <outgoing>Flow_Eval_Failed</outgoing>
+    </exclusiveGateway>
+    <endEvent id="EndEvent_EvalPassed" name="Eval Passed">
+      <incoming>Flow_Eval_Passed</incoming>
+    </endEvent>
+    <endEvent id="EndEvent_EvalFailed" name="Eval Failed">
+      <incoming>Flow_Eval_Failed</incoming>
+    </endEvent>
+    <sequenceFlow id="Flow_0s3blcw" sourceRef="AdHocSubProcess_LoanAssessmentAgent" targetRef="ServiceTask_EvaluateAgentOutput" />
+    <sequenceFlow id="Flow_Eval_ToGateway" sourceRef="ServiceTask_EvaluateAgentOutput" targetRef="ExclusiveGateway_EvalPassed" />
+    <sequenceFlow id="Flow_Eval_Passed" name="Yes" sourceRef="ExclusiveGateway_EvalPassed" targetRef="EndEvent_EvalPassed">
+      <conditionExpression xsi:type="tFormalExpression">${evalPassed == true}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="Flow_Eval_Failed" name="No" sourceRef="ExclusiveGateway_EvalPassed" targetRef="EndEvent_EvalFailed" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="loanAssessmentEvalProcess">
+      <bpmndi:BPMNShape id="Shape_StartEvent" bpmnElement="StartEvent_ApplicationReceived">
+        <dc:Bounds x="182" y="252" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="160" y="295" width="81" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_AdHocSubProcess" bpmnElement="AdHocSubProcess_LoanAssessmentAgent" isExpanded="true">
+        <dc:Bounds x="320" y="80" width="600" height="390" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_CreditScoreCheck" bpmnElement="ServiceTask_CreditScoreCheck">
+        <dc:Bounds x="360" y="125" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_VerifyEmployment" bpmnElement="ServiceTask_VerifyEmployment">
+        <dc:Bounds x="500" y="125" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_BankStatementAnalysis" bpmnElement="ServiceTask_BankStatementAnalysis">
+        <dc:Bounds x="640" y="125" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_FraudScreening" bpmnElement="ServiceTask_FraudScreening">
+        <dc:Bounds x="780" y="125" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_CollateralValuation" bpmnElement="ServiceTask_CollateralValuation">
+        <dc:Bounds x="470" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_AffordabilityAssessment" bpmnElement="ServiceTask_AffordabilityAssessment">
+        <dc:Bounds x="610" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EvaluateAgentOutput" bpmnElement="ServiceTask_EvaluateAgentOutput">
+        <dc:Bounds x="1000" y="235" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ExclusiveGateway_EvalPassed" bpmnElement="ExclusiveGateway_EvalPassed" isMarkerVisible="true">
+        <dc:Bounds x="1160" y="250" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1148" y="220" width="74" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_EvalPassed" bpmnElement="EndEvent_EvalPassed">
+        <dc:Bounds x="1282" y="182" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1263" y="225" width="74" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_EvalFailed" bpmnElement="EndEvent_EvalFailed">
+        <dc:Bounds x="1282" y="337" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1265" y="380" width="69" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Start_To_Validate" bpmnElement="Flow_Start_To_Validate">
+        <di:waypoint x="218" y="270" />
+        <di:waypoint x="320" y="270" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0s3blcw_di" bpmnElement="Flow_0s3blcw">
+        <di:waypoint x="920" y="275" />
+        <di:waypoint x="1000" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Eval_ToGateway_di" bpmnElement="Flow_Eval_ToGateway">
+        <di:waypoint x="1100" y="275" />
+        <di:waypoint x="1160" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Eval_Passed_di" bpmnElement="Flow_Eval_Passed">
+        <di:waypoint x="1185" y="250" />
+        <di:waypoint x="1185" y="200" />
+        <di:waypoint x="1282" y="200" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1225" y="182" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Eval_Failed_di" bpmnElement="Flow_Eval_Failed">
+        <di:waypoint x="1185" y="300" />
+        <di:waypoint x="1185" y="355" />
+        <di:waypoint x="1282" y="355" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1225" y="337" width="18" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

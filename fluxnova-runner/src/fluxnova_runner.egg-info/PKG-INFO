@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: fluxnova-runner
+Version: 0.1.0
+Summary: Standalone service: deploys a BPMN, starts a process instance, registers mock service-task workers, and waits for completion
+Requires-Python: >=3.11
+Requires-Dist: requests>=2.32
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: camunda-external-task-client-python3>=2.3
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: ruff>=0.5; extra == "dev"

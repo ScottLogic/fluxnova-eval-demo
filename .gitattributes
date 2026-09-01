@@ -1,0 +1,26 @@
+# Normalise all text files to LF on checkout
+* text=auto eol=lf
+
+# Explicitly LF for common source types
+*.py        eol=lf
+*.yml       eol=lf
+*.yaml      eol=lf
+*.json      eol=lf
+*.md        eol=lf
+*.toml      eol=lf
+*.txt       eol=lf
+*.bpmn      eol=lf
+*.xml       eol=lf
+*.sh        eol=lf
+*.cfg       eol=lf
+*.ini       eol=lf
+
+# Binary files — no line-ending conversion
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary

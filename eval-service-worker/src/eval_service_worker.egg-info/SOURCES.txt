@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/eval_service_worker/__init__.py
+src/eval_service_worker/config.py
+src/eval_service_worker/main.py
+src/eval_service_worker/scoring.py
+src/eval_service_worker/worker.py
+src/eval_service_worker.egg-info/PKG-INFO
+src/eval_service_worker.egg-info/SOURCES.txt
+src/eval_service_worker.egg-info/dependency_links.txt
+src/eval_service_worker.egg-info/entry_points.txt
+src/eval_service_worker.egg-info/requires.txt
+src/eval_service_worker.egg-info/top_level.txt
+tests/test_config.py
+tests/test_main.py
+tests/test_scoring.py

@@ -1,0 +1,2 @@
+[console_scripts]
+eval-service-worker = eval_service_worker.main:main

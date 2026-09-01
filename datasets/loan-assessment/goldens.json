@@ -1,0 +1,130 @@
+[
+  {
+    "input": "Perform a complete loan risk assessment for an employed applicant requesting £50,000 for home improvement. No collateral has been offered.",
+    "expected_output": "APPROVE. The applicant presents a strong risk profile: credit score of 720 (LOW risk band), fraud screening returned a risk score of 12 which is well within acceptable limits, employment has been verified with a stable annual income of £55,000, and the debt-to-income ratio of 0.28 satisfies the affordability threshold. The requested amount of £50,000 is affordable given the verified income. Recommendation: APPROVE the loan application.",
+    "context": [
+      "applicantType: EMPLOYED",
+      "hasCollateral: false",
+      "requestedAmount: 50000",
+      "creditScore: 720 (LOW risk)",
+      "fraudRiskScore: 12",
+      "employmentVerified: true",
+      "annualIncome: 55000",
+      "debtToIncomeRatio: 0.28",
+      "affordabilityPassed: true"
+    ],
+    "additional_metadata": {
+      "scenario": "employed-no-collateral-approve",
+      "applicantType": "EMPLOYED",
+      "hasCollateral": false,
+      "expectedDecision": "APPROVE"
+    }
+  },
+  {
+    "input": "Perform a complete loan risk assessment for an employed applicant requesting £75,000 for property purchase. Collateral in the form of existing property has been offered.",
+    "expected_output": "APPROVE. The applicant meets all lending criteria: credit score 680 (MEDIUM risk band, within acceptable range), fraud risk score 8 (very low), employment verified with annual income of £62,000, debt-to-income ratio 0.32 is within the acceptable limit, and collateral has been valued at £220,000 providing a strong loan-to-value ratio. Recommendation: APPROVE the loan application.",
+    "context": [
+      "applicantType: EMPLOYED",
+      "hasCollateral: true",
+      "requestedAmount: 75000",
+      "creditScore: 680 (MEDIUM risk)",
+      "fraudRiskScore: 8",
+      "employmentVerified: true",
+      "annualIncome: 62000",
+      "collateralValue: 220000",
+      "debtToIncomeRatio: 0.32",
+      "affordabilityPassed: true"
+    ],
+    "additional_metadata": {
+      "scenario": "employed-with-collateral-approve",
+      "applicantType": "EMPLOYED",
+      "hasCollateral": true,
+      "expectedDecision": "APPROVE"
+    }
+  },
+  {
+    "input": "Perform a complete loan risk assessment for a self-employed applicant requesting £35,000 for business expansion. No collateral has been offered.",
+    "expected_output": "APPROVE. Although self-employed, the applicant presents a strong financial profile: credit score 750 (LOW risk), fraud risk score 5 (very low), bank statement analysis confirms stable annual income of £72,000, and the debt-to-income ratio of 0.22 is well within acceptable limits. The requested £35,000 is comfortably affordable given the verified income. Recommendation: APPROVE the loan application.",
+    "context": [
+      "applicantType: SELF_EMPLOYED",
+      "hasCollateral: false",
+      "requestedAmount: 35000",
+      "creditScore: 750 (LOW risk)",
+      "fraudRiskScore: 5",
+      "bankStatementScore: 88",
+      "annualIncome: 72000",
+      "debtToIncomeRatio: 0.22",
+      "affordabilityPassed: true"
+    ],
+    "additional_metadata": {
+      "scenario": "self-employed-no-collateral-approve",
+      "applicantType": "SELF_EMPLOYED",
+      "hasCollateral": false,
+      "expectedDecision": "APPROVE"
+    }
+  },
+  {
+    "input": "Perform a complete loan risk assessment for an employed applicant requesting £40,000 for debt consolidation. No collateral has been offered.",
+    "expected_output": "REJECT. Despite verified employment, this application cannot be approved. The fraud screening returned a risk score of 78, significantly exceeding the acceptable threshold and raising serious concerns about application integrity. Additionally, the affordability assessment failed with a debt-to-income ratio of 0.61, indicating the applicant is already heavily indebted. These two critical failures — elevated fraud risk and failed affordability — result in a clear rejection. Recommendation: REJECT the loan application.",
+    "context": [
+      "applicantType: EMPLOYED",
+      "hasCollateral: false",
+      "requestedAmount: 40000",
+      "creditScore: 700 (MEDIUM risk)",
+      "fraudRiskScore: 78",
+      "employmentVerified: true",
+      "annualIncome: 38000",
+      "debtToIncomeRatio: 0.61",
+      "affordabilityPassed: false"
+    ],
+    "additional_metadata": {
+      "scenario": "employed-high-fraud-reject",
+      "applicantType": "EMPLOYED",
+      "hasCollateral": false,
+      "expectedDecision": "REJECT"
+    }
+  },
+  {
+    "input": "Perform a complete loan risk assessment for a self-employed applicant requesting £60,000 for home renovation. No collateral has been offered.",
+    "expected_output": "REJECT. The application presents multiple risk factors that preclude approval. The credit score of 480 falls into the HIGH risk band, indicating a history of credit difficulties. Bank statement analysis produced a low score of 32 with inconsistent income patterns, and the affordability assessment failed with a debt-to-income ratio of 0.65 — far exceeding the acceptable limit. Without collateral to offset these risks, the application must be declined. Recommendation: REJECT the loan application.",
+    "context": [
+      "applicantType: SELF_EMPLOYED",
+      "hasCollateral: false",
+      "requestedAmount: 60000",
+      "creditScore: 480 (HIGH risk)",
+      "fraudRiskScore: 19",
+      "bankStatementScore: 32",
+      "annualIncome: 28000",
+      "debtToIncomeRatio: 0.65",
+      "affordabilityPassed: false"
+    ],
+    "additional_metadata": {
+      "scenario": "self-employed-poor-credit-reject",
+      "applicantType": "SELF_EMPLOYED",
+      "hasCollateral": false,
+      "expectedDecision": "REJECT"
+    }
+  },
+  {
+    "input": "Perform a complete loan risk assessment for an employed applicant requesting £90,000 for vehicle purchase. Collateral in the form of a vehicle has been offered.",
+    "expected_output": "REJECT. While the collateral valuation of £45,000 and verified employment provide some mitigation, the core affordability metrics do not support this loan. The debt-to-income ratio of 0.58 exceeds the acceptable limit, indicating an unsustainable debt burden relative to the applicant's annual income of £44,000. The requested £90,000 is not affordable at current income levels regardless of the collateral offered. Recommendation: REJECT the loan application.",
+    "context": [
+      "applicantType: EMPLOYED",
+      "hasCollateral: true",
+      "requestedAmount: 90000",
+      "creditScore: 610 (MEDIUM risk)",
+      "fraudRiskScore: 22",
+      "employmentVerified: true",
+      "annualIncome: 44000",
+      "collateralValue: 45000",
+      "debtToIncomeRatio: 0.58",
+      "affordabilityPassed: false"
+    ],
+    "additional_metadata": {
+      "scenario": "employed-with-collateral-affordability-reject",
+      "applicantType": "EMPLOYED",
+      "hasCollateral": true,
+      "expectedDecision": "REJECT"
+    }
+  }
+]
