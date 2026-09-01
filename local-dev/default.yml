@@ -43,12 +43,18 @@ fluxnova.bpm:
 spring.ai.ollama:
   base-url: http://host.containers.internal:11434
 
-# datasource configuration is required
+# datasource configuration is required — PostgreSQL (postgres-local pod's Fluxnova
+# database, created by postgres-up.sh's postgres-init/init.sh), replacing the previous
+# H2 file-based default. Requires postgres-up.sh to already be running, and the
+# Fluxnova image to include a PostgreSQL JDBC driver (bundled in standard
+# Camunda/Fluxnova distributions). Credentials are never hardcoded here — the
+# ${VAR:default} placeholders are resolved from env vars fluxnova-up.sh passes into
+# the container (sourced from .env), falling back to the matching .env defaults.
 spring.datasource:
-  url: jdbc:h2:./fluxnova-h2-default/process-engine;TRACE_LEVEL_FILE=0;DB_CLOSE_ON_EXIT=FALSE
-  driver-class-name: org.h2.Driver
-  username: sa
-  password: sa
+  url: jdbc:postgresql://postgres-local:5432/${FLUXNOVA_POSTGRES_DB:fluxnova}
+  driver-class-name: org.postgresql.Driver
+  username: ${FLUXNOVA_POSTGRES_USER:fluxnova}
+  password: ${FLUXNOVA_POSTGRES_PASSWORD:fluxnova}
 
 # Enables potentially-sensitive GenAI span content (gen_ai.system_instructions,
 # gen_ai.input.messages, gen_ai.output.messages, gen_ai.tool.call.arguments/result) —

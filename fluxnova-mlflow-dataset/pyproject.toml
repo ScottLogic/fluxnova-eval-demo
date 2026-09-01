@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "mlflow>=2.18",
     "requests>=2.32",
+    "psycopg2-binary>=2.9",
 ]
 
 [project.optional-dependencies]

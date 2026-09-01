@@ -6,6 +6,10 @@
 # `localhost` rather than by service name — that's why default.yml points
 # exporterEndpoint at http://localhost:4317 instead of http://otel-collector:4317.
 #
+# default.yml's spring.datasource now points at PostgreSQL (postgres-local pod's
+# "fluxnova" database) instead of the old H2 file default — run ./postgres-up.sh before
+# this script.
+#
 # Usage (from this directory):
 #   ./fluxnova-up.sh
 #   ./fluxnova-down.sh
@@ -30,6 +34,13 @@ FLUXNOVA_IMAGE="${FLUXNOVA_IMAGE:-fluxnova:local}"
 FLUXNOVA_PORT="${FLUXNOVA_PORT:-8080}"
 OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:latest}"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
+# Fluxnova's PostgreSQL datasource credentials — read from .env (never hardcoded) and
+# passed through as env vars for default.yml's ${VAR:default} placeholders to resolve
+# (Spring Boot exposes container env vars directly to its property placeholder
+# resolution). Must match what postgres-up.sh created the fluxnova role with.
+FLUXNOVA_POSTGRES_USER="${FLUXNOVA_POSTGRES_USER:-fluxnova}"
+FLUXNOVA_POSTGRES_PASSWORD="${FLUXNOVA_POSTGRES_PASSWORD:-fluxnova}"
+FLUXNOVA_POSTGRES_DB="${FLUXNOVA_POSTGRES_DB:-fluxnova}"
 # The numeric MLflow experiment ID traces get sent to — MLflow's OTLP endpoint requires
 # this on every request (see otel-collector-config.yaml). Must already exist; see
 # local-dev/README.md for how to look it up. Left empty by default so this is opt-in.
@@ -65,6 +76,9 @@ echo "Starting fluxnova..."
 podman run -d --pod "$POD_NAME" --name fluxnova \
   -e OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
   -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
+  -e FLUXNOVA_POSTGRES_USER="$FLUXNOVA_POSTGRES_USER" \
+  -e FLUXNOVA_POSTGRES_PASSWORD="$FLUXNOVA_POSTGRES_PASSWORD" \
+  -e FLUXNOVA_POSTGRES_DB="$FLUXNOVA_POSTGRES_DB" \
   -v "$(pwd)/default.yml:/fluxnova/configuration/default.yml:ro" \
   "$FLUXNOVA_IMAGE"
 

@@ -10,12 +10,12 @@ automatic sampling for them.
 Automatic judges require a `gateway:/<endpoint>` model URI (see Phase 0 in
 EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), which in turn requires the tracking URI
 to be the *running MLflow server's* HTTP(S) address (e.g.
-``http://localhost:5000``) rather than a direct ``sqlite:///...`` path — the
+``http://localhost:5000``) rather than a direct ``postgresql://...`` path — the
 gateway routes judge calls through that server process. This is different
-from ``mlflow-eval``'s default tracking URI (the local SQLite file used for
-offline evaluation), even though, in local dev, both ultimately point at the
-same underlying `harness/.mlflow/mlflow.db` file (`mlflow-up.sh` mounts it
-into the server container).
+from ``mlflow-eval``'s default tracking URI (a direct PostgreSQL connection
+used for offline evaluation), even though, in local dev, both ultimately point at the
+same underlying `postgres-local` pod's "mlflow" database (`mlflow-up.sh` points the
+server container at it too).
 
 Usage (see also local-dev/README.md):
 
@@ -97,7 +97,7 @@ def main(argv: Iterable[str] | None = None) -> None:
         "--tracking-uri",
         default=_DEFAULT_TRACKING_URI,
         help=f"MLflow tracking server HTTP(S) URL (default: {_DEFAULT_TRACKING_URI}). "
-        "Must be the running server's address, not a direct sqlite:/// path -- gateway-backed "
+        "Must be the running server's address, not a direct postgresql:// path -- gateway-backed "
         "judges route through the server process.",
     )
     parser.add_argument(

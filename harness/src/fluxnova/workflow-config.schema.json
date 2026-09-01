@@ -68,7 +68,7 @@
     },
     "mlflow_dataset": {
       "type": "object",
-      "description": "Optional: record each completed run as an entry in a persistent MLflow evaluation dataset (in the same SQLite tracking store used by mlflow-eval), in addition to or instead of the JSON report file.",
+      "description": "Optional: record each completed run as an entry in a persistent MLflow evaluation dataset (in the same PostgreSQL tracking store used by mlflow-eval), in addition to or instead of the JSON report file.",
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -82,7 +82,7 @@
         },
         "tracking_uri": {
           "type": "string",
-          "description": "MLflow tracking URI. Defaults to the local SQLite store at harness/.mlflow/mlflow.db."
+          "description": "MLflow tracking URI. Defaults to the PostgreSQL store at postgresql://mlflow:mlflow@localhost:5432/mlflow (see local-dev/postgres-up.sh)."
         },
         "also_write_json_report": {
           "type": "boolean",

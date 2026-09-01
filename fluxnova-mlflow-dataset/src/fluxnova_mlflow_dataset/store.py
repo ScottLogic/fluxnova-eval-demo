@@ -12,9 +12,11 @@ permissive "trace" bucket we deliberately avoid the reserved key name
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from fluxnova_mlflow_dataset.goldens import load_goldens, match_golden
 from fluxnova_mlflow_dataset.tools import ExpectedToolRule, resolve_expected_tools
@@ -46,10 +48,29 @@ def dataset_name_for(process_key: str, name_override: str | None = None, experim
 
 
 def default_tracking_uri(repo_root: Path) -> str:
-    """The local SQLite MLflow tracking store shared by writers and readers."""
-    db_path = repo_root / "harness" / ".mlflow" / "mlflow.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    return f"sqlite:///{db_path.as_posix()}"
+    """The default MLflow tracking store: PostgreSQL, matching the local-dev
+    ``postgres-local`` pod (see ``local-dev/postgres-up.sh``) — replaces the previous
+    SQLite-file default.
+
+    Connection details are read from environment variables (``POSTGRES_HOST``,
+    ``POSTGRES_PORT``, ``MLFLOW_POSTGRES_DB``, ``MLFLOW_POSTGRES_USER``,
+    ``MLFLOW_POSTGRES_PASSWORD``), falling back to the local-dev Postgres pod's own
+    defaults so this works out of the box with no extra configuration. ``repo_root`` is
+    accepted for backward-compatible call sites but is otherwise unused now that the
+    store isn't a file under the repo.
+    """
+    del repo_root  # unused; kept for backward-compatible call sites
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+    db = os.environ.get("MLFLOW_POSTGRES_DB", "mlflow")
+    user = os.environ.get("MLFLOW_POSTGRES_USER", "mlflow")
+    password = os.environ.get("MLFLOW_POSTGRES_PASSWORD", "mlflow")
+    # URL-encode credentials: usernames/passwords may contain characters reserved in
+    # URIs (@, :, /, #, etc.) which would otherwise corrupt the connection string (e.g.
+    # a literal "@" in the password would be misparsed as the userinfo/host separator).
+    user_enc = quote(user, safe="")
+    password_enc = quote(password, safe="")
+    return f"postgresql://{user_enc}:{password_enc}@{host}:{port}/{db}"
 
 
 def tracking_uri_for(tracking_uri_override: str | None, repo_root: Path) -> str:
