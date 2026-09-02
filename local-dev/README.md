@@ -2,10 +2,38 @@
 
 This directory contains everything needed to run **PostgreSQL**, the **Fluxnova engine**, the **OTel Collector**, and
 (optionally) the **MLflow tracking server** as containers for local development, using [Podman](https://podman.io) —
-grouped into a single Podman pod per service (`postgres-up.sh` / `postgres-down.sh` for PostgreSQL, `fluxnova-up.sh` /
-`fluxnova-down.sh` for Fluxnova + the OTel Collector, and `mlflow-up.sh` / `mlflow-down.sh` for MLflow), with no
-compose provider required. PostgreSQL is the shared backing database for both MLflow's tracking-server backend store
-and Fluxnova's process-engine datasource, replacing their previous SQLite-file and H2-file defaults respectively.
+grouped into a single Podman pod per service (`services/postgres-up.sh` / `services/postgres-down.sh` for PostgreSQL,
+`services/fluxnova-up.sh` / `services/fluxnova-down.sh` for Fluxnova + the OTel Collector, and `services/mlflow-up.sh` /
+`services/mlflow-down.sh` for MLflow — plus `services/eval-service-up.sh` / `services/eval-service-down.sh` for the
+optional eval-service worker), with no compose provider required. PostgreSQL is the shared backing database for both
+MLflow's tracking-server backend store and Fluxnova's process-engine datasource, replacing their previous SQLite-file
+and H2-file defaults respectively.
+
+## Quick start: `pods-up.sh` / `pods-down.sh`
+
+`pods-up.sh` and `pods-down.sh` orchestrate the per-service scripts (which live in the `services/` subfolder) in the
+correct dependency order, so you don't have to remember it or run them one at a time. Both are idempotent (safe to
+re-run) and accept one or more pod names to start/stop only a subset:
+
+```bash
+cd local-dev
+
+./pods-up.sh                    # start postgres, mlflow, fluxnova, eval-service, in that order
+./pods-up.sh mlflow             # start (or leave alone, if already running) only mlflow
+./pods-up.sh postgres fluxnova  # start only postgres and fluxnova (still in order)
+
+./pods-down.sh                  # stop/remove eval-service, fluxnova, mlflow, postgres, in that order
+./pods-down.sh mlflow           # stop/remove only mlflow
+./pods-down.sh --delete-data    # stop/remove all four AND delete their persistent
+                                 # data (postgres' PGDATA volume, mlflow's artifact
+                                 # files) — fluxnova/eval-service have none of their own
+```
+
+Run `./pods-up.sh --help` / `./pods-down.sh --help` for full usage. The pod names are `postgres`, `mlflow`,
+`fluxnova`, and `eval-service`. The sections below describe each underlying per-service script in the `services/`
+subfolder (`services/postgres-up.sh`/`services/postgres-down.sh` etc.) in more detail, including their own
+`--delete-data` flags (`fluxnova-down.sh`/`eval-service-down.sh` accept the flag too, for a consistent interface, but
+are no-ops since they have no local data).
 
 ## Prerequisites
 
@@ -31,11 +59,12 @@ cd local-dev
 # and MLFLOW_POSTGRES_*/FLUXNOVA_POSTGRES_*/POSTGRES_SUPERUSER* set the DB credentials
 # (see "Credentials" below)
 
-./postgres-up.sh      # start it
-./postgres-down.sh    # stop and remove it (the named PGDATA volume is untouched)
+./services/postgres-up.sh                # start it (idempotent — safe to re-run)
+./services/postgres-down.sh              # stop and remove it (the named PGDATA volume is untouched)
+./services/postgres-down.sh --delete-data  # stop/remove it AND delete the PGDATA volume
 ```
 
-On first startup (against an empty PGDATA volume), `postgres-init/init.sh` is mounted into
+On first startup (against an empty PGDATA volume), `postgres/init.sh` is mounted into
 `/docker-entrypoint-initdb.d/` and automatically creates two databases/roles, using credentials passed through
 as env vars (never hardcoded in the script — see "Credentials" below):
 
@@ -50,7 +79,7 @@ All database passwords (the Postgres superuser plus the `mlflow`/`fluxnova` role
 env vars — `POSTGRES_SUPERUSER`/`POSTGRES_SUPERUSER_PASSWORD`, `MLFLOW_POSTGRES_USER`/`MLFLOW_POSTGRES_PASSWORD`/
 `MLFLOW_POSTGRES_DB`, and `FLUXNOVA_POSTGRES_USER`/`FLUXNOVA_POSTGRES_PASSWORD`/`FLUXNOVA_POSTGRES_DB`. Each script
 (`postgres-up.sh`, `mlflow-up.sh`, `fluxnova-up.sh`) sources `.env` and passes the relevant vars through to its
-container with `-e` — none of them are hardcoded in `postgres-init/init.sh`, `mlflow-up.sh`'s
+container with `-e` — none of them are hardcoded in `postgres/init.sh`, `mlflow-up.sh`'s
 `--backend-store-uri`, or `default.yml`'s `spring.datasource` (which uses Spring's `${VAR:default}` placeholder
 syntax, resolved from the container's own env vars at startup). Change the values in `.env` before the first
 `./postgres-up.sh` run — they're baked into the database on creation; changing them afterwards requires either
@@ -61,8 +90,9 @@ PGDATA lives in a Podman **named volume** (`postgres-local-data` by default, ove
 `.env`) rather than a host bind-mount — bind-mounting PGDATA on Windows/macOS fails during `initdb` ("Operation not
 permitted" on `chown`/`chmod`) because the mount is proxied through the Podman VM's 9p/virtiofs filesystem, which
 doesn't support the ownership changes Postgres needs; a named volume is real storage inside the VM itself, so this
-works normally. It survives `postgres-down.sh` / pod recreation — run `podman volume rm postgres-local-data` to force
-`init.sh` to re-run from scratch. Other pods on the shared `fluxnova-dev` network reach it at `postgres-local:5432`
+works normally. It survives `postgres-down.sh` / pod recreation — run `./postgres-down.sh --delete-data` (or
+`podman volume rm postgres-local-data`) to force `init.sh` to re-run from scratch. Other pods on the shared
+`fluxnova-dev` network reach it at `postgres-local:5432`
 (by pod name, same as `mlflow-local:5000` for
 MLflow); from the host it's `localhost:5432` (or your configured `POSTGRES_PORT`).
 
@@ -77,8 +107,8 @@ file default.
 cd local-dev
 # adjust .env if needed — FLUXNOVA_IMAGE defaults to the public GHCR image (see "Fluxnova image" below)
 
-./fluxnova-up.sh      # start the pod
-./fluxnova-down.sh    # stop and remove it
+./services/fluxnova-up.sh      # start the pod
+./services/fluxnova-down.sh    # stop and remove it
 ```
 
 This creates a `fluxnova-local` pod publishing ports `8080` (Fluxnova), `4317`/`4318` (OTel Collector gRPC/HTTP).
@@ -129,8 +159,8 @@ any one Fluxnova run. Requires `postgres-up.sh` to already be running. Run from 
 cd local-dev
 # adjust .env if you haven't already; set MLFLOW_IMAGE/MLFLOW_PORT/MLFLOW_ARTIFACT_DIR if needed
 
-./mlflow-up.sh      # start it
-./mlflow-down.sh    # stop and remove it (the PostgreSQL backend store and local artifacts are untouched)
+./services/mlflow-up.sh      # start it
+./services/mlflow-down.sh    # stop and remove it (the PostgreSQL backend store and local artifacts are untouched)
 ```
 
 This uses the official `ghcr.io/mlflow/mlflow` image, backed by PostgreSQL (`postgres-local` pod's `mlflow`
@@ -285,11 +315,12 @@ real `processInstanceId` from a completed run.
 
 ```bash
 cd local-dev
-./eval-service-up.sh      # builds the image, starts the eval-service-local pod
-./eval-service-down.sh    # stop and remove it
+./services/eval-service-up.sh      # builds the image, starts the eval-service-local pod
+./services/eval-service-down.sh    # stop and remove it
 ```
 
-This builds `eval-service-worker/Dockerfile` from the repo root (so it can install the local
+Or start it as part of the whole stack with `./pods-up.sh` (it's the last pod started, after fluxnova/mlflow, which
+it depends on). This builds `eval-service-worker/Dockerfile` from the repo root (so it can install the local
 `fluxnova-mlflow-dataset` path dependency too) and passes `EVAL_SERVICE_FLUXNOVA_URL`/`EVAL_SERVICE_TRACKING_URI`
 env vars pointed at the sibling `fluxnova-local`/`mlflow-local` pod names (rather than `localhost`, which only
 resolves for host-run tools) on the shared `fluxnova-dev` network. Both those pods must already be running.
@@ -305,12 +336,13 @@ without depending on `harness`'s workflow YAML.
 
 | File | Purpose |
 |------|---------|
-| `postgres-up.sh` / `postgres-down.sh` | Start/stop the `postgres-local` pod (shared PostgreSQL database) |
-| `postgres-init/init.sh` | Creates the `mlflow`/`fluxnova` databases and roles on first startup |
-| `fluxnova-up.sh` / `fluxnova-down.sh` | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector) |
-| `mlflow-up.sh` / `mlflow-down.sh` | Start/stop the `mlflow-local` pod |
-| `eval-service-up.sh` / `eval-service-down.sh` | Build/start/stop the `eval-service-local` pod (see above) |
-| `default.yml` | Fluxnova config mounted by `fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace; datasource → PostgreSQL) |
+| `pods-up.sh` / `pods-down.sh` | Start/stop postgres, mlflow, fluxnova, and eval-service together (in dependency order), or any subset — idempotent |
+| `services/postgres-up.sh` / `services/postgres-down.sh` | Start/stop the `postgres-local` pod (shared PostgreSQL database) |
+| `postgres/init.sh` | Creates the `mlflow`/`fluxnova` databases and roles on first startup |
+| `services/fluxnova-up.sh` / `services/fluxnova-down.sh` | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector) |
+| `services/mlflow-up.sh` / `services/mlflow-down.sh` | Start/stop the `mlflow-local` pod |
+| `services/eval-service-up.sh` / `services/eval-service-down.sh` | Build/start/stop the `eval-service-local` pod (see above) |
+| `default.yml` | Fluxnova config mounted by `services/fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace; datasource → PostgreSQL) |
 | `otel-collector-config.yaml` | OTel Collector pipeline: `otlp` receiver → `otlp_http` exporter to MLflow |
 | `.env` | Environment values (image names/ports/paths) — adjust as needed |
 

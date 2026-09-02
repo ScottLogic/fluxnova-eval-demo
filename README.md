@@ -120,12 +120,13 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    cd local-dev
    # adjust .env: set FLUXNOVA_IMAGE to your locally built/loaded image
 
-   ./postgres-up.sh  # PostgreSQL — backing database for MLflow + Fluxnova, start this first
-   ./mlflow-up.sh     # MLflow tracking server + UI (backend store: PostgreSQL)
-   ./fluxnova-up.sh   # Fluxnova engine + OTel Collector (posts traces to MLflow; datasource: PostgreSQL)
+   ./pods-up.sh   # start postgres, mlflow, fluxnova, eval-service (in dependency order)
    ```
-   All three scripts open their web UI (postgres-up.sh doesn't have one) in your default browser once ready. See
-   [`local-dev/README.md`](local-dev/README.md) for the full pod details, the optional `eval-service-worker` pod, and
+   `pods-up.sh` is idempotent and orchestrates the per-service scripts in `local-dev/services/`
+   (`postgres-up.sh` → `mlflow-up.sh` → `fluxnova-up.sh` → `eval-service-up.sh`); pass pod names to start only a
+   subset (e.g. `./pods-up.sh postgres mlflow fluxnova`). The mlflow/fluxnova pods open their web UI in your default
+   browser once ready. See
+   [`local-dev/README.md`](local-dev/README.md) for the full pod details, the `eval-service-worker` pod, and
    Windows/WSL2 troubleshooting.
 
 4. **(One-off) Register the MLflow AI Gateway judge endpoint** — required for automatic evaluation judges. See
@@ -200,7 +201,7 @@ own) to populate the dataset from MLflow's trace store before evaluating.
 
 Each of these prints an aggregate metrics summary to the terminal (MLflow's own `EvaluationResult.metrics`) and writes
 full per-scorer results (scores, rationales, inputs/outputs) to a PostgreSQL-backed MLflow tracking store
-(`postgres-local` pod's `mlflow` database — see `local-dev/postgres-up.sh`).
+(`postgres-local` pod's `mlflow` database — see `local-dev/services/postgres-up.sh`).
 
 To view the results in the browser, use the same MLflow tracking server described in "Running the MLflow tracking
 server" below (or, if you only need read-only browsing and aren't using `--collect`/OTel ingestion, the lighter-weight
@@ -237,14 +238,14 @@ written.
 
 ## Alternative: running the MLflow tracking server on the host
 
-First-time setup above uses `local-dev/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd rather
+First-time setup above uses `local-dev/services/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd rather
 run it as a host process instead (e.g. for IDE debugging), `mlflow-eval` can *read* the PostgreSQL store directly
-(`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/postgres-up.sh` is running), but for the OTel
+(`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/services/postgres-up.sh` is running), but for the OTel
 Collector to *write* traces into it, an actual MLflow tracking **server** (an HTTP process, not just the library) must
 be running and listening on the URL the Collector's `otlphttp` exporter targets (`http://localhost:5000/v1/traces` by
 default). `mlflow ui` alone does **not** accept incoming trace writes — it only reads.
 
-Start it (from the repo root, with `harness/.venv` activated and `local-dev/postgres-up.sh` already running) and leave
+Start it (from the repo root, with `harness/.venv` activated and `local-dev/services/postgres-up.sh` already running) and leave
 it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
@@ -376,7 +377,7 @@ after reviewing the BPMN's agent prompt and tool wiring:
 |----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | Workflow engine      | [Fluxnova](https://fluxnova.io) (Camunda-based)                                                                                              |
 | BPMN                 | Camunda BPMN 2.0                                                                                                                             |
-| Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/postgres-up.sh`) |
+| Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/services/postgres-up.sh`) |
 | Harness runtime      | Python 3.11, requests, PyYAML                                                                                                                |
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                       |
 | LLM agent            | Ollama / llama3.2 (runs inside Fluxnova)                                                                                                     |
