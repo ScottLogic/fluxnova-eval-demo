@@ -42,12 +42,6 @@ These bit me on a clean checkout — handle them before bringing anything up.
 > Minor, being fixed upstream: if a `./*.sh` fails with **exit code 126** (`is not an executable file`),
 > the scripts just lack the executable bit — `chmod +x local-dev/*.sh local-dev/postgres-init/*.sh`.
 
-> Being fixed upstream (PR #3): on PostgreSQL 15+, `postgres-init/init.sh`'s two `GRANT ALL ON SCHEMA
-> public` statements use `psql -c`, which doesn't do `:"var"` interpolation, so they error on first
-> init (`syntax error at or near ":"`) and the `mlflow`/`fluxnova` roles can't create tables. The fix
-> moves them to heredocs. If you hit it before that lands, apply the change locally, then
-> `./postgres-down.sh && podman volume rm postgres-local-data` and re-run `postgres-up.sh`.
-
 ### 1. (If present) the `userlib` bind-mount in `fluxnova-up.sh`
 
 The current `fluxnova-up.sh` in this repo has **no** `userlib` mount, so there's nothing to do here.
