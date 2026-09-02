@@ -37,21 +37,12 @@ There are three places to point at it:
 
 ## Gotchas to handle first
 
-These two bit me on a clean checkout — handle them before bringing anything up.
+These bit me on a clean checkout — handle them before bringing anything up.
 
-### 1. The `local-dev/*.sh` scripts are checked in non-executable
+> Minor, being fixed upstream: if a `./*.sh` fails with **exit code 126** (`is not an executable file`),
+> the scripts just lack the executable bit — `chmod +x local-dev/*.sh local-dev/postgres-init/*.sh`.
 
-They come in with mode `644`, so running any `.sh` fails immediately with **exit code
-126** (and no other output). Add the executable bit once:
-
-```bash
-cd local-dev
-chmod +x *.sh postgres-init/*.sh
-```
-
-(Do this in your working tree only — don't commit the mode change unless the team wants to.)
-
-### 2. `postgres-init/init.sh` needs a fix for the `public`-schema grants (PostgreSQL 15+)
+### 1. `postgres-init/init.sh` needs a fix for the `public`-schema grants (PostgreSQL 15+)
 
 **This change is NOT applied in the repo — you need to make it locally (or we should upstream it).**
 
@@ -95,7 +86,7 @@ Because `init.sh` only runs against an **empty** `PGDATA`, apply the fix *before
 podman volume rm postgres-local-data
 ```
 
-### 3. (If present) the `userlib` bind-mount in `fluxnova-up.sh`
+### 2. (If present) the `userlib` bind-mount in `fluxnova-up.sh`
 
 The current `fluxnova-up.sh` in this repo has **no** `userlib` mount, so there's nothing to do here.
 But if you're on a version that bind-mounts a host `userlib` into
