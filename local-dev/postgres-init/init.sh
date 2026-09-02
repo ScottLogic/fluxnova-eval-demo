@@ -30,7 +30,9 @@ psql -v ON_ERROR_STOP=1 \
     GRANT ALL PRIVILEGES ON DATABASE :"fluxnova_db" TO :"fluxnova_user";
 EOSQL
 
-psql -v ON_ERROR_STOP=1 -v mlflow_user="$MLFLOW_POSTGRES_USER" --username "$POSTGRES_USER" --dbname "$MLFLOW_POSTGRES_DB" \
-    -c 'GRANT ALL ON SCHEMA public TO :"mlflow_user";'
-psql -v ON_ERROR_STOP=1 -v fluxnova_user="$FLUXNOVA_POSTGRES_USER" --username "$POSTGRES_USER" --dbname "$FLUXNOVA_POSTGRES_DB" \
-    -c 'GRANT ALL ON SCHEMA public TO :"fluxnova_user";'
+psql -v ON_ERROR_STOP=1 -v mlflow_user="$MLFLOW_POSTGRES_USER" --username "$POSTGRES_USER" --dbname "$MLFLOW_POSTGRES_DB" <<'EOSQL'
+    GRANT ALL ON SCHEMA public TO :"mlflow_user";
+EOSQL
+psql -v ON_ERROR_STOP=1 -v fluxnova_user="$FLUXNOVA_POSTGRES_USER" --username "$POSTGRES_USER" --dbname "$FLUXNOVA_POSTGRES_DB" <<'EOSQL'
+    GRANT ALL ON SCHEMA public TO :"fluxnova_user";
+EOSQL
