@@ -55,7 +55,7 @@ def decision_quality_judge(model: str) -> Guidelines:
 # Unlike `harness/src/mlflow_eval/main.py`'s deterministic scorers (which read
 # `expected_tools`/`available_tools` straight out of the workflow YAML config),
 # these are self-contained: the tool-call/applicant-profile rules below are a
-# hardcoded mirror of `harness/config/loan-assesment-eval.yml`'s `expected_tools`
+# hardcoded mirror of `config/loan-assesment-eval.yml`'s `expected_tools`
 # list, kept in sync manually. This keeps eval-service-worker trace-only (no
 # BPMN/YAML config read at runtime) at the cost of needing a manual update here
 # if that BPMN's tool set/rules ever change. See EVAL-SERVICE-WORKER-PLAN.md.

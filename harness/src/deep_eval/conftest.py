@@ -3,7 +3,7 @@
 Registers --config and --report CLI options so the test suite can be driven
 by any workflow config + agent-history report pair:
 
-    deepeval test run src/deep_eval/main.py --config harness/config/loan-assesment.yml \\
+    deepeval test run src/deep_eval/main.py --config config/loan-assesment.yml \\
         --report harness/.fluxnova/loanAssessmentProcess/<id>.json
 
     pytest src/deep_eval/main.py -v --config ... --report ...

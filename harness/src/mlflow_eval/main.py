@@ -9,10 +9,10 @@ Windows Git Bash / MINGW64, backslashes are treated as escape characters and
 will mangle the path):
 
     # A single previously recorded run, read back from the MLflow dataset
-    mlflow-eval harness/config/loan-assesment.yml --instance-id <processInstanceId>
+    mlflow-eval config/loan-assesment.yml --instance-id <processInstanceId>
 
     # Every run currently recorded in the MLflow dataset for this process_key
-    mlflow-eval harness/config/loan-assesment.yml --all
+    mlflow-eval config/loan-assesment.yml --all
 
 Add ``--collect`` to either of the above (or on its own) to first pull newly-
 completed agentic subprocess runs out of MLflow's trace store (populated by
@@ -23,8 +23,8 @@ collection needs a background process, since BPMN, MLflow traces, and
 Fluxnova's variable history are all already persisted by the time you run
 this:
 
-    mlflow-eval harness/config/loan-assesment.yml --collect --all
-    mlflow-eval harness/config/loan-assesment.yml --collect            # collect only, don't evaluate
+    mlflow-eval config/loan-assesment.yml --collect --all
+    mlflow-eval config/loan-assesment.yml --collect            # collect only, don't evaluate
 
 Results are written to a PostgreSQL-backed MLflow tracking store (see
 ``local-dev/postgres-up.sh`` — replaces the previous SQLite-file default) and can be
