@@ -40,6 +40,23 @@ exporters:
     headers:
       x-mlflow-experiment-id: ${env:MLFLOW_EXPERIMENT_ID}
 
+  # Exposes a Prometheus scrape endpoint on :8889 so the observability-local pod's
+  # Prometheus (prometheus.yml) can pull the gen_ai.* metrics Fluxnova emits over OTLP,
+  # which Grafana then dashboards. This port is published on the fluxnova-local pod (see
+  # fluxnova-up.sh's `-p 8889:8889`) and reachable pod-to-pod by name (fluxnova-local:8889)
+  # over the shared fluxnova-dev network. `send_timestamps`/`resource_to_telemetry_conversion`
+  # keep OTLP resource attributes (e.g. service.name) queryable as Prometheus labels.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    send_timestamps: true
+    # Keep exported metric names a deterministic dot->underscore mapping of the OTLP
+    # names (e.g. gen_ai.client.token.usage -> gen_ai_client_token_usage_{bucket,sum,count})
+    # by NOT appending unit/type suffixes — this is what the provisioned Grafana dashboard
+    # (grafana/dashboards/gen-ai.json) queries against.
+    add_metric_suffixes: false
+    resource_to_telemetry_conversion:
+      enabled: true
+
   debug:
     verbosity: basic
 
@@ -49,3 +66,10 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp_http, debug]
+    # Fans the gen_ai.* metrics out to the Prometheus exporter above (independent of the
+    # traces pipeline, which still goes to MLflow). See local-dev/README.md's
+    # observability section and the main README's "Metrics" table for the metric list.
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]

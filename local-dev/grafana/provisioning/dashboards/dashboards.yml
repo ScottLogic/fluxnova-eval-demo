@@ -1,0 +1,18 @@
+# Grafana dashboard provider (mounted at /etc/grafana/provisioning/dashboards by
+# observability-up.sh). Tells Grafana to load any dashboard JSON found in the mounted
+# folder below on startup, so local-dev/grafana/dashboards/gen-ai.json shows up
+# automatically under the "Fluxnova" folder without importing anything by hand.
+
+apiVersion: 1
+
+providers:
+  - name: Fluxnova dashboards
+    orgId: 1
+    folder: Fluxnova
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
