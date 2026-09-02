@@ -42,51 +42,13 @@ These bit me on a clean checkout — handle them before bringing anything up.
 > Minor, being fixed upstream: if a `./*.sh` fails with **exit code 126** (`is not an executable file`),
 > the scripts just lack the executable bit — `chmod +x local-dev/*.sh local-dev/postgres-init/*.sh`.
 
-### 1. `postgres-init/init.sh` needs a fix for the `public`-schema grants (PostgreSQL 15+)
+> Being fixed upstream (PR #3): on PostgreSQL 15+, `postgres-init/init.sh`'s two `GRANT ALL ON SCHEMA
+> public` statements use `psql -c`, which doesn't do `:"var"` interpolation, so they error on first
+> init (`syntax error at or near ":"`) and the `mlflow`/`fluxnova` roles can't create tables. The fix
+> moves them to heredocs. If you hit it before that lands, apply the change locally, then
+> `./postgres-down.sh && podman volume rm postgres-local-data` and re-run `postgres-up.sh`.
 
-**This change is NOT applied in the repo — you need to make it locally (or we should upstream it).**
-
-On first `postgres-up.sh`, `postgres-init/init.sh` runs against the fresh volume. Its last two
-statements grant schema privileges so the `mlflow`/`fluxnova` roles can create tables (required on
-PostgreSQL 15+, where `public` no longer grants `CREATE` to non-owners). As written they use
-`psql -c` with `:"var"` interpolation:
-
-```bash
-psql ... --dbname "$MLFLOW_POSTGRES_DB"   -c 'GRANT ALL ON SCHEMA public TO :"mlflow_user";'
-psql ... --dbname "$FLUXNOVA_POSTGRES_DB" -c 'GRANT ALL ON SCHEMA public TO :"fluxnova_user";'
-```
-
-psql only performs `:"var"` substitution on **stdin/file input, not on `-c` command strings**, so
-these fail on the container's first init with:
-
-```
-ERROR:  syntax error at or near ":"
-LINE 1: GRANT ALL ON SCHEMA public TO :"mlflow_user";
-```
-
-The databases and roles still get created (that part runs from a heredoc), but the two schema grants
-are skipped. Fix it by moving them to heredocs so the variable substitution happens:
-
-```bash
-psql -v ON_ERROR_STOP=1 -v mlflow_user="$MLFLOW_POSTGRES_USER" \
-    --username "$POSTGRES_USER" --dbname "$MLFLOW_POSTGRES_DB" <<'EOSQL'
-    GRANT ALL ON SCHEMA public TO :"mlflow_user";
-EOSQL
-psql -v ON_ERROR_STOP=1 -v fluxnova_user="$FLUXNOVA_POSTGRES_USER" \
-    --username "$POSTGRES_USER" --dbname "$FLUXNOVA_POSTGRES_DB" <<'EOSQL'
-    GRANT ALL ON SCHEMA public TO :"fluxnova_user";
-EOSQL
-```
-
-Because `init.sh` only runs against an **empty** `PGDATA`, apply the fix *before* the first
-`postgres-up.sh`. If Postgres was already brought up with the broken script, re-initialise:
-
-```bash
-./postgres-down.sh
-podman volume rm postgres-local-data
-```
-
-### 2. (If present) the `userlib` bind-mount in `fluxnova-up.sh`
+### 1. (If present) the `userlib` bind-mount in `fluxnova-up.sh`
 
 The current `fluxnova-up.sh` in this repo has **no** `userlib` mount, so there's nothing to do here.
 But if you're on a version that bind-mounts a host `userlib` into
