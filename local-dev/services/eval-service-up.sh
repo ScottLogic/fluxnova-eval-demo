@@ -27,12 +27,15 @@ DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
 # mangling the *container-side* paths used elsewhere), an unconverted Unix-style path
 # here gets double-prefixed into garbage like "C:\c\dev\..." when used as a build
 # context. Falls back to plain `pwd` on non-Windows shells where `-W` isn't supported.
-REPO_ROOT="$(cd .. && { pwd -W 2>/dev/null || pwd; })"
+# This script now sits in local-dev/services/, so the repo root is two levels up.
+REPO_ROOT="$(cd ../.. && { pwd -W 2>/dev/null || pwd; })"
+# .env lives in the parent local-dev directory.
+LOCAL_DEV_DIR="$(cd .. && pwd)"
 
 # Load .env (KEY=VALUE lines) if present.
-if [ -f .env ]; then
+if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set -a
-  source .env
+  source "$LOCAL_DEV_DIR/.env"
   set +a
 fi
 
@@ -45,16 +48,24 @@ podman network create --ignore "$DEV_NETWORK"
 echo "Building $IMAGE_NAME..."
 podman build -f "$REPO_ROOT/eval-service-worker/Dockerfile" -t "$IMAGE_NAME" "$REPO_ROOT"
 
-echo "Creating pod '$POD_NAME'..."
-podman pod create --name "$POD_NAME" \
-  --network "$DEV_NETWORK" \
-  --add-host host.containers.internal:host-gateway
+# Idempotent: if the pod already exists (e.g. this script was run before), just make
+# sure it's started rather than failing on `podman pod create`/`podman run` name clashes.
+# The image is always rebuilt above so a restart picks up any code changes.
+if podman pod exists "$POD_NAME"; then
+  echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
+  podman pod start "$POD_NAME" >/dev/null
+else
+  echo "Creating pod '$POD_NAME'..."
+  podman pod create --name "$POD_NAME" \
+    --network "$DEV_NETWORK" \
+    --add-host host.containers.internal:host-gateway
 
-echo "Starting eval-service-worker..."
-podman run -d --pod "$POD_NAME" --name eval-service-worker \
-  -e EVAL_SERVICE_FLUXNOVA_URL="$EVAL_SERVICE_FLUXNOVA_URL" \
-  -e EVAL_SERVICE_TRACKING_URI="$EVAL_SERVICE_TRACKING_URI" \
-  "$IMAGE_NAME"
+  echo "Starting eval-service-worker..."
+  podman run -d --pod "$POD_NAME" --name eval-service-worker \
+    -e EVAL_SERVICE_FLUXNOVA_URL="$EVAL_SERVICE_FLUXNOVA_URL" \
+    -e EVAL_SERVICE_TRACKING_URI="$EVAL_SERVICE_TRACKING_URI" \
+    "$IMAGE_NAME"
+fi
 
 echo
 echo "Worker running. Topic: agent-output-eval (override with EVAL_SERVICE_TOPIC)"

@@ -23,10 +23,14 @@ export MSYS2_ARG_CONV_EXCL="*"
 
 POD_NAME="${POD_NAME:-fluxnova-local}"
 
+# Shared config/data (.env, default.yml, otel-collector-config.yaml) lives in the parent
+# local-dev directory — this script now sits in local-dev/services/.
+LOCAL_DEV_DIR="$(cd .. && pwd)"
+
 # Load .env (KEY=VALUE lines) if present.
-if [ -f .env ]; then
+if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set -a
-  source .env
+  source "$LOCAL_DEV_DIR/.env"
   set +a
 fi
 
@@ -56,31 +60,39 @@ MLFLOW_OTLP_ENDPOINT="${MLFLOW_OTLP_ENDPOINT:-http://mlflow-local:5000}"
 # this machine (it resolves to the gateway *out* of the Podman VM, not back into it).
 podman network create --ignore "$DEV_NETWORK"
 
-echo "Creating pod '$POD_NAME' (fluxnova:${FLUXNOVA_PORT}->8080, otel-collector:4317/4318)..."
-# --add-host must be set at pod level (not per-container) since networking is shared.
-podman pod create --name "$POD_NAME" \
-  -p "${FLUXNOVA_PORT}:8080" \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  --network "$DEV_NETWORK" \
-  --add-host host.containers.internal:host-gateway
 
-echo "Starting otel-collector..."
-podman run -d --pod "$POD_NAME" --name otel-collector \
-  -e MLFLOW_EXPERIMENT_ID="$MLFLOW_EXPERIMENT_ID" \
-  -e MLFLOW_OTLP_ENDPOINT="$MLFLOW_OTLP_ENDPOINT" \
-  -v "$(pwd)/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro" \
-  "$OTEL_COLLECTOR_IMAGE" --config=/etc/otelcol/config.yaml
+# Idempotent: if the pod already exists (e.g. this script was run before), just make
+# sure it's started rather than failing on `podman pod create`/`podman run` name clashes.
+if podman pod exists "$POD_NAME"; then
+  echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
+  podman pod start "$POD_NAME" >/dev/null
+else
+  echo "Creating pod '$POD_NAME' (fluxnova:${FLUXNOVA_PORT}->8080, otel-collector:4317/4318)..."
+  # --add-host must be set at pod level (not per-container) since networking is shared.
+  podman pod create --name "$POD_NAME" \
+    -p "${FLUXNOVA_PORT}:8080" \
+    -p 4317:4317 \
+    -p 4318:4318 \
+    --network "$DEV_NETWORK" \
+    --add-host host.containers.internal:host-gateway
 
-echo "Starting fluxnova..."
-podman run -d --pod "$POD_NAME" --name fluxnova \
-  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
-  -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
-  -e FLUXNOVA_POSTGRES_USER="$FLUXNOVA_POSTGRES_USER" \
-  -e FLUXNOVA_POSTGRES_PASSWORD="$FLUXNOVA_POSTGRES_PASSWORD" \
-  -e FLUXNOVA_POSTGRES_DB="$FLUXNOVA_POSTGRES_DB" \
-  -v "$(pwd)/default.yml:/fluxnova/configuration/default.yml:ro" \
-  "$FLUXNOVA_IMAGE"
+  echo "Starting otel-collector..."
+  podman run -d --pod "$POD_NAME" --name otel-collector \
+    -e MLFLOW_EXPERIMENT_ID="$MLFLOW_EXPERIMENT_ID" \
+    -e MLFLOW_OTLP_ENDPOINT="$MLFLOW_OTLP_ENDPOINT" \
+    -v "${LOCAL_DEV_DIR}/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro" \
+    "$OTEL_COLLECTOR_IMAGE" --config=/etc/otelcol/config.yaml
+
+  echo "Starting fluxnova..."
+  podman run -d --pod "$POD_NAME" --name fluxnova \
+    -e OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+    -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
+    -e FLUXNOVA_POSTGRES_USER="$FLUXNOVA_POSTGRES_USER" \
+    -e FLUXNOVA_POSTGRES_PASSWORD="$FLUXNOVA_POSTGRES_PASSWORD" \
+    -e FLUXNOVA_POSTGRES_DB="$FLUXNOVA_POSTGRES_DB" \
+    -v "${LOCAL_DEV_DIR}/default.yml:/fluxnova/configuration/default.yml:ro" \
+    "$FLUXNOVA_IMAGE"
+fi
 
 # Wait for Fluxnova to become reachable via localhost, then fall back to the Podman
 # machine's own IP if it isn't — see mlflow-up.sh / README.md's "Troubleshooting"

@@ -44,7 +44,7 @@ spring.ai.ollama:
   base-url: http://host.containers.internal:11434
 
 # datasource configuration is required — PostgreSQL (postgres-local pod's Fluxnova
-# database, created by postgres-up.sh's postgres-init/init.sh), replacing the previous
+# database, created by postgres-up.sh's postgres/init.sh), replacing the previous
 # H2 file-based default. Requires postgres-up.sh to already be running, and the
 # Fluxnova image to include a PostgreSQL JDBC driver (bundled in standard
 # Camunda/Fluxnova distributions). Credentials are never hardcoded here — the

@@ -4,7 +4,7 @@
 # service shared by both MLflow (backend store) and Fluxnova (process-engine
 # datasource), replacing their respective SQLite and H2 file-based defaults.
 #
-# On first startup it runs postgres-init/init.sh, which creates two databases/roles
+# On first startup it runs postgres/init.sh, which creates two databases/roles
 # from env vars (set in .env, never hardcoded):
 #   - $MLFLOW_POSTGRES_DB/$MLFLOW_POSTGRES_USER     — used by mlflow-up.sh's --backend-store-uri
 #   - $FLUXNOVA_POSTGRES_DB/$FLUXNOVA_POSTGRES_USER — used by default.yml's spring.datasource (via fluxnova-up.sh)
@@ -19,12 +19,16 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL="*"
 
+# Shared config/data (.env, postgres, default.yml, otel-collector-config.yaml) lives
+# in the parent local-dev directory — this script now sits in local-dev/services/.
+LOCAL_DEV_DIR="$(cd .. && pwd)"
+
 POD_NAME="${POSTGRES_POD_NAME:-postgres-local}"
 
 # Load .env (KEY=VALUE lines) if present.
-if [ -f .env ]; then
+if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set -a
-  source .env
+  source "$LOCAL_DEV_DIR/.env"
   set +a
 fi
 
@@ -34,7 +38,7 @@ POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 # the mlflow/fluxnova roles that init.sh creates, not this one.
 POSTGRES_SUPERUSER="${POSTGRES_SUPERUSER:-postgres}"
 POSTGRES_SUPERUSER_PASSWORD="${POSTGRES_SUPERUSER_PASSWORD:-postgres}"
-# Application database/role credentials — created by postgres-init/init.sh on first
+# Application database/role credentials — created by postgres/init.sh on first
 # startup. All read from .env; never hardcoded.
 MLFLOW_POSTGRES_USER="${MLFLOW_POSTGRES_USER:-mlflow}"
 MLFLOW_POSTGRES_PASSWORD="${MLFLOW_POSTGRES_PASSWORD:-mlflow}"
@@ -60,28 +64,36 @@ podman network create --ignore "$DEV_NETWORK"
 # volume already existed from a previous run. Check for existence *before* creating it.
 INIT_NOTE=""
 if podman volume exists "$POSTGRES_VOLUME" 2>/dev/null; then
-  INIT_NOTE=" (existing volume found — postgres-init/init.sh will NOT re-run)"
+  INIT_NOTE=" (existing volume found — postgres/init.sh will NOT re-run)"
 fi
 podman volume create --ignore "$POSTGRES_VOLUME"
 
-echo "Creating pod '$POD_NAME' (postgres:${POSTGRES_PORT}->5432)${INIT_NOTE}..."
-podman pod create --name "$POD_NAME" \
-  -p "${POSTGRES_PORT}:5432" \
-  --network "$DEV_NETWORK"
 
-echo "Starting postgres..."
-podman run -d --pod "$POD_NAME" --name postgres \
-  -e POSTGRES_USER="$POSTGRES_SUPERUSER" \
-  -e POSTGRES_PASSWORD="$POSTGRES_SUPERUSER_PASSWORD" \
-  -e MLFLOW_POSTGRES_USER="$MLFLOW_POSTGRES_USER" \
-  -e MLFLOW_POSTGRES_PASSWORD="$MLFLOW_POSTGRES_PASSWORD" \
-  -e MLFLOW_POSTGRES_DB="$MLFLOW_POSTGRES_DB" \
-  -e FLUXNOVA_POSTGRES_USER="$FLUXNOVA_POSTGRES_USER" \
-  -e FLUXNOVA_POSTGRES_PASSWORD="$FLUXNOVA_POSTGRES_PASSWORD" \
-  -e FLUXNOVA_POSTGRES_DB="$FLUXNOVA_POSTGRES_DB" \
-  -v "${POSTGRES_VOLUME}:/var/lib/postgresql/data" \
-  -v "$(pwd)/postgres-init:/docker-entrypoint-initdb.d:ro" \
-  "$POSTGRES_IMAGE"
+# Idempotent: if the pod already exists (e.g. this script was run before), just make
+# sure it's started rather than failing on `podman pod create`/`podman run` name clashes.
+if podman pod exists "$POD_NAME"; then
+  echo "Pod '$POD_NAME' already exists${INIT_NOTE} — starting it (idempotent)..."
+  podman pod start "$POD_NAME" >/dev/null
+else
+  echo "Creating pod '$POD_NAME' (postgres:${POSTGRES_PORT}->5432)${INIT_NOTE}..."
+  podman pod create --name "$POD_NAME" \
+    -p "${POSTGRES_PORT}:5432" \
+    --network "$DEV_NETWORK"
+
+  echo "Starting postgres..."
+  podman run -d --pod "$POD_NAME" --name postgres \
+    -e POSTGRES_USER="$POSTGRES_SUPERUSER" \
+    -e POSTGRES_PASSWORD="$POSTGRES_SUPERUSER_PASSWORD" \
+    -e MLFLOW_POSTGRES_USER="$MLFLOW_POSTGRES_USER" \
+    -e MLFLOW_POSTGRES_PASSWORD="$MLFLOW_POSTGRES_PASSWORD" \
+    -e MLFLOW_POSTGRES_DB="$MLFLOW_POSTGRES_DB" \
+    -e FLUXNOVA_POSTGRES_USER="$FLUXNOVA_POSTGRES_USER" \
+    -e FLUXNOVA_POSTGRES_PASSWORD="$FLUXNOVA_POSTGRES_PASSWORD" \
+    -e FLUXNOVA_POSTGRES_DB="$FLUXNOVA_POSTGRES_DB" \
+    -v "${POSTGRES_VOLUME}:/var/lib/postgresql/data" \
+    -v "${LOCAL_DEV_DIR}/postgres:/docker-entrypoint-initdb.d:ro" \
+    "$POSTGRES_IMAGE"
+fi
 
 wait_for_postgres() {
   local tries="${1:-30}"

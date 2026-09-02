@@ -21,17 +21,21 @@ export MSYS2_ARG_CONV_EXCL="*"
 
 POD_NAME="${MLFLOW_POD_NAME:-mlflow-local}"
 
+# Shared config/data (.env, artifact dir) lives in / is resolved relative to the parent
+# local-dev directory — this script now sits in local-dev/services/.
+LOCAL_DEV_DIR="$(cd .. && pwd)"
+
 # Load .env (KEY=VALUE lines) if present.
-if [ -f .env ]; then
+if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set -a
-  source .env
+  source "$LOCAL_DEV_DIR/.env"
   set +a
 fi
 
 MLFLOW_IMAGE="${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:latest}"
 MLFLOW_PORT="${MLFLOW_PORT:-5000}"
 # Backend store is now PostgreSQL (postgres-local's mlflow database, created by
-# postgres-up.sh's postgres-init/init.sh) instead of the old SQLite file. Artifacts
+# postgres-up.sh's postgres/init.sh) instead of the old SQLite file. Artifacts
 # (e.g. logged models/files) still live on a bind-mounted host directory since Postgres
 # only stores metadata, not blobs. Credentials come entirely from .env (never
 # hardcoded) — must match what postgres-up.sh created the mlflow role with.
@@ -48,7 +52,7 @@ MLFLOW_POSTGRES_USER="${MLFLOW_POSTGRES_USER:-mlflow}"
 MLFLOW_POSTGRES_PASSWORD="${MLFLOW_POSTGRES_PASSWORD:-mlflow}"
 MLFLOW_POSTGRES_DB="${MLFLOW_POSTGRES_DB:-mlflow}"
 MLFLOW_BACKEND_STORE_URI="${MLFLOW_BACKEND_STORE_URI:-postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_CONTAINER_PORT}/${MLFLOW_POSTGRES_DB}}"
-MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-../harness/.mlflow/artifacts}"
+MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/../harness/.mlflow/artifacts}"
 mkdir -p "$MLFLOW_ARTIFACT_DIR"
 ARTIFACT_DIR_RESOLVED="$(cd "$MLFLOW_ARTIFACT_DIR" && pwd)"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
@@ -59,23 +63,31 @@ DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
 # host.containers.internal doesn't work for pod-to-pod traffic on this machine.
 podman network create --ignore "$DEV_NETWORK"
 
-echo "Creating pod '$POD_NAME' (mlflow:${MLFLOW_PORT}->5000)..."
-# --add-host lets this pod's containers (e.g. an AI Gateway endpoint pointed at a
-# host-run Ollama) reach the host via host.containers.internal — same as fluxnova-up.sh.
-podman pod create --name "$POD_NAME" \
-  -p "${MLFLOW_PORT}:5000" \
-  --network "$DEV_NETWORK" \
-  --add-host host.containers.internal:host-gateway
 
-echo "Starting mlflow..."
-podman run -d --pod "$POD_NAME" --name mlflow \
-  -v "${ARTIFACT_DIR_RESOLVED}:/mlflow-artifacts" \
-  --entrypoint sh \
-  "$MLFLOW_IMAGE" \
-  -c "pip install --quiet psycopg2-binary && mlflow server \
-    --backend-store-uri '${MLFLOW_BACKEND_STORE_URI}' \
-    --default-artifact-root /mlflow-artifacts \
-    --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*'"
+# Idempotent: if the pod already exists (e.g. this script was run before), just make
+# sure it's started rather than failing on `podman pod create`/`podman run` name clashes.
+if podman pod exists "$POD_NAME"; then
+  echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
+  podman pod start "$POD_NAME" >/dev/null
+else
+  echo "Creating pod '$POD_NAME' (mlflow:${MLFLOW_PORT}->5000)..."
+  # --add-host lets this pod's containers (e.g. an AI Gateway endpoint pointed at a
+  # host-run Ollama) reach the host via host.containers.internal — same as fluxnova-up.sh.
+  podman pod create --name "$POD_NAME" \
+    -p "${MLFLOW_PORT}:5000" \
+    --network "$DEV_NETWORK" \
+    --add-host host.containers.internal:host-gateway
+
+  echo "Starting mlflow..."
+  podman run -d --pod "$POD_NAME" --name mlflow \
+    -v "${ARTIFACT_DIR_RESOLVED}:/mlflow-artifacts" \
+    --entrypoint sh \
+    "$MLFLOW_IMAGE" \
+    -c "pip install --quiet psycopg2-binary && mlflow server \
+      --backend-store-uri '${MLFLOW_BACKEND_STORE_URI}' \
+      --default-artifact-root /mlflow-artifacts \
+      --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*'"
+fi
 
 # Wait for MLflow to become reachable via localhost, then fall back to the Podman
 # machine's own IP if it isn't — see the "Troubleshooting" section in README.md for why
