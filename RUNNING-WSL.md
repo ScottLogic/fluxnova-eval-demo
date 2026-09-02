@@ -35,16 +35,12 @@ There are three places to point at it:
 - **Judge, online (`eval-service-worker`)** — repoint the `fluxnova-judge` MLflow AI Gateway endpoint
   at `gemma4:e2b`.
 
-## Gotchas to handle first
+## Gotcha to watch for
 
-These bit me on a clean checkout — handle them before bringing anything up.
+### (If present) the `userlib` bind-mount in `fluxnova-up.sh`
 
-> Minor, being fixed upstream: if a `./*.sh` fails with **exit code 126** (`is not an executable file`),
-> the scripts just lack the executable bit — `chmod +x local-dev/*.sh local-dev/postgres-init/*.sh`.
-
-### 1. (If present) the `userlib` bind-mount in `fluxnova-up.sh`
-
-The current `fluxnova-up.sh` in this repo has **no** `userlib` mount, so there's nothing to do here.
+The current `local-dev/services/fluxnova-up.sh` in this repo has **no** `userlib` mount, so there's
+nothing to do here.
 But if you're on a version that bind-mounts a host `userlib` into
 `/fluxnova/configuration/userlib`, **comment that `-v ...userlib:ro` line out** when running from the
 published GHCR image: the OTel/agentic plugin JARs are already baked into the image, and mounting an
@@ -81,15 +77,18 @@ Notes:
 
 ## Bring the stack up (order matters)
 
-Postgres backs **both** MLflow and Fluxnova, so it must start first.
+Postgres backs **both** MLflow and Fluxnova, so it must start first. `pods-up.sh` handles the ordering
+(postgres → mlflow → fluxnova) for you and is idempotent — already-running pods are left alone.
 
 ```bash
 cd local-dev
-
-./postgres-up.sh            # PostgreSQL — start FIRST (mlflow + fluxnova databases)
-MLFLOW_OPEN_BROWSER=false ./mlflow-up.sh   # MLflow tracking server + UI (drop the env var to auto-open the browser)
-./fluxnova-up.sh            # Fluxnova engine + OTel Collector
+MLFLOW_OPEN_BROWSER=false ./pods-up.sh postgres mlflow fluxnova
 ```
+
+- Bare `./pods-up.sh` (no args) also starts the optional `eval-service` worker, which needs the
+  MLflow AI Gateway judge endpoint configured — omit it here for the core stack.
+- Drop `MLFLOW_OPEN_BROWSER=false` to auto-open the MLflow UI in your browser.
+- To start one service on its own, call it directly, e.g. `./services/mlflow-up.sh`.
 
 Endpoints once up:
 
@@ -97,20 +96,9 @@ Endpoints once up:
 - MLflow UI: `http://localhost:5000`
 - Fluxnova REST: `http://localhost:8080/engine-rest`
 
-### If a pod name is "in use"
-
-Stale pods from a previous session block a fresh `*-up.sh` with e.g.
-`Error: adding pod to state: name "mlflow-local" is in use: pod already exists`. Bring the matching
-pod down first, then up again:
-
-```bash
-./mlflow-down.sh && MLFLOW_OPEN_BROWSER=false ./mlflow-up.sh
-./fluxnova-down.sh && ./fluxnova-up.sh
-```
-
 ### Note: Postgres readiness can log a false-positive warning
 
-On a first run `postgres-up.sh` may print *"PostgreSQL doesn't seem to be responding yet"* while the
+On a first run `pods-up.sh` may print *"PostgreSQL doesn't seem to be responding yet"* while the
 container is still doing first-time init — it usually is fine a second or two later. Confirm with the
 logs (see below) rather than trusting the warning.
 
@@ -137,14 +125,13 @@ podman exec postgres psql -U postgres -d fluxnova -tc \
 
 ## Tear down
 
-Reverse order; Postgres data persists in the `postgres-local-data` volume across `postgres-down.sh`.
+`pods-down.sh` stops/removes all pods in reverse order. Postgres data persists in the
+`postgres-local-data` volume unless you pass `--delete-data`.
 
 ```bash
 cd local-dev
-./fluxnova-down.sh
-./mlflow-down.sh
-./postgres-down.sh
+./pods-down.sh                  # stop/remove all pods (reverse order)
 
-# to also wipe Postgres data (forces init.sh to re-run next time):
-# podman volume rm postgres-local-data
+# also wipe Postgres volume + MLflow artifacts (forces init.sh to re-run next time):
+# ./pods-down.sh --delete-data
 ```
