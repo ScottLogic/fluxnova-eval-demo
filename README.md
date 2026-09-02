@@ -278,6 +278,8 @@ See [`local-dev/README.md`](local-dev/README.md) for the full details on running
 OTel Collector, MLflow, and the `eval-service-worker` as Podman pods for local development — including troubleshooting
 notes and the MLflow AI Gateway judge-endpoint setup.
 
+For **alternative run walkthroughs** (e.g. WSL with rootless Podman), see [`RUNNING-WSL.md`](RUNNING-WSL.md).
+
 ## Config file
 
 All harness and evaluation behaviour is driven by a single YAML file.
