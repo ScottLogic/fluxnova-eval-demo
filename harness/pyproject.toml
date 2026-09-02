@@ -22,7 +22,6 @@ dev = [
     "deepeval>=2.0",
     "ollama>=0.3",
     "mlflow[genai]>=3.15",
-    "litellm>=1.55",
 ]
 
 [project.scripts]
