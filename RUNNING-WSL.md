@@ -90,6 +90,26 @@ MLFLOW_OPEN_BROWSER=false ./pods-up.sh postgres mlflow fluxnova
 - Drop `MLFLOW_OPEN_BROWSER=false` to auto-open the MLflow UI in your browser.
 - To start one service on its own, call it directly, e.g. `./services/mlflow-up.sh`.
 
+### Alternative: one `podman compose` file
+
+If you'd rather not use the `pods-up.sh`/`pods-down.sh` scripts, `local-dev/compose.yaml` brings up the **same**
+stack from a single file, reusing the identical `.env`, `postgres/init.sh`, `default.yml`, and
+`otel-collector-config.yaml` (so nothing here has to change). It's an alternative, not a replacement — use whichever
+you prefer, but not both at once. On rootless Podman this needs a compose provider (`podman compose`, backed by
+`podman-compose`).
+
+```bash
+cd local-dev
+podman compose up -d                    # core stack: postgres, mlflow, otel-collector, fluxnova
+podman compose --profile eval up -d     # also build + start the eval-service-worker (opt-in)
+podman compose down                     # stop/remove (keeps the postgres volume; add -v to wipe it)
+```
+
+Start order is handled by health-gated `depends_on`, so you don't get the false-positive readiness warning noted
+above. See [local-dev/README.md](local-dev/README.md#alternative-a-single-podman-compose-file) for the full details
+(service-name/hostname mapping, the shared fluxnova↔otel network namespace, and the `down -v` vs `--delete-data`
+difference for MLflow artifacts).
+
 Endpoints once up:
 
 - Postgres: `localhost:5432` (sibling pods reach it as `postgres-local:5432`)

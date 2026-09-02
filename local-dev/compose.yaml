@@ -1,0 +1,170 @@
+# Single-file podman-compose equivalent of the pods-up.sh / services/*-up.sh stack.
+#
+# This is an ADDITIVE alternative to the pod scripts (pods-up.sh etc.) — both use the
+# same .env, postgres/init.sh, default.yml and otel-collector-config.yaml, so nothing
+# here forces you to abandon the scripts.
+#
+# Service names are deliberately chosen to match the *pod* names the scripts use
+# (postgres-local, mlflow-local, fluxnova-local) so the hostnames already baked into
+# default.yml, otel-collector-config.yaml and the eval-service env vars keep resolving
+# with zero edits.
+#
+# Usage (from this local-dev/ directory):
+#   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel
+#   podman compose --profile eval up -d      # also start the eval-service-worker
+#   podman compose logs -f fluxnova
+#   podman compose down                      # stop/remove (keeps the postgres volume)
+#   podman compose down -v                   # also delete the postgres data volume
+#
+# Note: unlike ./pods-down.sh --delete-data, `down -v` does NOT touch the mlflow
+# artifact files (they're a host bind-mount at ../harness/.mlflow/artifacts) — delete
+# those by hand if you need a truly clean slate.
+
+services:
+  # PostgreSQL — shared backend for both MLflow (tracking store) and Fluxnova (engine
+  # datasource). postgres/init.sh (bind-mounted below) creates the two app DBs/roles on
+  # first startup against the empty named volume. Superuser vars feed the official
+  # image's POSTGRES_USER/POSTGRES_PASSWORD; the MLFLOW_/FLUXNOVA_ vars are consumed by
+  # init.sh. Mirrors services/postgres-up.sh.
+  postgres-local:
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres:16}
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres}
+      MLFLOW_POSTGRES_USER: ${MLFLOW_POSTGRES_USER:-mlflow}
+      MLFLOW_POSTGRES_PASSWORD: ${MLFLOW_POSTGRES_PASSWORD:-mlflow}
+      MLFLOW_POSTGRES_DB: ${MLFLOW_POSTGRES_DB:-mlflow}
+      FLUXNOVA_POSTGRES_USER: ${FLUXNOVA_POSTGRES_USER:-fluxnova}
+      FLUXNOVA_POSTGRES_PASSWORD: ${FLUXNOVA_POSTGRES_PASSWORD:-fluxnova}
+      FLUXNOVA_POSTGRES_DB: ${FLUXNOVA_POSTGRES_DB:-fluxnova}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-local-data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # MLflow tracking server, backed by the postgres-local "mlflow" database. Same custom
+  # entrypoint as services/mlflow-up.sh: install the psycopg2 driver, then run the
+  # server. Artifacts land on the host bind-mount (Postgres only stores metadata).
+  mlflow-local:
+    image: ${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:latest}
+    container_name: mlflow
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+    extra_hosts:
+      # Lets an AI-Gateway endpoint reach a host-run Ollama at host.containers.internal.
+      - "host.containers.internal:host-gateway"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        pip install --quiet psycopg2-binary &&
+        mlflow server
+        --backend-store-uri postgresql://${MLFLOW_POSTGRES_USER:-mlflow}:${MLFLOW_POSTGRES_PASSWORD:-mlflow}@postgres-local:5432/${MLFLOW_POSTGRES_DB:-mlflow}
+        --default-artifact-root /mlflow-artifacts
+        --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*'
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    volumes:
+      - ../harness/.mlflow/artifacts:/mlflow-artifacts
+    healthcheck:
+      # The mlflow image is python-based (no curl guaranteed), so probe with urllib.
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/version')\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # OTel Collector — receives OTLP traces and forwards them to MLflow's /v1/traces.
+  # In the pod setup this container shares a network namespace with fluxnova (they talk
+  # over localhost:4317). We reproduce that below via fluxnova-local's
+  # `network_mode: service:otel-collector`, so THIS service owns the shared namespace:
+  # fluxnova's 8080 and the collector's 4317/4318 are all published here, and the
+  # `fluxnova-local` network alias makes fluxnova reachable by that name from siblings
+  # (e.g. the eval-service-worker) even though it has no network identity of its own.
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:latest}
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      MLFLOW_EXPERIMENT_ID: ${MLFLOW_EXPERIMENT_ID:-}
+      MLFLOW_OTLP_ENDPOINT: ${MLFLOW_OTLP_ENDPOINT:-http://mlflow-local:5000}
+    extra_hosts:
+      # Shared namespace: fluxnova (Java) reaches host-run Ollama through this entry.
+      - "host.containers.internal:host-gateway"
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${FLUXNOVA_PORT:-8080}:8080"   # fluxnova (shares this namespace)
+      - "4317:4317"                     # OTLP gRPC
+      - "4318:4318"                     # OTLP HTTP
+    networks:
+      default:
+        aliases:
+          - fluxnova-local
+
+  # Fluxnova engine. Shares otel-collector's network namespace (the pod analog), so
+  # default.yml's `exporterEndpoint: http://localhost:4317` keeps working unchanged.
+  # Because the namespace is shared, this service publishes no ports and joins no
+  # network directly — it's addressed as `fluxnova-local` via the alias on
+  # otel-collector above. Datasource credentials are passed through for default.yml's
+  # ${VAR} placeholders.
+  fluxnova-local:
+    image: ${FLUXNOVA_IMAGE:-fluxnova:local}
+    container_name: fluxnova
+    network_mode: "service:otel-collector"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      FLUXNOVA_POSTGRES_USER: ${FLUXNOVA_POSTGRES_USER:-fluxnova}
+      FLUXNOVA_POSTGRES_PASSWORD: ${FLUXNOVA_POSTGRES_PASSWORD:-fluxnova}
+      FLUXNOVA_POSTGRES_DB: ${FLUXNOVA_POSTGRES_DB:-fluxnova}
+    volumes:
+      - ./default.yml:/fluxnova/configuration/default.yml:ro
+
+  # Optional eval-service-worker — subscribes to Fluxnova's external-task topic and
+  # scores runs against MLflow. Built from source (context = repo root). Only started
+  # when the `eval` profile is active: `podman compose --profile eval up -d`.
+  # Mirrors services/eval-service-up.sh.
+  eval-service-worker:
+    profiles: ["eval"]
+    build:
+      context: ..
+      dockerfile: eval-service-worker/Dockerfile
+    image: ${EVAL_SERVICE_IMAGE:-eval-service-worker:local}
+    container_name: eval-service-worker
+    depends_on:
+      mlflow-local:
+        condition: service_healthy
+      fluxnova-local:
+        # fluxnova's image ships a HEALTHCHECK (curl .../engine-rest/engine), so wait
+        # for it to actually serve REST before the worker starts polling — otherwise
+        # the first fetchAndLock races Tomcat startup and logs a Connection refused.
+        condition: service_healthy
+    environment:
+      EVAL_SERVICE_FLUXNOVA_URL: ${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
+      EVAL_SERVICE_TRACKING_URI: ${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+
+volumes:
+  # Named volume so PGDATA survives `down` (removed only with `down -v`). Same name the
+  # scripts use, so both share one database.
+  postgres-local-data:
+    name: ${POSTGRES_VOLUME:-postgres-local-data}
+
+networks:
+  default:
+    name: ${DEV_NETWORK:-fluxnova-dev}
