@@ -98,8 +98,8 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
     - Python 3.11+
     - [Ollama](https://ollama.com) with `llama3.2` pulled (`ollama pull llama3.2`) — the judge model used by both
       evaluation suites
-    - A locally built/loaded **Fluxnova** container image (not published anywhere) — build it from the eval fork, or
-      `podman load -i <fluxnova image tarball>`
+    - The **Fluxnova** engine image — pull the public one from GHCR:
+      `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0` (no login needed)
 
 2. **Create the shared virtual environment** — all three packages install editable into one venv under
    `harness/.venv`, so changes to any package take effect immediately without reinstalling:
@@ -118,7 +118,7 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
 3. **Start the backing services as Podman pods**, from Git Bash at the repo root:
    ```bash
    cd local-dev
-   # adjust .env: set FLUXNOVA_IMAGE to your locally built/loaded image
+   # .env's FLUXNOVA_IMAGE already points at the public GHCR image pulled above
 
    ./pods-up.sh   # start postgres, mlflow, fluxnova, eval-service (in dependency order)
    ```
