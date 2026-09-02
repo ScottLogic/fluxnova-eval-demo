@@ -269,6 +269,7 @@ class TestMakeHandler:
         handler = _make_handler("my-topic", {"score": 99, "passed": True})
         mock_task = MagicMock()
         mock_task.get_task_id.return_value = "task-1"
+        mock_task.get_variable.return_value = None
         handler(mock_task)
         mock_task.complete.assert_called_once_with(
             global_variables={
@@ -277,9 +278,38 @@ class TestMakeHandler:
             }
         )
 
+    def test_per_instance_mock_override(self):
+        handler = _make_handler("my-topic", {"score": 99, "passed": True})
+        mock_task = MagicMock()
+        mock_task.get_task_id.return_value = "task-1"
+        overrides = {"_mock_output_score": 42, "_mock_output_passed": False}
+        mock_task.get_variable.side_effect = lambda name: overrides.get(name)
+        handler(mock_task)
+        mock_task.complete.assert_called_once_with(
+            global_variables={
+                "score": {"value": 42, "type": "Integer"},
+                "passed": {"value": False, "type": "Boolean"},
+            }
+        )
+
+    def test_partial_override_falls_back_to_default(self):
+        handler = _make_handler("my-topic", {"score": 99, "passed": True})
+        mock_task = MagicMock()
+        mock_task.get_task_id.return_value = "task-1"
+        overrides = {"_mock_output_score": 42}
+        mock_task.get_variable.side_effect = lambda name: overrides.get(name)
+        handler(mock_task)
+        mock_task.complete.assert_called_once_with(
+            global_variables={
+                "score": {"value": 42, "type": "Integer"},
+                "passed": {"value": True, "type": "Boolean"},
+            }
+        )
+
     def test_empty_outputs(self):
         handler = _make_handler("no-output-topic", {})
         mock_task = MagicMock()
         mock_task.get_task_id.return_value = "task-2"
+        mock_task.get_variable.return_value = None
         handler(mock_task)
         mock_task.complete.assert_called_once_with(global_variables={})
