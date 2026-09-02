@@ -1,5 +1,6 @@
 mlflow>=2.18
 requests>=2.32
+psycopg2-binary>=2.9
 
 [dev]
 pytest>=8.0

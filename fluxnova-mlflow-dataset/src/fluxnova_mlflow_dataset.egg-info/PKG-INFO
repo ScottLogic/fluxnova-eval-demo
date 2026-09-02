@@ -5,6 +5,7 @@ Summary: Shared MLflow evaluation-dataset record shaping/read/write/collect logi
 Requires-Python: >=3.11
 Requires-Dist: mlflow>=2.18
 Requires-Dist: requests>=2.32
+Requires-Dist: psycopg2-binary>=2.9
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: ruff>=0.5; extra == "dev"

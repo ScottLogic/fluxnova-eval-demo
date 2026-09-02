@@ -1,9 +1,11 @@
-# Local development: Fluxnova + OTel Collector + MLflow (Podman)
+# Local development: PostgreSQL + Fluxnova + OTel Collector + MLflow (Podman)
 
-This directory contains everything needed to run the **Fluxnova engine**, the **OTel Collector**, and (optionally)
-the **MLflow tracking server** as containers for local development, using [Podman](https://podman.io) — grouped into
-a single Podman pod per service (`fluxnova-up.sh` / `fluxnova-down.sh` for Fluxnova + the OTel Collector, and
-`mlflow-up.sh` / `mlflow-down.sh` for MLflow), with no compose provider required.
+This directory contains everything needed to run **PostgreSQL**, the **Fluxnova engine**, the **OTel Collector**, and
+(optionally) the **MLflow tracking server** as containers for local development, using [Podman](https://podman.io) —
+grouped into a single Podman pod per service (`postgres-up.sh` / `postgres-down.sh` for PostgreSQL, `fluxnova-up.sh` /
+`fluxnova-down.sh` for Fluxnova + the OTel Collector, and `mlflow-up.sh` / `mlflow-down.sh` for MLflow), with no
+compose provider required. PostgreSQL is the shared backing database for both MLflow's tracking-server backend store
+and Fluxnova's process-engine datasource, replacing their previous SQLite-file and H2-file defaults respectively.
 
 ## Prerequisites
 
@@ -12,13 +14,64 @@ a single Podman pod per service (`fluxnova-up.sh` / `fluxnova-down.sh` for Fluxn
   is recommended, though not required, for a GUI to view/manage pods, containers, and logs.
 - **The Fluxnova image**, pulled from GitHub Container Registry — see "Fluxnova image" below. `podman run` (used by
   `fluxnova-up.sh`) pulls it automatically the first time if it isn't already present locally.
+- **PostgreSQL running** as the `postgres-local` pod (see "PostgreSQL database" below) — start this **before**
+  `mlflow-up.sh` and `fluxnova-up.sh`, both of which now depend on it.
 - **The MLflow tracking server running** (either on the host — see the main README's "Running the MLflow tracking
   server" — or as the `mlflow-local` pod below) — the OTel Collector sends traces to it via `host.containers.internal`.
+
+## PostgreSQL database
+
+`postgres-up.sh` / `postgres-down.sh` run PostgreSQL as its own single-container `postgres-local` pod — the shared
+backing database for both MLflow's backend store and Fluxnova's process-engine datasource. Run from **Git Bash**,
+before starting either `mlflow-up.sh` or `fluxnova-up.sh`:
+
+```bash
+cd local-dev
+# adjust .env if needed — POSTGRES_IMAGE/POSTGRES_PORT default to postgres:16 / 5432,
+# and MLFLOW_POSTGRES_*/FLUXNOVA_POSTGRES_*/POSTGRES_SUPERUSER* set the DB credentials
+# (see "Credentials" below)
+
+./postgres-up.sh      # start it
+./postgres-down.sh    # stop and remove it (the named PGDATA volume is untouched)
+```
+
+On first startup (against an empty PGDATA volume), `postgres-init/init.sh` is mounted into
+`/docker-entrypoint-initdb.d/` and automatically creates two databases/roles, using credentials passed through
+as env vars (never hardcoded in the script — see "Credentials" below):
+
+| Database   | Role      | Used by                                               |
+|------------|-----------|--------------------------------------------------------|
+| `mlflow`   | `mlflow`  | MLflow tracking server backend store (`mlflow-up.sh`)   |
+| `fluxnova` | `fluxnova`| Fluxnova process-engine datasource (`default.yml`)      |
+
+### Credentials
+
+All database passwords (the Postgres superuser plus the `mlflow`/`fluxnova` roles) live in `local-dev/.env` as plain
+env vars — `POSTGRES_SUPERUSER`/`POSTGRES_SUPERUSER_PASSWORD`, `MLFLOW_POSTGRES_USER`/`MLFLOW_POSTGRES_PASSWORD`/
+`MLFLOW_POSTGRES_DB`, and `FLUXNOVA_POSTGRES_USER`/`FLUXNOVA_POSTGRES_PASSWORD`/`FLUXNOVA_POSTGRES_DB`. Each script
+(`postgres-up.sh`, `mlflow-up.sh`, `fluxnova-up.sh`) sources `.env` and passes the relevant vars through to its
+container with `-e` — none of them are hardcoded in `postgres-init/init.sh`, `mlflow-up.sh`'s
+`--backend-store-uri`, or `default.yml`'s `spring.datasource` (which uses Spring's `${VAR:default}` placeholder
+syntax, resolved from the container's own env vars at startup). Change the values in `.env` before the first
+`./postgres-up.sh` run — they're baked into the database on creation; changing them afterwards requires either
+removing the `postgres-local-data` volume to re-initialise, or running `ALTER USER ... WITH PASSWORD ...` against
+the running database directly.
+
+PGDATA lives in a Podman **named volume** (`postgres-local-data` by default, override with `POSTGRES_VOLUME` in
+`.env`) rather than a host bind-mount — bind-mounting PGDATA on Windows/macOS fails during `initdb` ("Operation not
+permitted" on `chown`/`chmod`) because the mount is proxied through the Podman VM's 9p/virtiofs filesystem, which
+doesn't support the ownership changes Postgres needs; a named volume is real storage inside the VM itself, so this
+works normally. It survives `postgres-down.sh` / pod recreation — run `podman volume rm postgres-local-data` to force
+`init.sh` to re-run from scratch. Other pods on the shared `fluxnova-dev` network reach it at `postgres-local:5432`
+(by pod name, same as `mlflow-local:5000` for
+MLflow); from the host it's `localhost:5432` (or your configured `POSTGRES_PORT`).
 
 ## Starting Fluxnova + the OTel Collector
 
 `fluxnova-up.sh` starts both containers grouped in a single **Podman pod**. Run it from **Git Bash** on Windows (see
-the main README's "A note on shells (Windows)").
+the main README's "A note on shells (Windows)"). Requires `postgres-up.sh` to already be running, since
+`default.yml`'s `spring.datasource` now points at PostgreSQL (`postgres-local:5432/fluxnova`) instead of the old H2
+file default.
 
 ```bash
 cd local-dev
@@ -70,21 +123,24 @@ browser automatically — same behaviour as `mlflow-up.sh` below, including the 
 `mlflow-up.sh` / `mlflow-down.sh` run the MLflow tracking server (see the main README's "Running the MLflow
 tracking server") as a container instead of a host process, as its own single-container `mlflow-local` pod — kept
 separate from `fluxnova-local` since it's a longer-lived dev service you likely want to start/stop independently of
-any one Fluxnova run. Run from **Git Bash**:
+any one Fluxnova run. Requires `postgres-up.sh` to already be running. Run from **Git Bash**:
 
 ```bash
 cd local-dev
-# adjust .env if you haven't already; set MLFLOW_IMAGE/MLFLOW_PORT/MLFLOW_BACKEND_STORE_DIR if needed
+# adjust .env if you haven't already; set MLFLOW_IMAGE/MLFLOW_PORT/MLFLOW_ARTIFACT_DIR if needed
 
 ./mlflow-up.sh      # start it
-./mlflow-down.sh    # stop and remove it (the SQLite backend store on disk is untouched)
+./mlflow-down.sh    # stop and remove it (the PostgreSQL backend store and local artifacts are untouched)
 ```
 
-This uses the official `ghcr.io/mlflow/mlflow` image, bind-mounting `harness/.mlflow` (the same path already used by
-`mlflow-eval` and the host-run `mlflow server`/`mlflow ui` commands) so they all read/write the same `mlflow.db` — you
-can freely switch between running MLflow as a host process and as this container. The OTel Collector's `otlphttp`
-exporter (`http://host.containers.internal:5000`) reaches it exactly as it would a host-run server, since the pod's
-port is published to the host either way.
+This uses the official `ghcr.io/mlflow/mlflow` image, backed by PostgreSQL (`postgres-local` pod's `mlflow`
+database — see "PostgreSQL database" above) for its metadata backend store, so `mlflow-eval` (run on the host) and
+this container see identical data — you can freely switch between running MLflow as a host process and as this
+container, as long as both point at the same PostgreSQL database. Artifacts (e.g. logged models/files) still live on
+a bind-mounted host directory (`harness/.mlflow/artifacts` by default, override with `MLFLOW_ARTIFACT_DIR`), since
+Postgres only stores metadata, not blobs. The OTel Collector's `otlphttp` exporter
+(`http://host.containers.internal:5000`) reaches it exactly as it would a host-run server, since the pod's port is
+published to the host either way.
 
 Once the container is up, `mlflow-up.sh` waits for it to respond, then opens the UI in your default browser
 automatically (see "Troubleshooting" below for what it does if `localhost` isn't reachable). Set
@@ -174,7 +230,7 @@ mlflow-judges --experiment fluxnova-loanAssessmentProcess status
 ```
 
 `--tracking-uri` defaults to `http://localhost:5000` (the running `mlflow-local` server) — this **must** be an
-HTTP(S) address, not a direct `sqlite:///...` path, because gateway-backed judges route through the server process
+HTTP(S) address, not a direct `postgresql://...` path, because gateway-backed judges route through the server process
 itself. Add `--filter-string` to `start` to restrict which traces get scored (e.g. to exclude EDD regression runs).
 
 ## Targeting a different MLflow experiment
@@ -197,13 +253,13 @@ If you need to rename an existing experiment/dataset in place (e.g. after changi
 ```python
 import mlflow
 
-mlflow.set_tracking_uri("sqlite:///harness/.mlflow/mlflow.db")
+mlflow.set_tracking_uri("postgresql://mlflow:mlflow@localhost:5432/mlflow")
 client = mlflow.MlflowClient()
 client.rename_experiment("<experiment_id>", "<new-name>")
 ```
 
 `mlflow.genai.datasets.EvaluationDataset` has no public rename API — if needed, update the `name` column directly in
-the `evaluation_datasets` table of the SQLite tracking store instead (safe for local dev data; the `dataset_id`,
+the `evaluation_datasets` table of the PostgreSQL tracking store instead (safe for local dev data; the `dataset_id`,
 schema, and records are untouched, only the lookup name changes).
 
 ## eval-service-worker: scoring completed subprocess runs
@@ -249,10 +305,12 @@ without depending on `harness`'s workflow YAML.
 
 | File | Purpose |
 |------|---------|
+| `postgres-up.sh` / `postgres-down.sh` | Start/stop the `postgres-local` pod (shared PostgreSQL database) |
+| `postgres-init/init.sh` | Creates the `mlflow`/`fluxnova` databases and roles on first startup |
 | `fluxnova-up.sh` / `fluxnova-down.sh` | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector) |
 | `mlflow-up.sh` / `mlflow-down.sh` | Start/stop the `mlflow-local` pod |
 | `eval-service-up.sh` / `eval-service-down.sh` | Build/start/stop the `eval-service-local` pod (see above) |
-| `default.yml` | Fluxnova config mounted by `fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace) |
+| `default.yml` | Fluxnova config mounted by `fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace; datasource → PostgreSQL) |
 | `otel-collector-config.yaml` | OTel Collector pipeline: `otlp` receiver → `otlp_http` exporter to MLflow |
 | `.env` | Environment values (image names/ports/paths) — adjust as needed |
 

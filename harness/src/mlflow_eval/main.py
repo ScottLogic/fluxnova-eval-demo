@@ -26,9 +26,10 @@ this:
     mlflow-eval harness/config/loan-assesment.yml --collect --all
     mlflow-eval harness/config/loan-assesment.yml --collect            # collect only, don't evaluate
 
-Results are written to a local MLflow tracking store (SQLite) at
-``harness/.mlflow/mlflow.db`` and can be browsed with:
-    mlflow ui --backend-store-uri sqlite:///harness/.mlflow/mlflow.db
+Results are written to a PostgreSQL-backed MLflow tracking store (see
+``local-dev/postgres-up.sh`` — replaces the previous SQLite-file default) and can be
+browsed with:
+    mlflow ui --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow
 
 A summary of the aggregate scorer metrics (MLflow's own ``EvaluationResult``
 summary, not a bespoke report) is also printed to stdout.

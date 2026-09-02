@@ -1,6 +1,7 @@
 # Fluxnova Eval Demo
 
-A set of tooling, test harness and evaluation framework for Fluxnova workflows that include AI-driven agentic subprocesses.
+A set of tooling, test harness and evaluation framework for Fluxnova workflows that include AI-driven agentic
+subprocesses.
 
 Goals of this project are:
 
@@ -8,8 +9,8 @@ Goals of this project are:
   build out an agentic workflow using EDD.
 - Add an OTel collector and gen_ai* metrics and tracing with a suitable dashboard. This will allow a demo of real time
   production monitoring.
-- Add an Eval task to production level process runs which will facilitate checks on responses and break-glass to a human in
-  Production environments.
+- Add an Eval task to production level process runs which will facilitate checks on responses and break-glass to a human
+  in Production environments.
 
 ## Overview
 
@@ -25,17 +26,17 @@ This project is split into three independent Python packages:
       static BPMN definition and the run's final process variables (read from Fluxnova's core REST API), and upserts it
       into a persistent MLflow evaluation dataset (skip-if-exists/idempotent).
     - **record shaping/read/write** — builds MLflow-dataset records from agent-history data and reads/writes the
-      persistent SQLite-backed MLflow evaluation dataset.
+      persistent PostgreSQL-backed MLflow evaluation dataset.
 3. **`harness`** (`harness/`) — the two evaluation suites:
     - **MLflow evaluation suite** (`mlflow-eval`) — the primary evaluation suite, evaluating agent-history data with
       `mlflow.genai.evaluate` scorers, with results browsable in the MLflow UI. It can evaluate a single ad-hoc report
       file, a single previously recorded run (by process instance ID, read from the MLflow dataset), or every recorded
       run at once — optionally collecting newly-completed runs first (`--collect`).
-    - **DeepEval evaluation suite** (`deep-eval`) — *DEPRECATED - DO NOT USE*. Loads an agent-history JSON report and evaluates the
-      LLM agent's behaviour using configurable metrics: tool correctness, argument correctness, decision quality,
-      evidence citation, and deterministic safety checks. Both evaluation suites can be run independently; neither
-      depends on the other, and neither depends on the runner being active at evaluation time (only on the report file /
-      trace data / dataset records already produced).
+    - **DeepEval evaluation suite** (`deep-eval`) — *DEPRECATED - DO NOT USE*. Loads an agent-history JSON report and
+      evaluates the LLM agent's behaviour using configurable metrics: tool correctness, argument correctness, decision
+      quality, evidence citation, and deterministic safety checks. Both evaluation suites can be run independently;
+      neither depends on the other, and neither depends on the runner being active at evaluation time (only on the
+      report file / trace data / dataset records already produced).
 
 ## Architecture
 
@@ -119,10 +120,11 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    cd local-dev
    # adjust .env: set FLUXNOVA_IMAGE to your locally built/loaded image
 
-   ./mlflow-up.sh     # MLflow tracking server + UI — start this first
-   ./fluxnova-up.sh   # Fluxnova engine + OTel Collector (posts traces to MLflow)
+   ./postgres-up.sh  # PostgreSQL — backing database for MLflow + Fluxnova, start this first
+   ./mlflow-up.sh     # MLflow tracking server + UI (backend store: PostgreSQL)
+   ./fluxnova-up.sh   # Fluxnova engine + OTel Collector (posts traces to MLflow; datasource: PostgreSQL)
    ```
-   Both scripts open their web UI in your default browser once ready. See
+   All three scripts open their web UI (postgres-up.sh doesn't have one) in your default browser once ready. See
    [`local-dev/README.md`](local-dev/README.md) for the full pod details, the optional `eval-service-worker` pod, and
    Windows/WSL2 troubleshooting.
 
@@ -153,6 +155,7 @@ Waiting for process to complete …
 Process 3816567e-9f94-11f1-9ead-94b609a26547 completed.
 Run 'mlflow-eval <config> --collect' to record the completed subprocess run into the MLflow evaluation dataset.
 ```
+
 Other flags:
 
 ```bash
@@ -192,15 +195,16 @@ mlflow-eval config/loan-assesment.yml --collect --all
 mlflow-eval config/loan-assesment.yml --collect
 ```
 
-`mlflow-eval` only evaluates runs already recorded in the persistent MLflow dataset. Use `--collect` first (or on its own) to populate the dataset from MLflow's trace store
-before evaluating.
+`mlflow-eval` only evaluates runs already recorded in the persistent MLflow dataset. Use `--collect` first (or on its
+own) to populate the dataset from MLflow's trace store before evaluating.
 
-Each of these prints an aggregate metrics summary to the terminal (MLflow's own `EvaluationResult.metrics`) and writes full per-scorer results (scores, rationales, inputs/outputs) to a local SQLite tracking
-store at `harness/.mlflow/mlflow.db`.
+Each of these prints an aggregate metrics summary to the terminal (MLflow's own `EvaluationResult.metrics`) and writes
+full per-scorer results (scores, rationales, inputs/outputs) to a PostgreSQL-backed MLflow tracking store
+(`postgres-local` pod's `mlflow` database — see `local-dev/postgres-up.sh`).
 
 To view the results in the browser, use the same MLflow tracking server described in "Running the MLflow tracking
 server" below (or, if you only need read-only browsing and aren't using `--collect`/OTel ingestion, the lighter-weight
-`mlflow ui --backend-store-uri sqlite:///harness/.mlflow/mlflow.db --port 5000` works too).
+`mlflow ui --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --port 5000` works too).
 
 Then open [http://localhost:5000](http://localhost:5000) and open the `fluxnova-loanAssessmentProcess` experiment. Each
 `mlflow-eval` run appears as a row; click into one to see per-scorer scores and rationales. Running
@@ -233,19 +237,19 @@ written.
 
 ## Alternative: running the MLflow tracking server on the host
 
-First-time setup above uses `local-dev/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd
-rather run it as a host process instead (e.g. for IDE debugging), `mlflow-eval` can *read* the SQLite store directly
-(`sqlite:///harness/.mlflow/mlflow.db`), but for the OTel Collector to *write* traces into it, an actual MLflow
-tracking **server** (an HTTP process, not just the library) must be running and listening on the URL the Collector's
-`otlphttp` exporter targets (`http://localhost:5000/v1/traces` by default). `mlflow ui` alone does **not** accept
-incoming trace writes — it only reads.
+First-time setup above uses `local-dev/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd rather
+run it as a host process instead (e.g. for IDE debugging), `mlflow-eval` can *read* the PostgreSQL store directly
+(`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/postgres-up.sh` is running), but for the OTel
+Collector to *write* traces into it, an actual MLflow tracking **server** (an HTTP process, not just the library) must
+be running and listening on the URL the Collector's `otlphttp` exporter targets (`http://localhost:5000/v1/traces` by
+default). `mlflow ui` alone does **not** accept incoming trace writes — it only reads.
 
-Start it (from the repo root, with `harness/.venv` activated) and leave it running in its own terminal for as long as
-you want traces to be captured:
+Start it (from the repo root, with `harness/.venv` activated and `local-dev/postgres-up.sh` already running) and leave
+it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
 cd harness
-.venv/Scripts/mlflow server --backend-store-uri sqlite:///.mlflow/mlflow.db --host 127.0.0.1 --port 5000
+.venv/Scripts/mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 127.0.0.1 --port 5000
 ```
 
 This single server also serves the browsable UI at [http://localhost:5000](http://localhost:5000), so once it's running
@@ -259,7 +263,7 @@ you no longer need a separate `mlflow ui` process pointed at the same store.
    `harness/.venv/Scripts/mlflow.exe` (Windows) / `harness/.venv/bin/mlflow` (macOS/Linux).
 4. **Parameters:**
    ```
-   server --backend-store-uri sqlite:///.mlflow/mlflow.db --host 127.0.0.1 --port 5000
+   server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 127.0.0.1 --port 5000
    ```
 5. **Working directory:** `<repo root>/harness`
 6. **Python interpreter:** the `harness/.venv` interpreter (add it via **Add Interpreter → Existing** if not already
@@ -267,10 +271,10 @@ you no longer need a separate `mlflow ui` process pointed at the same store.
 7. Apply, then run this configuration before starting the OTel Collector or running `fluxnova-run` — leave it running in
    the background for the duration of your session.
 
-## Local development with Podman (Fluxnova + OTel Collector + MLflow)
+## Local development with Podman (Fluxnova + OTel Collector + MLflow + PostgreSQL)
 
-See [`local-dev/README.md`](local-dev/README.md) for the full details on running the Fluxnova engine, the OTel
-Collector, MLflow, and the `eval-service-worker` as Podman pods for local development — including troubleshooting
+See [`local-dev/README.md`](local-dev/README.md) for the full details on running PostgreSQL, the Fluxnova engine, the
+OTel Collector, MLflow, and the `eval-service-worker` as Podman pods for local development — including troubleshooting
 notes and the MLflow AI Gateway judge-endpoint setup.
 
 ## Config file
@@ -351,7 +355,6 @@ after reviewing the BPMN's agent prompt and tool wiring:
 | `requested_amount_passed_to_affordability`            | Code       | Affordability tool receives the correct `customerId` and `requestedAmount`      |
 | `affordability_called_after_income_confirmed`         | Code (new) | Affordability is assessed only after income has been confirmed                  |
 
-
 ## Evaluation tests (DeepEval)
 
 | Test                                            | Metric                                     | Description                                                            |
@@ -367,18 +370,18 @@ after reviewing the BPMN's agent prompt and tool wiring:
 | `test_step_efficiency`                          | Deterministic                              | Agent completes within ≤ 3 loop iterations                             |
 | `test_requested_amount_passed_to_affordability` | Deterministic                              | Affordability tool receives the correct `requestedAmount`              |
 
-
 ## Tech stack
 
-| Component            | Technology                                                                                                                       |
-|----------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| Workflow engine      | [Fluxnova](https://fluxnova.io) (Camunda-based)                                                                                  |
-| BPMN                 | Camunda BPMN 2.0                                                                                                                 |
-| Harness runtime      | Python 3.11, requests, PyYAML                                                                                                    |
-| Mock workers         | `camunda-external-task-client-python3`                                                                                           |
-| LLM agent            | Ollama / llama3.2 (runs inside Fluxnova)                                                                                         |
-| Evaluation framework | [DeepEval](https://deepeval.com) or [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/) (alternatives) |
-| Judge model          | Ollama / llama3.2                                                                                                                |
+| Component            | Technology                                                                                                                                   |
+|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| Workflow engine      | [Fluxnova](https://fluxnova.io) (Camunda-based)                                                                                              |
+| BPMN                 | Camunda BPMN 2.0                                                                                                                             |
+| Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/postgres-up.sh`) |
+| Harness runtime      | Python 3.11, requests, PyYAML                                                                                                                |
+| Mock workers         | `camunda-external-task-client-python3`                                                                                                       |
+| LLM agent            | Ollama / llama3.2 (runs inside Fluxnova)                                                                                                     |
+| Evaluation framework | [DeepEval](https://deepeval.com) or [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/) (alternatives)             |
+| Judge model          | Ollama / llama3.2                                                                                                                            |
 
 ## Running the evaluations (DeepEval, deprecated)
 

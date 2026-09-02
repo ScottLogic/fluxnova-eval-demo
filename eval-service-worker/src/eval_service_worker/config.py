@@ -47,7 +47,7 @@ DEFAULT_JUDGE_MODEL = "gateway:/fluxnova-judge"
 DEFAULT_LOCK_DURATION_MS = 180_000
 
 # MLflow tracking server address — must be an HTTP(S) URL (not a direct
-# sqlite:/// path), since gateway-routed judge models are resolved by the
+# postgresql:// path), since gateway-routed judge models are resolved by the
 # server process itself.
 DEFAULT_TRACKING_URI = "http://localhost:5000"
 

@@ -5,8 +5,9 @@
 #
 # This replaces the host-run `mlflow server ...` process described in the main README's
 # "Running the MLflow tracking server" section with a container, backed by the *same*
-# SQLite file (harness/.mlflow/mlflow.db) so `mlflow-eval` (run on the host) and this
-# container see identical data.
+# PostgreSQL database (postgres-local's "mlflow" database — see postgres-up.sh) so
+# `mlflow-eval` (run on the host) and this container see identical data. Requires
+# postgres-up.sh to already be running.
 #
 # Usage (from this directory):
 #   ./mlflow-up.sh
@@ -29,17 +30,33 @@ fi
 
 MLFLOW_IMAGE="${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:latest}"
 MLFLOW_PORT="${MLFLOW_PORT:-5000}"
-# Where the SQLite backend store lives on the host — defaults to the same path the
-# harness/README already use (harness/.mlflow/mlflow.db), so this container and any
-# host-run `mlflow-eval` / `mlflow ui` commands share one database.
-MLFLOW_BACKEND_STORE_DIR="${MLFLOW_BACKEND_STORE_DIR:-../harness/.mlflow}"
-mkdir -p "$MLFLOW_BACKEND_STORE_DIR"
-BACKEND_STORE_DIR_RESOLVED="$(cd "$MLFLOW_BACKEND_STORE_DIR" && pwd)"
+# Backend store is now PostgreSQL (postgres-local's mlflow database, created by
+# postgres-up.sh's postgres-init/init.sh) instead of the old SQLite file. Artifacts
+# (e.g. logged models/files) still live on a bind-mounted host directory since Postgres
+# only stores metadata, not blobs. Credentials come entirely from .env (never
+# hardcoded) — must match what postgres-up.sh created the mlflow role with.
+POSTGRES_HOST="${POSTGRES_POD_NAME:-postgres-local}"
+# NOTE: this is the container's *internal* port (always 5432, per postgres-up.sh's
+# `-p "${POSTGRES_PORT}:5432"`), not POSTGRES_PORT — that env var is only the
+# host-published port and has no bearing on pod-to-pod traffic, which always targets
+# 5432 inside the postgres-local pod. Reusing POSTGRES_PORT here would break this
+# pod's connection to Postgres whenever POSTGRES_PORT is overridden (e.g. to avoid a
+# host port collision) — see default.yml's fluxnova datasource URL for the same
+# hardcoded-5432 pattern.
+POSTGRES_CONTAINER_PORT=5432
+MLFLOW_POSTGRES_USER="${MLFLOW_POSTGRES_USER:-mlflow}"
+MLFLOW_POSTGRES_PASSWORD="${MLFLOW_POSTGRES_PASSWORD:-mlflow}"
+MLFLOW_POSTGRES_DB="${MLFLOW_POSTGRES_DB:-mlflow}"
+MLFLOW_BACKEND_STORE_URI="${MLFLOW_BACKEND_STORE_URI:-postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_CONTAINER_PORT}/${MLFLOW_POSTGRES_DB}}"
+MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-../harness/.mlflow/artifacts}"
+mkdir -p "$MLFLOW_ARTIFACT_DIR"
+ARTIFACT_DIR_RESOLVED="$(cd "$MLFLOW_ARTIFACT_DIR" && pwd)"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
 
-# Same shared network as fluxnova-up.sh's fluxnova-local pod, so the OTel Collector there can
-# reach this pod by container name (`mlflow`) — see fluxnova-up.sh for why host.containers.internal
-# doesn't work for pod-to-pod traffic on this machine.
+# Same shared network as fluxnova-up.sh's fluxnova-local pod and postgres-up.sh's
+# postgres-local pod, so this pod can reach Postgres by pod name and the OTel Collector
+# can reach this pod by pod name (`mlflow-local`) — see fluxnova-up.sh for why
+# host.containers.internal doesn't work for pod-to-pod traffic on this machine.
 podman network create --ignore "$DEV_NETWORK"
 
 echo "Creating pod '$POD_NAME' (mlflow:${MLFLOW_PORT}->5000)..."
@@ -52,10 +69,13 @@ podman pod create --name "$POD_NAME" \
 
 echo "Starting mlflow..."
 podman run -d --pod "$POD_NAME" --name mlflow \
-  -v "${BACKEND_STORE_DIR_RESOLVED}:/mlflow-data" \
+  -v "${ARTIFACT_DIR_RESOLVED}:/mlflow-artifacts" \
+  --entrypoint sh \
   "$MLFLOW_IMAGE" \
-  mlflow server --backend-store-uri sqlite:////mlflow-data/mlflow.db --host 0.0.0.0 --port 5000 \
-    --allowed-hosts "*" --cors-allowed-origins "*"
+  -c "pip install --quiet psycopg2-binary && mlflow server \
+    --backend-store-uri '${MLFLOW_BACKEND_STORE_URI}' \
+    --default-artifact-root /mlflow-artifacts \
+    --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*'"
 
 # Wait for MLflow to become reachable via localhost, then fall back to the Podman
 # machine's own IP if it isn't — see the "Troubleshooting" section in README.md for why
@@ -93,7 +113,8 @@ fi
 echo
 echo "MLflow UI:     ${MLFLOW_URL}"
 echo "OTLP traces:   ${MLFLOW_URL}/v1/traces (point the OTel Collector's otlphttp exporter here)"
-echo "Backend store: ${BACKEND_STORE_DIR_RESOLVED}/mlflow.db"
+echo "Backend store: postgresql://${MLFLOW_POSTGRES_USER}:***@${POSTGRES_HOST}:${POSTGRES_CONTAINER_PORT}/${MLFLOW_POSTGRES_DB}"
+echo "Artifacts:     ${ARTIFACT_DIR_RESOLVED}"
 echo "Logs:          podman logs -f mlflow"
 echo "Stop/remove:   ./mlflow-down.sh"
 
