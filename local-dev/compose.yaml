@@ -4,14 +4,19 @@
 # same .env, postgres/init.sh, default.yml and otel-collector-config.yaml, so nothing
 # here forces you to abandon the scripts.
 #
-# Service names are deliberately chosen to match the *pod* names the scripts use
-# (postgres-local, mlflow-local, fluxnova-local) so the hostnames already baked into
-# default.yml, otel-collector-config.yaml and the eval-service env vars keep resolving
-# with zero edits.
+# Every service is named `<container>-local` for consistency (postgres-local,
+# mlflow-local, otel-collector-local, fluxnova-local, eval-service-worker-local,
+# prometheus-local, grafana-local). This also keeps the load-bearing hostnames
+# (postgres-local, mlflow-local, fluxnova-local) matching what's already baked into
+# default.yml, otel-collector-config.yaml, prometheus.yml and the eval env vars, so
+# those configs need zero edits. The short `container_name` (postgres, fluxnova, ...) is
+# what plain `podman logs <name>` / `podman exec <name>` use.
 #
 # Usage (from this local-dev/ directory):
 #   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel
-#   podman compose --profile eval up -d      # also start the eval-service-worker
+#   podman compose --profile eval up -d      # also start the eval worker
+#   podman compose --profile grafana up -d   # also start Prometheus + Grafana
+#   podman compose --profile eval --profile grafana up -d   # everything
 #   podman compose logs -f fluxnova-local    # by service name (not the fluxnova container_name)
 #   podman compose down                      # stop/remove (keeps the postgres volume)
 #   podman compose down -v                   # also delete the postgres data volume
@@ -85,11 +90,11 @@ services:
   # OTel Collector — receives OTLP traces and forwards them to MLflow's /v1/traces.
   # In the pod setup this container shares a network namespace with fluxnova (they talk
   # over localhost:4317). We reproduce that below via fluxnova-local's
-  # `network_mode: service:otel-collector`, so THIS service owns the shared namespace:
-  # fluxnova's 8080 and the collector's 4317/4318 are all published here, and the
-  # `fluxnova-local` network alias makes fluxnova reachable by that name from siblings
-  # (e.g. the eval-service-worker) even though it has no network identity of its own.
-  otel-collector:
+  # `network_mode: service:otel-collector-local`, so THIS service owns the shared
+  # namespace: fluxnova's 8080 and the collector's 4317/4318 are all published here, and
+  # the `fluxnova-local` network alias makes fluxnova reachable by that name from siblings
+  # (e.g. the eval worker) even though it has no network identity of its own.
+  otel-collector-local:
     image: ${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:latest}
     container_name: otel-collector
     command: ["--config=/etc/otelcol/config.yaml"]
@@ -105,25 +110,26 @@ services:
       - "${FLUXNOVA_PORT:-8080}:8080"   # fluxnova (shares this namespace)
       - "4317:4317"                     # OTLP gRPC
       - "4318:4318"                     # OTLP HTTP
+      - "8889:8889"                     # Prometheus scrape endpoint (scraped as fluxnova-local:8889)
     networks:
       default:
         aliases:
           - fluxnova-local
 
-  # Fluxnova engine. Shares otel-collector's network namespace (the pod analog), so
+  # Fluxnova engine. Shares otel-collector-local's network namespace (the pod analog), so
   # default.yml's `exporterEndpoint: http://localhost:4317` keeps working unchanged.
   # Because the namespace is shared, this service publishes no ports and joins no
   # network directly — it's addressed as `fluxnova-local` via the alias on
-  # otel-collector above. Datasource credentials are passed through for default.yml's
+  # otel-collector-local above. Datasource credentials are passed through for default.yml's
   # ${VAR} placeholders.
   fluxnova-local:
     image: ${FLUXNOVA_IMAGE:-fluxnova:local}
     container_name: fluxnova
-    network_mode: "service:otel-collector"
+    network_mode: "service:otel-collector-local"
     depends_on:
       postgres-local:
         condition: service_healthy
-      otel-collector:
+      otel-collector-local:
         condition: service_started
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4317
@@ -134,11 +140,11 @@ services:
     volumes:
       - ./default.yml:/fluxnova/configuration/default.yml:ro
 
-  # Optional eval-service-worker — subscribes to Fluxnova's external-task topic and
-  # scores runs against MLflow. Built from source (context = repo root). Only started
-  # when the `eval` profile is active: `podman compose --profile eval up -d`.
+  # Optional eval worker — subscribes to Fluxnova's external-task topic and scores runs
+  # against MLflow. Built from source (context = repo root). Only started when the `eval`
+  # profile is active: `podman compose --profile eval up -d`.
   # Mirrors services/eval-service-up.sh.
-  eval-service-worker:
+  eval-service-worker-local:
     profiles: ["eval"]
     build:
       context: ..
@@ -163,6 +169,59 @@ services:
       EVAL_SERVICE_TRACKING_URI: ${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}
     extra_hosts:
       - "host.containers.internal:host-gateway"
+
+  # Optional observability — Prometheus + Grafana (the observability-local pod analog).
+  # Only started when the `grafana` profile is active: `podman compose --profile grafana up -d`
+  # (the core services have no profile, so that command brings up the full stack + these
+  # two). Mirrors services/observability-up.sh.
+  #
+  # Prometheus scrapes the OTel Collector's Prometheus exporter at `fluxnova-local:8889`
+  # (that hostname is the network alias on the otel-collector-local service, which owns
+  # the :8889 endpoint) — so prometheus.yml needs no edits.
+  prometheus-local:
+    profiles: ["grafana"]
+    image: ${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:latest}
+    container_name: prometheus
+    depends_on:
+      # Not a hard requirement (Prometheus just retries scrapes), but this ensures the
+      # otel-collector-local service — and its `fluxnova-local` alias — exist before we
+      # start, so the scrape target resolves from the first tick.
+      otel-collector-local:
+        condition: service_started
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"   # Prometheus UI
+      - "${GRAFANA_PORT:-3000}:3000"      # grafana (shares this namespace, see below)
+
+  # Grafana shares prometheus-local's network namespace (the pod analog), so its
+  # provisioned datasource (grafana/provisioning/datasources/prometheus.yml →
+  # http://localhost:9090) keeps working unchanged. It publishes no ports of its own —
+  # its 3000 is exposed via the prometheus-local service above. Datasource + the gen-ai
+  # dashboard are auto-provisioned.
+  grafana-local:
+    profiles: ["grafana"]
+    image: ${GRAFANA_IMAGE:-docker.io/grafana/grafana:latest}
+    container_name: grafana
+    network_mode: "service:prometheus-local"
+    depends_on:
+      prometheus-local:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
   # Named volume so PGDATA survives `down` (removed only with `down -v`). Same name the
