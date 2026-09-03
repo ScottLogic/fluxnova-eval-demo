@@ -110,6 +110,12 @@ above. See [local-dev/README.md](local-dev/README.md#alternative-a-single-podman
 (service-name/hostname mapping, the shared fluxnova↔otel network namespace, and the `down -v` vs `--delete-data`
 difference for MLflow artifacts).
 
+Compose commands address services by their **service name** (`postgres-local`, `mlflow-local`, `otel-collector`,
+`fluxnova-local`), *not* the container name — e.g. `podman compose logs -f fluxnova-local`, not `... fluxnova`. For
+status, `podman compose ps` is the provider-agnostic equivalent of `podman pod ps`. The plain-`podman` verification
+commands in the [Verify](#verify) section below still work under compose as-is, since each service sets a matching
+`container_name` (`podman logs postgres` / `podman exec postgres ...` / `podman logs fluxnova`).
+
 #### Note: the optional `eval` container waits for Fluxnova to be *ready*
 
 Only relevant with `--profile eval`, so it's easy to miss when testing just the core stack. The
