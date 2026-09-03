@@ -101,7 +101,8 @@ you prefer, but not both at once. On rootless Podman this needs a compose provid
 ```bash
 cd local-dev
 podman compose up -d                    # core stack: postgres, mlflow, otel-collector, fluxnova
-podman compose --profile eval up -d     # also build + start the eval-service-worker (opt-in)
+podman compose --profile eval up -d     # also build + start the eval worker (opt-in)
+podman compose --profile grafana up -d  # also start Prometheus + Grafana (opt-in)
 podman compose down                     # stop/remove (keeps the postgres volume; add -v to wipe it)
 ```
 
@@ -110,11 +111,13 @@ above. See [local-dev/README.md](local-dev/README.md#alternative-a-single-podman
 (service-name/hostname mapping, the shared fluxnova↔otel network namespace, and the `down -v` vs `--delete-data`
 difference for MLflow artifacts).
 
-Compose commands address services by their **service name** (`postgres-local`, `mlflow-local`, `otel-collector`,
-`fluxnova-local`), *not* the container name — e.g. `podman compose logs -f fluxnova-local`, not `... fluxnova`. For
-status, `podman compose ps` is the provider-agnostic equivalent of `podman pod ps`. The plain-`podman` verification
-commands in the [Verify](#verify) section below still work under compose as-is, since each service sets a matching
-`container_name` (`podman logs postgres` / `podman exec postgres ...` / `podman logs fluxnova`).
+Compose commands address services by their **service name** — every service is named `<container>-local`
+(`postgres-local`, `mlflow-local`, `otel-collector-local`, `fluxnova-local`, plus `prometheus-local`/`grafana-local`
+under the `grafana` profile), *not* the container name — e.g. `podman compose logs -f fluxnova-local`, not
+`... fluxnova`. For status, `podman compose ps` is the provider-agnostic equivalent of `podman pod ps`. The
+plain-`podman` verification commands in the [Verify](#verify) section below still work under compose as-is, since each
+service sets a matching short `container_name` (`podman logs postgres` / `podman exec postgres ...` /
+`podman logs fluxnova`).
 
 #### Note: the optional `eval` container waits for Fluxnova to be *ready*
 
@@ -122,7 +125,7 @@ Only relevant with `--profile eval`, so it's easy to miss when testing just the 
 `eval-service-worker` polls Fluxnova's REST API (`fetchAndLock`) the moment it starts, so compose gates it on
 Fluxnova being **healthy** (`condition: service_healthy`), not merely *started* — otherwise its first poll races
 Tomcat's ~30–40s boot and logs `[Errno 111] Connection refused`. It leans on the Fluxnova image's built-in
-`HEALTHCHECK` for the readiness signal; see the comment on the `eval-service-worker` service in
+`HEALTHCHECK` for the readiness signal; see the comment on the `eval-service-worker-local` service in
 [local-dev/compose.yaml](local-dev/compose.yaml) for the full rationale.
 
 Endpoints once up:
@@ -130,6 +133,8 @@ Endpoints once up:
 - Postgres: `localhost:5432` (sibling pods reach it as `postgres-local:5432`)
 - MLflow UI: `http://localhost:5000`
 - Fluxnova REST: `http://localhost:8080/engine-rest`
+- Grafana UI: `http://localhost:3000` and Prometheus: `http://localhost:9090` (only with the `--profile grafana`
+  compose stack, or the `observability` pod)
 
 ### Note: Postgres readiness can log a false-positive warning
 

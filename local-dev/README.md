@@ -40,39 +40,46 @@ are no-ops since they have no local data).
 ## Alternative: a single `podman compose` file
 
 `compose.yaml` is a self-contained alternative to the `pods-up.sh`/`pods-down.sh` scripts above — it brings the
-**same** stack up from one file, reusing the identical `.env`, `postgres/init.sh`, `default.yml`, and
-`otel-collector-config.yaml`. Both approaches share the `postgres-local-data` volume and the `fluxnova-dev` network,
-so you can use whichever you prefer (they are not meant to run simultaneously — pick one). Requires a compose provider
-(`podman compose`, backed by `podman-compose` or `docker compose`).
+**same** stack up from one file, reusing the identical `.env`, `postgres/init.sh`, `default.yml`,
+`otel-collector-config.yaml`, `prometheus.yml`, and `grafana/` provisioning. Both approaches share the
+`postgres-local-data` volume and the `fluxnova-dev` network, so you can use whichever you prefer (they are not meant to
+run simultaneously — pick one). Requires a compose provider (`podman compose`, backed by `podman-compose` or
+`docker compose`).
 
 ```bash
 cd local-dev
 
 podman compose up -d                    # core stack: postgres, mlflow, otel-collector, fluxnova
-podman compose --profile eval up -d     # also build + start the eval-service-worker (opt-in)
+podman compose --profile eval up -d     # also build + start the eval worker (opt-in)
+podman compose --profile grafana up -d  # also start Prometheus + Grafana (opt-in)
+podman compose --profile eval --profile grafana up -d   # everything
 podman compose logs -f fluxnova-local   # follow one service (by service name, not the fluxnova container_name)
 podman compose down                     # stop/remove everything (keeps the postgres volume)
 podman compose down -v                  # also delete the postgres data volume (forces init.sh to re-run)
 ```
 
-Start ordering is handled by health-gated `depends_on` (postgres → mlflow/fluxnova → eval-service), replacing the
-scripts' `wait_for_*` loops: mlflow/fluxnova wait for Postgres to pass `pg_isready`, and the eval-service-worker
+Start ordering is handled by health-gated `depends_on` (postgres → mlflow/fluxnova → eval-worker), replacing the
+scripts' `wait_for_*` loops: mlflow/fluxnova wait for Postgres to pass `pg_isready`, and the eval worker
 waits for fluxnova's image healthcheck (`curl .../engine-rest/engine`) so its first `fetchAndLock` doesn't race
 Tomcat startup.
 
 Notes and differences from the pod scripts:
 
-- **Service names match the pod names** (`postgres-local`, `mlflow-local`, `fluxnova-local`) on purpose, so the
-  hostnames already baked into `default.yml`, `otel-collector-config.yaml`, and the eval-service env vars resolve
-  unchanged — no config edits needed to switch between scripts and compose.
-- **fluxnova shares the otel-collector container's network namespace** (`network_mode: "service:otel-collector"`),
-  reproducing the single-pod setup so `default.yml`'s `exporterEndpoint: http://localhost:4317` keeps working. As a
-  result fluxnova has no network identity of its own — it's published (`8080`) and reachable (as `fluxnova-local`,
-  via a network alias) *through* the `otel-collector` service.
-- **`eval-service-worker` is opt-in** behind the `eval` compose profile (it has a build step and needs the MLflow AI
-  Gateway judge endpoint configured — see "eval-service-worker" below), so a bare `podman compose up -d` brings up
-  only the core four. This matches the recommended `./pods-up.sh postgres mlflow fluxnova`, and is stricter than a
-  bare `./pods-up.sh` (which also starts eval-service).
+- **Every service is named `<container>-local`** (`postgres-local`, `mlflow-local`, `otel-collector-local`,
+  `fluxnova-local`, `eval-service-worker-local`, `prometheus-local`, `grafana-local`) for consistency, and so the
+  load-bearing hostnames (`postgres-local`, `mlflow-local`, `fluxnova-local`) already match what's baked into
+  `default.yml`, `otel-collector-config.yaml`, `prometheus.yml`, and the eval env vars — no config edits needed. The
+  short `container_name` (`postgres`, `fluxnova`, …) is what plain `podman logs <name>` / `podman exec <name>` use.
+- **fluxnova shares the otel-collector-local container's network namespace**
+  (`network_mode: "service:otel-collector-local"`), reproducing the single-pod setup so `default.yml`'s
+  `exporterEndpoint: http://localhost:4317` keeps working. As a result fluxnova has no network identity of its own —
+  it's published (`8080`) and reachable (as `fluxnova-local`, via a network alias) *through* the `otel-collector-local`
+  service. **Grafana** does the same with `prometheus-local` (so its provisioned `localhost:9090` datasource works).
+- **`eval-service-worker-local` is opt-in** behind the `eval` compose profile (it has a build step and needs the
+  MLflow AI Gateway judge endpoint configured — see "eval-service-worker" below); **Prometheus + Grafana** are opt-in
+  behind the `grafana` profile. Core services carry no profile, so a bare `podman compose up -d` brings up only the
+  core four, and `--profile grafana up -d` brings up the core four plus Prometheus/Grafana (Grafana →
+  `http://localhost:3000`, Prometheus → `http://localhost:9090`; see the "GenAI observability dashboard" section below).
 - **`down -v`** deletes the Postgres named volume but **not** MLflow's artifact files (a host bind-mount at
   `../harness/.mlflow/artifacts`) — unlike `./pods-down.sh --delete-data`, which clears both. Remove that directory by
   hand for a fully clean slate.
@@ -421,7 +428,7 @@ to skip).
 | File | Purpose |
 |------|---------|
 | `pods-up.sh` / `pods-down.sh` | Start/stop postgres, mlflow, fluxnova, eval-service, and observability together (in dependency order), or any subset — idempotent |
-| `compose.yaml` | Single-file `podman compose` alternative to the pod scripts (same `.env`/configs); `eval-service-worker` behind the `eval` profile — see "Alternative: a single `podman compose` file" |
+| `compose.yaml` | Single-file `podman compose` alternative to the pod scripts (same `.env`/configs); `eval-service-worker` and `observability` behind the `eval`/`grafana` profiles — see "Alternative: a single `podman compose` file" |
 | `services/postgres-up.sh` / `services/postgres-down.sh` | Start/stop the `postgres-local` pod (shared PostgreSQL database) |
 | `postgres/init.sh` | Creates the `mlflow`/`fluxnova` databases and roles on first startup |
 | `services/fluxnova-up.sh` / `services/fluxnova-down.sh` | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector) |
