@@ -23,8 +23,21 @@
   "templating": {
     "list": [
       {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
         "current": { "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
         "definition": "label_values(gen_ai_invoke_agent_duration_seconds_count, gen_ai_agent_name)",
         "allValue": ".*",
         "includeAll": true,
@@ -44,7 +57,7 @@
       },
       {
         "current": { "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
         "definition": "label_values(gen_ai_client_token_usage_count, gen_ai_request_model)",
         "allValue": ".*",
         "includeAll": true,
@@ -93,7 +106,7 @@
     {
       "type": "stat",
       "title": "Total input tokens",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 4, "x": 0, "y": 3 },
       "id": 1,
       "fieldConfig": {
@@ -106,7 +119,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"})",
           "instant": true,
@@ -118,7 +131,7 @@
     {
       "type": "stat",
       "title": "Total output tokens",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 4, "x": 4, "y": 3 },
       "id": 2,
       "fieldConfig": {
@@ -131,7 +144,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\"$model\"})",
           "instant": true,
@@ -143,7 +156,7 @@
     {
       "type": "stat",
       "title": "Avg tokens per chat call",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 4, "x": 8, "y": 3 },
       "id": 5,
       "fieldConfig": {
@@ -156,7 +169,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum by (gen_ai_token_type) (gen_ai_client_token_usage_sum{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}) / sum by (gen_ai_token_type) (gen_ai_client_token_usage_count{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"})",
           "instant": true,
@@ -168,7 +181,7 @@
     {
       "type": "bargauge",
       "title": "Tokens by model & type (total)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 12, "x": 12, "y": 3 },
       "id": 4,
       "fieldConfig": {
@@ -181,7 +194,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\"})",
           "instant": true,
@@ -201,7 +214,7 @@
     {
       "type": "bargauge",
       "title": "Chat (LLM) duration percentiles (all-time)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 },
       "id": 6,
       "fieldConfig": {
@@ -214,19 +227,19 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "histogram_quantile(0.50, sum by (le) (gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}))",
           "instant": true, "legendFormat": "p50", "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le) (gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}))",
           "instant": true, "legendFormat": "p95", "refId": "B"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum by (le) (gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}))",
           "instant": true, "legendFormat": "p99", "refId": "C"
@@ -236,7 +249,7 @@
     {
       "type": "bargauge",
       "title": "Agent run duration p95 (by agent, all-time)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 },
       "id": 7,
       "fieldConfig": {
@@ -249,7 +262,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (gen_ai_invoke_agent_duration_seconds_bucket{gen_ai_agent_name=~\"$agent\"}))",
           "instant": true, "legendFormat": "{{gen_ai_agent_name}}", "refId": "A"
@@ -259,7 +272,7 @@
     {
       "type": "bargauge",
       "title": "Tool execution duration p95 (by tool, all-time)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
       "id": 8,
       "fieldConfig": {
@@ -272,7 +285,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le, gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_bucket))",
           "instant": true, "legendFormat": "{{gen_ai_tool_name}}", "refId": "A"
@@ -282,7 +295,7 @@
     {
       "type": "stat",
       "title": "Average operation latency",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 16 },
       "id": 20,
       "fieldConfig": {
@@ -295,19 +308,19 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_client_operation_duration_seconds_sum{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}) / sum(gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"})",
           "instant": true, "legendFormat": "chat", "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_invoke_agent_duration_seconds_sum{gen_ai_agent_name=~\"$agent\"}) / sum(gen_ai_invoke_agent_duration_seconds_count{gen_ai_agent_name=~\"$agent\"})",
           "instant": true, "legendFormat": "invoke_agent", "refId": "B"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_execute_tool_duration_seconds_sum) / sum(gen_ai_execute_tool_duration_seconds_count)",
           "instant": true, "legendFormat": "execute_tool", "refId": "C"
@@ -325,7 +338,7 @@
     {
       "type": "stat",
       "title": "Avg inference calls / agent run",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 5, "x": 0, "y": 21 },
       "id": 9,
       "fieldConfig": {
@@ -338,7 +351,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_invoke_agent_inference_calls_sum{gen_ai_agent_name=~\"$agent\"}) / clamp_min(sum(gen_ai_invoke_agent_inference_calls_count{gen_ai_agent_name=~\"$agent\"}), 1)",
           "instant": true, "refId": "A"
@@ -348,7 +361,7 @@
     {
       "type": "stat",
       "title": "Avg tool calls / agent run",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 5, "x": 5, "y": 21 },
       "id": 10,
       "fieldConfig": {
@@ -361,7 +374,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_invoke_agent_tool_calls_sum{gen_ai_agent_name=~\"$agent\"}) / clamp_min(sum(gen_ai_invoke_agent_tool_calls_count{gen_ai_agent_name=~\"$agent\"}), 1)",
           "instant": true, "refId": "A"
@@ -371,7 +384,7 @@
     {
       "type": "stat",
       "title": "Tool errors (total)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 4, "x": 10, "y": 21 },
       "id": 11,
       "fieldConfig": {
@@ -388,7 +401,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum(gen_ai_execute_tool_duration_seconds_count{error_type!=\"\"}) or on() vector(0)",
           "instant": true, "refId": "A"
@@ -398,7 +411,7 @@
     {
       "type": "bargauge",
       "title": "Operation count (by operation, total)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 5, "w": 10, "x": 14, "y": 21 },
       "id": 12,
       "fieldConfig": {
@@ -411,7 +424,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum by (gen_ai_operation_name) (gen_ai_client_operation_duration_seconds_count{gen_ai_request_model=~\"$model\"})",
           "instant": true, "legendFormat": "{{gen_ai_operation_name}}", "refId": "A"
@@ -421,7 +434,7 @@
     {
       "type": "table",
       "title": "Tool calls (count & avg duration by tool)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
       "id": 13,
       "fieldConfig": {
@@ -436,13 +449,13 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum by (gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_count)",
           "instant": true, "format": "table", "refId": "A"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum by (gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_sum) / sum by (gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_count)",
           "instant": true, "format": "table", "refId": "B"
@@ -468,7 +481,7 @@
     {
       "type": "timeseries",
       "title": "Token throughput (live, tokens/s)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
       "id": 14,
       "fieldConfig": {
@@ -484,7 +497,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
           "expr": "sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
           "legendFormat": "{{gen_ai_token_type}}",
