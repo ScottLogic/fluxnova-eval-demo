@@ -17,15 +17,16 @@
   "graphTooltip": 1,
   "links": [],
   "liveNow": false,
-  "refresh": "5s",
+  "refresh": "10s",
   "schemaVersion": 39,
   "tags": ["fluxnova", "gen_ai", "genai"],
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(gen_ai_invoke_agent_duration_count, gen_ai_agent_name)",
+        "definition": "label_values(gen_ai_invoke_agent_duration_seconds_count, gen_ai_agent_name)",
+        "allValue": ".*",
         "includeAll": true,
         "label": "Agent",
         "multi": true,
@@ -33,7 +34,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(gen_ai_invoke_agent_duration_count, gen_ai_agent_name)",
+          "query": "label_values(gen_ai_invoke_agent_duration_seconds_count, gen_ai_agent_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -42,9 +43,10 @@
         "type": "query"
       },
       {
-        "current": {},
+        "current": { "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
         "definition": "label_values(gen_ai_client_token_usage_count, gen_ai_request_model)",
+        "allValue": ".*",
         "includeAll": true,
         "label": "Model",
         "multi": true,
@@ -62,45 +64,52 @@
       }
     ]
   },
-  "time": { "from": "now-30m", "to": "now" },
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Fluxnova GenAI Metrics",
   "uid": "fluxnova-genai",
-  "version": 1,
+  "version": 2,
   "weekStart": "",
   "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "id": 200,
+      "options": {
+        "mode": "markdown",
+        "content": "GenAI metrics from Fluxnova's `agentic-subprocess` OTel instrumentation. Values are **cumulative totals since the engine started** (histograms), so panels show current totals, all-time percentiles and per-run averages — they render from a single completed run and don't require continuous traffic. Filter by **Agent**/**Model** above. The *Token throughput* panel is the only rate-based (live) view."
+      }
+    },
     {
       "type": "row",
       "title": "Tokens",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 2 },
       "id": 100,
       "panels": []
     },
     {
       "type": "stat",
-      "title": "Input tokens (range)",
+      "title": "Total input tokens",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 3 },
       "id": 1,
       "fieldConfig": {
         "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } },
         "overrides": []
       },
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"}[$__range]))",
+          "expr": "sum(gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\", gen_ai_request_model=~\"$model\"})",
+          "instant": true,
           "legendFormat": "input",
           "refId": "A"
         }
@@ -108,109 +117,75 @@
     },
     {
       "type": "stat",
-      "title": "Output tokens (range)",
+      "title": "Total output tokens",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 3 },
       "id": 2,
       "fieldConfig": {
         "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } },
         "overrides": []
       },
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum(increase(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\"$model\"}[$__range]))",
+          "expr": "sum(gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\", gen_ai_request_model=~\"$model\"})",
+          "instant": true,
           "legendFormat": "output",
           "refId": "A"
         }
       ]
     },
     {
-      "type": "timeseries",
-      "title": "Token throughput (tokens/s)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 1 },
-      "id": 3,
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "stacking": { "mode": "normal", "group": "A" } }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "editorMode": "code",
-          "expr": "sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
-          "legendFormat": "{{gen_ai_token_type}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "timeseries",
-      "title": "Tokens by model (rate)",
-      "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 7 },
-      "id": 4,
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "editorMode": "code",
-          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
-          "legendFormat": "{{gen_ai_request_model}} / {{gen_ai_token_type}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "timeseries",
+      "type": "stat",
       "title": "Avg tokens per chat call",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 7 },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 3 },
       "id": 5,
       "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
-        },
+        "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "palette-classic" } },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}[$__rate_interval])) / sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_count{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "expr": "sum by (gen_ai_token_type) (gen_ai_client_token_usage_sum{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}) / sum by (gen_ai_token_type) (gen_ai_client_token_usage_count{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"})",
+          "instant": true,
           "legendFormat": "{{gen_ai_token_type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Tokens by model & type (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 3 },
+      "id": 4,
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_request_model, gen_ai_token_type) (gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\"})",
+          "instant": true,
+          "legendFormat": "{{gen_ai_request_model}} / {{gen_ai_token_type}}",
           "refId": "A"
         }
       ]
@@ -219,95 +194,123 @@
       "type": "row",
       "title": "Latency",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
       "id": 101,
       "panels": []
     },
     {
-      "type": "timeseries",
-      "title": "Chat (LLM) duration p50/p95",
+      "type": "bargauge",
+      "title": "Chat (LLM) duration percentiles (all-time)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 15 },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 9 },
       "id": 6,
       "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
-        },
+        "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(gen_ai_client_operation_duration_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
-          "legendFormat": "p50",
-          "refId": "A"
+          "expr": "histogram_quantile(0.50, sum by (le) (gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}))",
+          "instant": true, "legendFormat": "p50", "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(gen_ai_client_operation_duration_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}[$__rate_interval])))",
-          "legendFormat": "p95",
-          "refId": "B"
+          "expr": "histogram_quantile(0.95, sum by (le) (gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}))",
+          "instant": true, "legendFormat": "p95", "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (gen_ai_client_operation_duration_seconds_bucket{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}))",
+          "instant": true, "legendFormat": "p99", "refId": "C"
         }
       ]
     },
     {
-      "type": "timeseries",
-      "title": "Agent run duration p95 (by agent)",
+      "type": "bargauge",
+      "title": "Agent run duration p95 (by agent, all-time)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 15 },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 9 },
       "id": 7,
       "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
-        },
+        "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_invoke_agent_duration_bucket{gen_ai_agent_name=~\"$agent\"}[$__rate_interval])))",
-          "legendFormat": "{{gen_ai_agent_name}}",
-          "refId": "A"
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (gen_ai_invoke_agent_duration_seconds_bucket{gen_ai_agent_name=~\"$agent\"}))",
+          "instant": true, "legendFormat": "{{gen_ai_agent_name}}", "refId": "A"
         }
       ]
     },
     {
-      "type": "timeseries",
-      "title": "Tool execution duration p95 (by tool)",
+      "type": "bargauge",
+      "title": "Tool execution duration p95 (by tool, all-time)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 15 },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 9 },
       "id": 8,
       "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
-        },
+        "defaults": { "unit": "s", "color": { "mode": "continuous-GrYlRd" } },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_tool_name) (rate(gen_ai_execute_tool_duration_bucket[$__rate_interval])))",
-          "legendFormat": "{{gen_ai_tool_name}}",
-          "refId": "A"
+          "expr": "histogram_quantile(0.95, sum by (le, gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_bucket))",
+          "instant": true, "legendFormat": "{{gen_ai_tool_name}}", "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Average operation latency",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 16 },
+      "id": 20,
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 2, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_client_operation_duration_seconds_sum{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"}) / sum(gen_ai_client_operation_duration_seconds_count{gen_ai_operation_name=\"chat\", gen_ai_request_model=~\"$model\"})",
+          "instant": true, "legendFormat": "chat", "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_invoke_agent_duration_seconds_sum{gen_ai_agent_name=~\"$agent\"}) / sum(gen_ai_invoke_agent_duration_seconds_count{gen_ai_agent_name=~\"$agent\"})",
+          "instant": true, "legendFormat": "invoke_agent", "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum(gen_ai_execute_tool_duration_seconds_sum) / sum(gen_ai_execute_tool_duration_seconds_count)",
+          "instant": true, "legendFormat": "execute_tool", "refId": "C"
         }
       ]
     },
@@ -315,7 +318,7 @@
       "type": "row",
       "title": "Throughput & reliability",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
       "id": 102,
       "panels": []
     },
@@ -323,26 +326,22 @@
       "type": "stat",
       "title": "Avg inference calls / agent run",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 23 },
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 21 },
       "id": 9,
       "fieldConfig": {
         "defaults": { "unit": "short", "decimals": 1, "color": { "mode": "fixed", "fixedColor": "purple" } },
         "overrides": []
       },
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum(increase(gen_ai_invoke_agent_inference_calls_sum{gen_ai_agent_name=~\"$agent\"}[$__range])) / clamp_min(sum(increase(gen_ai_invoke_agent_inference_calls_count{gen_ai_agent_name=~\"$agent\"}[$__range])), 1)",
-          "refId": "A"
+          "expr": "sum(gen_ai_invoke_agent_inference_calls_sum{gen_ai_agent_name=~\"$agent\"}) / clamp_min(sum(gen_ai_invoke_agent_inference_calls_count{gen_ai_agent_name=~\"$agent\"}), 1)",
+          "instant": true, "refId": "A"
         }
       ]
     },
@@ -350,80 +349,145 @@
       "type": "stat",
       "title": "Avg tool calls / agent run",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 23 },
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 21 },
       "id": 10,
       "fieldConfig": {
         "defaults": { "unit": "short", "decimals": 1, "color": { "mode": "fixed", "fixedColor": "orange" } },
         "overrides": []
       },
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
+        "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum(increase(gen_ai_invoke_agent_tool_calls_sum{gen_ai_agent_name=~\"$agent\"}[$__range])) / clamp_min(sum(increase(gen_ai_invoke_agent_tool_calls_count{gen_ai_agent_name=~\"$agent\"}[$__range])), 1)",
-          "refId": "A"
+          "expr": "sum(gen_ai_invoke_agent_tool_calls_sum{gen_ai_agent_name=~\"$agent\"}) / clamp_min(sum(gen_ai_invoke_agent_tool_calls_count{gen_ai_agent_name=~\"$agent\"}), 1)",
+          "instant": true, "refId": "A"
         }
       ]
     },
     {
-      "type": "timeseries",
-      "title": "Operation rate (ops/s by operation)",
+      "type": "stat",
+      "title": "Tool errors (total)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 23 },
+      "gridPos": { "h": 5, "w": 4, "x": 10, "y": 21 },
       "id": 11,
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
-          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+          "unit": "short", "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "desc" }
+        "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto"
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum by (gen_ai_operation_name) (rate(gen_ai_client_operation_duration_count[$__rate_interval]))",
-          "legendFormat": "{{gen_ai_operation_name}}",
-          "refId": "A"
+          "expr": "sum(gen_ai_execute_tool_duration_seconds_count{error_type!=\"\"}) or on() vector(0)",
+          "instant": true, "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Operation count (by operation, total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 10, "x": 14, "y": 21 },
+      "id": 12,
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0, "color": { "mode": "palette-classic" } },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient", "orientation": "horizontal", "showUnfilled": true,
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_operation_name) (gen_ai_client_operation_duration_seconds_count{gen_ai_request_model=~\"$model\"})",
+          "instant": true, "legendFormat": "{{gen_ai_operation_name}}", "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Tool calls (count & avg duration by tool)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "id": 13,
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" }, "custom": { "align": "auto", "filterable": true } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Avg duration" }, "properties": [ { "id": "unit", "value": "s" }, { "id": "decimals", "value": 2 } ] }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [ { "displayName": "Calls", "desc": true } ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_count)",
+          "instant": true, "format": "table", "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_sum) / sum by (gen_ai_tool_name) (gen_ai_execute_tool_duration_seconds_count)",
+          "instant": true, "format": "table", "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge", "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "renameByName": {
+              "gen_ai_tool_name": "Tool",
+              "Value #A": "Calls",
+              "Value #B": "Avg duration"
+            }
+          }
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Tool error rate (errors/s by tool)",
+      "title": "Token throughput (live, tokens/s)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 29 },
-      "id": 12,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "id": 14,
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
-          "custom": { "drawStyle": "bars", "fillOpacity": 40, "lineWidth": 1, "stacking": { "mode": "normal", "group": "A" } },
-          "color": { "mode": "fixed", "fixedColor": "red" }
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "stacking": { "mode": "normal", "group": "A" } }
         },
         "overrides": []
       },
       "options": {
-        "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] },
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["max"] },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "editorMode": "code",
-          "expr": "sum by (gen_ai_tool_name, error_type) (rate(gen_ai_execute_tool_duration_count{error_type!=\"\"}[$__rate_interval]))",
-          "legendFormat": "{{gen_ai_tool_name}} ({{error_type}})",
+          "expr": "sum by (gen_ai_token_type) (rate(gen_ai_client_token_usage_sum{gen_ai_request_model=~\"$model\"}[$__rate_interval]))",
+          "legendFormat": "{{gen_ai_token_type}}",
           "refId": "A"
         }
       ]

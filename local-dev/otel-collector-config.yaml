@@ -49,11 +49,6 @@ exporters:
   prometheus:
     endpoint: 0.0.0.0:8889
     send_timestamps: true
-    # Keep exported metric names a deterministic dot->underscore mapping of the OTLP
-    # names (e.g. gen_ai.client.token.usage -> gen_ai_client_token_usage_{bucket,sum,count})
-    # by NOT appending unit/type suffixes — this is what the provisioned Grafana dashboard
-    # (grafana/dashboards/gen-ai.json) queries against.
-    add_metric_suffixes: false
     resource_to_telemetry_conversion:
       enabled: true
 
