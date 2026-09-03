@@ -110,6 +110,15 @@ above. See [local-dev/README.md](local-dev/README.md#alternative-a-single-podman
 (service-name/hostname mapping, the shared fluxnova↔otel network namespace, and the `down -v` vs `--delete-data`
 difference for MLflow artifacts).
 
+#### Note: the optional `eval` container waits for Fluxnova to be *ready*
+
+Only relevant with `--profile eval`, so it's easy to miss when testing just the core stack. The
+`eval-service-worker` polls Fluxnova's REST API (`fetchAndLock`) the moment it starts, so compose gates it on
+Fluxnova being **healthy** (`condition: service_healthy`), not merely *started* — otherwise its first poll races
+Tomcat's ~30–40s boot and logs `[Errno 111] Connection refused`. It leans on the Fluxnova image's built-in
+`HEALTHCHECK` for the readiness signal; see the comment on the `eval-service-worker` service in
+[local-dev/compose.yaml](local-dev/compose.yaml) for the full rationale.
+
 Endpoints once up:
 
 - Postgres: `localhost:5432` (sibling pods reach it as `postgres-local:5432`)

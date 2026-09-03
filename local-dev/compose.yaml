@@ -149,9 +149,14 @@ services:
       mlflow-local:
         condition: service_healthy
       fluxnova-local:
-        # fluxnova's image ships a HEALTHCHECK (curl .../engine-rest/engine), so wait
-        # for it to actually serve REST before the worker starts polling — otherwise
-        # the first fetchAndLock races Tomcat startup and logs a Connection refused.
+        # Wait for fluxnova to be *healthy*, not merely *started*. `service_started`
+        # fires the instant the JVM launches, but Fluxnova is Spring Boot/Tomcat — it
+        # isn't serving engine-rest for ~30-40s after that (Hikari connects to Postgres,
+        # the engine deploys its schema, Tomcat binds :8080). This worker polls
+        # fetchAndLock the moment it starts, so gating on `service_started` races Tomcat
+        # startup and the first poll logs `[Errno 111] Connection refused`. The fluxnova
+        # image ships a HEALTHCHECK (curl -fs .../engine-rest/engine) that only passes
+        # once REST actually answers — exactly the readiness signal we need here.
         condition: service_healthy
     environment:
       EVAL_SERVICE_FLUXNOVA_URL: ${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
