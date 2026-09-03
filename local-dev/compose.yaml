@@ -12,7 +12,7 @@
 # Usage (from this local-dev/ directory):
 #   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel
 #   podman compose --profile eval up -d      # also start the eval-service-worker
-#   podman compose logs -f fluxnova
+#   podman compose logs -f fluxnova-local    # by service name (not the fluxnova container_name)
 #   podman compose down                      # stop/remove (keeps the postgres volume)
 #   podman compose down -v                   # also delete the postgres data volume
 #

@@ -48,7 +48,7 @@ cd local-dev
 
 podman compose up -d                    # core stack: postgres, mlflow, otel-collector, fluxnova
 podman compose --profile eval up -d     # also build + start the eval-service-worker (opt-in)
-podman compose logs -f fluxnova         # follow one service (container_name matches the pod scripts)
+podman compose logs -f fluxnova-local   # follow one service (by service name, not the fluxnova container_name)
 podman compose down                     # stop/remove everything (keeps the postgres volume)
 podman compose down -v                  # also delete the postgres data volume (forces init.sh to re-run)
 ```
