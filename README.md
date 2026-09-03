@@ -108,9 +108,7 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    python -m venv .venv
    source .venv/Scripts/activate
 
-   pip install -e ".[dev]"
-   pip install -e ../fluxnova-mlflow-dataset[dev]
-   pip install -e ../fluxnova-runner[dev]
+   pip install -e ".[dev]" -e "../fluxnova-mlflow-dataset[dev]" -e "../fluxnova-runner[dev]"
    ```
    This installs four console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and
    `deep-eval` / `mlflow-eval` (harness evaluation suites).
