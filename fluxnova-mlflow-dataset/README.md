@@ -30,24 +30,6 @@ pip install -e .            # into the harness venv (harness/.venv), or your own
 pip install -e ".[dev]"     # + pytest/ruff for running the test suite
 ```
 
-## Modules
-
-| Module | Purpose |
-|--------|---------|
-| `bpmn.py` | `BpmnLookup` — parses a `.bpmn` file once and exposes its statically-defined agent config (system prompt, context variable names, per-tool input/output parameter names, tool display names). |
-| `fluxnova_client.py` | `FluxnovaClient` — minimal, read-only Fluxnova REST client. Only `get_variables` (via `/history/variable-instance`, so it works after the instance ends); deploying/starting processes is `fluxnova-runner`'s job. |
-| `traces.py` | `MlflowTraceReader` — reads GenAI span data for completed runs out of an MLflow experiment's traces, plus free functions (`final_output_from_spans`, `input_variables_from_spans`, `tool_calls_from_spans`) reused by both the reader and `scorers.py`'s trace-only scorers. |
-| `report.py` | `build_agent_report` — composes an `/agent-history`-shaped dict for one process instance by joining `MlflowTraceReader` + `BpmnLookup` + a `VariableReader` (e.g. `FluxnovaClient`). |
-| `collect.py` | `collect_new_runs` — finds every newly-completed run for a `subprocess_id` and upserts a dataset record for each, via `build_agent_report` + `store.build_mlflow_record`/`write_to_mlflow_dataset`. |
-| `store.py` | Record shaping (`build_mlflow_record`) plus dataset read/write (`get_or_create_dataset`, `record_exists`, `write_to_mlflow_dataset`) and tracking-URI/name resolution helpers. |
-| `tools.py` | `ExpectedToolRule` — parses and evaluates the `expected_tools` rule syntax (GitLab CI-style `if` expressions against a run's input variables). |
-| `goldens.py` | `load_goldens`/`match_golden` — loads a golden-scenario dataset and matches one to a run by `applicantType`/`hasCollateral`. |
-| `scorers.py` | `decision_quality_judge` (the shared `Guidelines` judge) and `DETERMINISTIC_SCORERS` (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`) — trace-only scorers used by `eval-service-worker`. |
-
-Everything above is re-exported from the package root (`fluxnova_mlflow_dataset/__init__.py`), so callers do
-`from fluxnova_mlflow_dataset import collect_new_runs, decision_quality_judge, ...` rather than reaching into
-individual modules.
-
 ## Collecting completed runs: `collect_new_runs`
 
 ```python
@@ -141,18 +123,3 @@ onto that same real trace, grouped under one Evaluation Run.
 ```bash
 pytest tests
 ```
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `src/fluxnova_mlflow_dataset/bpmn.py` | `BpmnLookup` — static agent config parsed from a BPMN file |
-| `src/fluxnova_mlflow_dataset/fluxnova_client.py` | Read-only Fluxnova REST client (`get_variables`) |
-| `src/fluxnova_mlflow_dataset/traces.py` | `MlflowTraceReader` + free span-reading helpers |
-| `src/fluxnova_mlflow_dataset/report.py` | `build_agent_report` — joins trace/BPMN/variable data into one report |
-| `src/fluxnova_mlflow_dataset/collect.py` | `collect_new_runs` — the on-demand collection pre-step |
-| `src/fluxnova_mlflow_dataset/store.py` | Record shaping + MLflow evaluation-dataset read/write |
-| `src/fluxnova_mlflow_dataset/tools.py` | `ExpectedToolRule` parsing/evaluation |
-| `src/fluxnova_mlflow_dataset/goldens.py` | Golden-scenario loading/matching |
-| `src/fluxnova_mlflow_dataset/scorers.py` | Shared `decision_quality` judge + deterministic trace-only scorers |
-| `tests/` | Unit tests (`pytest tests`) — one file per module above |

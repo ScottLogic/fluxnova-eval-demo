@@ -32,14 +32,6 @@ pip install -e ../fluxnova-runner[dev]
 Installs three console-script entry points from this package: `mlflow-eval`, `mlflow-judges`, and `deep-eval`
 (`fluxnova-run`/`fluxnova-run-mock-workers` come from the sibling `fluxnova-runner` install).
 
-## Packages in this directory
-
-| Package | Purpose |
-|---------|---------|
-| `fluxnova/` | Shared config loading (`WorkflowConfig`) and a thin adapter (`mlflow_dataset.py`) over `fluxnova-mlflow-dataset` for harness call sites |
-| `mlflow_eval/` | The primary evaluation suite — `mlflow-eval` and `mlflow-judges` CLIs |
-| `deep_eval/` | The deprecated DeepEval suite — `deep-eval` CLI |
-
 ## Config: `fluxnova.config.WorkflowConfig`
 
 `WorkflowConfig.from_file(path)` loads a workflow YAML file, validates it against
@@ -138,17 +130,3 @@ depends on most heavily (record shaping, trace reading, collection, shared judge
 [`fluxnova-mlflow-dataset`](../fluxnova-mlflow-dataset/README.md#tests)'s test suite instead; the harness-specific
 code (`WorkflowConfig` loading/validation, the `mlflow_eval`/`deep_eval` scorers and CLIs) is currently exercised
 manually rather than under pytest.
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `src/fluxnova/config.py` | `WorkflowConfig` — loads + JSON-schema-validates the workflow YAML |
-| `src/fluxnova/workflow-config.schema.json` | JSON Schema for the workflow YAML config format |
-| `src/fluxnova/mlflow_dataset.py` | Adapts `fluxnova-mlflow-dataset` functions to accept a `WorkflowConfig` |
-| `src/mlflow_eval/main.py` | `mlflow-eval` CLI — scorers + collect/evaluate entry point |
-| `src/mlflow_eval/judges.py` | `mlflow-judges` CLI — start/stop/status for automatic (online) judges |
-| `src/deep_eval/main.py` | `deep-eval` CLI — DeepEval test suite + report generation (deprecated) |
-| `src/deep_eval/conftest.py` | pytest fixtures/options (`--config`, `--report`) for the DeepEval suite |
-| `config/loan-assesment.yml` | Example/default workflow config (original loan-assessment BPMN) |
-| `config/loan-assesment-eval.yml` | Same scenario, wired to `loan-assesment-eval.bpmn` for the `eval-service-worker` flow |

@@ -67,48 +67,8 @@ Starts the same mock external-task workers as `--with-mock-workers` above, witho
 — useful for keeping workers running independently (e.g. against multiple runs started elsewhere), or for testing
 worker behaviour in isolation. Blocks until interrupted (Ctrl+C).
 
-## Fluxnova REST client (`client.py`)
-
-`Client` is a thin wrapper around the subset of the Fluxnova Engine REST API the runner needs:
-
-| Method | Purpose |
-|--------|---------|
-| `deploy(bpmn_path, deployment_name)` | Upload a BPMN file as a new deployment |
-| `start_process(process_key, variables)` | Start a process instance; returns the instance ID |
-| `claim_task(task_id, user_id)` / `complete_task(task_id, variables)` | Claim/complete a user task |
-| `get_instance(instance_id)` | Return the running instance, or `None` if it has ended |
-| `get_history(instance_id)` | Return the historic instance record (always available, even after completion) |
-| `get_variables(instance_id)` | Return final variables via the historic variable-instance API |
-| `wait_for_completion(instance_id, poll_interval, timeout)` | Block until the instance finishes; returns final variables; raises `ApiError`/`TimeoutError` on failure/timeout |
-| `wait_for_activity_completion(instance_id, activity_id, poll_interval, timeout)` | Block until one named activity finishes, regardless of overall instance state |
-
-Plain Python variable values passed to `start_process`/mock-worker completions are wrapped into Camunda's
-`{"value": ..., "type": ...}` format automatically (`_to_camunda_vars`; supported types: `str`, `int`, `float`,
-`bool` — everything else is serialised as a `String`).
-
-Read-back of full agent-history/report data (joining trace + BPMN + variables) is deliberately **not** this
-client's job — that's `fluxnova_mlflow_dataset.fluxnova_client.FluxnovaClient`, used by `mlflow-eval --collect`.
-
-## Mock workers (`mock_workers.py`)
-
-`start_workers(cfg)` subscribes one `ExternalTaskWorker` daemon thread per `mock_workers` topic in the config and
-immediately completes each locked task with the configured output variables. A small random jitter (0–0.5s) is
-added before completing each task, to avoid `OptimisticLockingException` when multiple parallel tasks in the same
-ad-hoc subprocess complete simultaneously and race to update the same execution entity. `run(cfg)` does the same
-but blocks (joins the threads) until interrupted — this is what `fluxnova-run-mock-workers` calls.
-
 ## Tests
 
 ```bash
 pytest tests
 ```
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `src/fluxnova_runner/config.py` | `RunnerConfig` — loads the subset of the workflow YAML this service needs |
-| `src/fluxnova_runner/client.py` | `Client` — Fluxnova REST API wrapper (deploy/start/poll) |
-| `src/fluxnova_runner/mock_workers.py` | Mock external-task worker threads (`start_workers`/`run`) |
-| `src/fluxnova_runner/main.py` | `fluxnova-run` CLI entry point |
-| `tests/test_client.py` | Unit tests for `RunnerConfig`, `Client`, and the mock-worker helpers |
