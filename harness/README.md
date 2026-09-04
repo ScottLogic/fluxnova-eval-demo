@@ -125,8 +125,25 @@ each test checks.
 pytest tests
 ```
 
-`harness/tests/` currently contains only an `__init__.py` — this package has no tests of its own yet. The logic it
-depends on most heavily (record shaping, trace reading, collection, shared judge/scorer definitions) is covered by
-[`fluxnova-mlflow-dataset`](../fluxnova-mlflow-dataset/README.md#tests)'s test suite instead; the harness-specific
-code (`WorkflowConfig` loading/validation, the `mlflow_eval`/`deep_eval` scorers and CLIs) is currently exercised
-manually rather than under pytest.
+`harness/tests/` has one suite: `test_mlflow_regression.py`, an **MLflow agent regression test**
+(MLflow's [regression-testing pattern](https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/)). Unlike
+`mlflow-eval` (which re-scores already-recorded runs) or `deep-eval`, this test actually drives the live
+loan-assessment agent end-to-end — once per golden scenario in `datasets/loan-assessment/goldens.json` — and asserts
+each real output still satisfies the shared `decision_quality` judge. It's a gating check, not a coverage suite: the
+intent is to catch a behavioural regression before it ships, not to exercise this codebase's own logic.
+
+Results are recorded to the shared PostgreSQL-backed MLflow tracking store, under a dedicated
+`fluxnova-loanAssessmentProcess-regression` experiment (kept separate from real recorded agent runs).
+
+**Prerequisites:** the full live stack must be up (Fluxnova engine, Postgres, OTel Collector, MLflow, Ollama — see
+[`local-dev/README.md`](../local-dev/README.md)) — the test skips cleanly if the engine or tracking store isn't
+reachable rather than failing.
+
+```bash
+pytest tests/test_mlflow_regression.py -v
+```
+
+The logic it depends on most heavily otherwise (record shaping, trace reading, collection, shared judge/scorer
+definitions) is covered by [`fluxnova-mlflow-dataset`](../fluxnova-mlflow-dataset/README.md#tests)'s own test suite
+instead; the harness-specific code (`WorkflowConfig` loading/validation, the `mlflow_eval`/`deep_eval` scorers and
+CLIs) is currently exercised manually rather than under pytest.
