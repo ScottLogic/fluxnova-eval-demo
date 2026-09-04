@@ -153,9 +153,10 @@ For the "use a model better at tool calls" task, the data supports:
 - **Single run, single scenario.** No variance runs and no `SELF_EMPLOYED` /
   `hasCollateral=true` profiles yet. Those would test the Bank-Statements-vs-Employment
   branch and whether granite's collateral over-call is ever correct.
-- **No LLM-judge quality scores.** MLflow's `/v1/traces` endpoint returned HTTP 404
-  (pre-existing infra issue), so evaluation-judge scoring of the final APPROVE/REJECT
-  recommendation is not included. This report covers **behavioural tool-calling metrics only**.
+- **No LLM-judge quality scores.** This benchmark intentionally captures only the
+  behavioural tool-calling metrics from OpenTelemetry; the MLflow judge-scoring step was not
+  run for these models, so the quality of the final APPROVE/REJECT recommendation is not
+  scored here. This report covers **behavioural tool-calling metrics only**.
 
 ## Reproducing / data
 
