@@ -11,6 +11,7 @@ dependencies = [
     "mlflow>=2.18",
     "requests>=2.32",
     "psycopg2-binary>=2.9",
+    "litellm>=1.55",
 ]
 
 [project.optional-dependencies]

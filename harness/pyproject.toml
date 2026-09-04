@@ -22,7 +22,6 @@ dev = [
     "deepeval>=2.0",
     "ollama>=0.3",
     "mlflow[genai]>=3.15",
-    "litellm>=1.55",
 ]
 
 [project.scripts]
@@ -63,4 +62,4 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--tb=short"
+addopts = "--tb=short -p mlflow.pytest.plugin -p no:deepeval"

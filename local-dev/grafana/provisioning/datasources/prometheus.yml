@@ -1,0 +1,20 @@
+# Grafana datasource provisioning (mounted at /etc/grafana/provisioning/datasources by
+# observability-up.sh). Auto-registers the Prometheus datasource on startup so the
+# provisioned gen_ai dashboard works with zero manual clicks.
+#
+# Prometheus runs in the *same* pod as Grafana (observability-local), so they share one
+# network namespace and Grafana reaches Prometheus via localhost:9090 — NOT by pod name.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 5s

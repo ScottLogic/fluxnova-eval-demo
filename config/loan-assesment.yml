@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../src/fluxnova/workflow-config.schema.json
+# yaml-language-server: $schema=../harness/src/fluxnova/workflow-config.schema.json
 # Fluxnova workflow harness configuration
 #
 # Run with:  harness workflow.yml

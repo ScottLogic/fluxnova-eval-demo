@@ -84,6 +84,59 @@ This project is split into three independent Python packages:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## GenAI observability (tracing & metrics)
+
+The Fluxnova engine's `agentic-subprocess` plugin instruments each ad-hoc agent subprocess with OpenTelemetry signals in
+the `gen_ai.*` namespace, under the instrumentation scope `org.finos.fluxnova.bpm.agentic`. They align with
+the [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai), so any
+OTLP-compatible backend (MLflow, Prometheus, Grafana, Datadog, …) consumes them without a vendor extension. The engine
+only emits OTLP (gRPC `:4317` / HTTP `:4318`) via `fluxnova-engine-plugin-otel`; the OTel Collector fans it out to
+downstream backends.
+
+One subprocess execution drives three GenAI operations: `invoke_agent` (the whole agent loop),
+`chat` (each LLM request/response), and `execute_tool` (each tool call).
+
+### Metrics
+
+| Metric                                | Instrument | Unit               | Emitted per                            | Key attributes                                                                                              |
+|---------------------------------------|------------|--------------------|----------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| `gen_ai.client.token.usage`           | histogram  | `{token}`          | `chat` + `invoke_agent`                | `gen_ai.operation.name`, `gen_ai.token.type` (input/output), `gen_ai.provider.name`, `gen_ai.request.model` |
+| `gen_ai.client.operation.duration`    | histogram  | `seconds`          | `chat`, `execute_tool`, `invoke_agent` | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.tool.name`, `error.type`   |
+| `gen_ai.invoke_agent.duration`        | histogram  | `seconds`          | subprocess execution                   | `gen_ai.agent.name`, `gen_ai.request.model`                                                                 |
+| `gen_ai.invoke_agent.inference_calls` | histogram  | `{inference_call}` | subprocess execution                   | `gen_ai.agent.name`                                                                                         |
+| `gen_ai.invoke_agent.tool_calls`      | histogram  | `{tool_call}`      | subprocess execution                   | `gen_ai.agent.name`                                                                                         |
+| `gen_ai.execute_tool.duration`        | histogram  | `seconds`          | tool call                              | `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.agent.name`, `error.type`                                |
+
+Streaming and server-side (model-host) metrics are not emitted — LLM calls here are synchronous request/response and
+this module instruments the client/orchestrator side only.
+
+### Traces
+
+Each subprocess produces a span tree:
+
+```
+invoke_agent {gen_ai.agent.name}     type gen_ai.invoke_agent.internal (INTERNAL)
+  chat {gen_ai.request.model}        type gen_ai.inference.client       (CLIENT)
+  execute_tool {gen_ai.tool.name}    type gen_ai.execute_tool.internal  (INTERNAL)
+  ...
+```
+
+- **`invoke_agent`** — `gen_ai.agent.name` (BPMN subprocess element id), `gen_ai.conversation.id`
+  (process instance id), accumulated `gen_ai.usage.input_tokens`/`output_tokens`, and the per-run `inference_calls`/
+  `tool_calls` counts (set at span end).
+- **`chat`** — `gen_ai.request.model`/`response.model`, `gen_ai.provider.name`, per-call token usage.
+- **`execute_tool`** — `gen_ai.tool.name`, `gen_ai.tool.call.id`, and `error.type` (`tool_error`) on failure. Note:
+  `error.type`/`StatusCode.ERROR` is only set at the tool level; `invoke_agent` and
+  `chat` spans always end `OK`.
+
+### Content capture (opt-in)
+
+Prompt/response/tool content — `gen_ai.system_instructions`, `gen_ai.input.messages`,
+`gen_ai.output.messages`, `gen_ai.tool.call.arguments`/`.result` — is **disabled by default** (it may contain sensitive
+data). Enable it via the Spring Boot property
+`fluxnova.ai.agent.observability.capture-content: true` or the standard
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` environment variable.
+
 ## First time setup
 
 This project assumes you're on **Windows**, using **[Podman](https://podman.io)** for all backing services (Fluxnova
@@ -122,9 +175,9 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    ./pods-up.sh   # start postgres, mlflow, fluxnova, eval-service (in dependency order)
    ```
    `pods-up.sh` is idempotent and orchestrates the per-service scripts in `local-dev/services/`
-   (`postgres-up.sh` → `mlflow-up.sh` → `fluxnova-up.sh` → `eval-service-up.sh`); pass pod names to start only a
-   subset (e.g. `./pods-up.sh postgres mlflow fluxnova`). The mlflow/fluxnova pods open their web UI in your default
-   browser once ready. See
+   (`postgres-up.sh` → `mlflow-up.sh` → `fluxnova-up.sh` → `eval-service-up.sh`); pass pod names to start only a subset
+   (e.g. `./pods-up.sh postgres mlflow fluxnova`). The mlflow/fluxnova pods open their web UI in your default browser
+   once ready. See
    [`local-dev/README.md`](local-dev/README.md) for the full pod details, the `eval-service-worker` pod, and
    Windows/WSL2 troubleshooting.
 
@@ -237,15 +290,16 @@ written.
 
 ## Alternative: running the MLflow tracking server on the host
 
-First-time setup above uses `local-dev/services/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd rather
-run it as a host process instead (e.g. for IDE debugging), `mlflow-eval` can *read* the PostgreSQL store directly
-(`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/services/postgres-up.sh` is running), but for the OTel
-Collector to *write* traces into it, an actual MLflow tracking **server** (an HTTP process, not just the library) must
-be running and listening on the URL the Collector's `otlphttp` exporter targets (`http://localhost:5000/v1/traces` by
-default). `mlflow ui` alone does **not** accept incoming trace writes — it only reads.
+First-time setup above uses `local-dev/services/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd
+rather run it as a host process instead (e.g. for IDE debugging), `mlflow-eval` can *read* the PostgreSQL store directly
+(`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/services/postgres-up.sh` is running), but for
+the OTel Collector to *write* traces into it, an actual MLflow tracking **server** (an HTTP process, not just the
+library) must be running and listening on the URL the Collector's `otlphttp` exporter targets
+(`http://localhost:5000/v1/traces` by default). `mlflow ui` alone does **not** accept incoming trace writes — it only
+reads.
 
-Start it (from the repo root, with `harness/.venv` activated and `local-dev/services/postgres-up.sh` already running) and leave
-it running in its own terminal for as long as you want traces to be captured:
+Start it (from the repo root, with `harness/.venv` activated and `local-dev/services/postgres-up.sh` already running)
+and leave it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
 cd harness
@@ -283,7 +337,7 @@ For **alternative run walkthroughs** (e.g. WSL with rootless Podman), see [`RUNN
 
 All harness and evaluation behaviour is driven by a single YAML file.
 
-[Example](harness/config/loan-assesment.yml)
+[Example](config/loan-assesment.yml)
 
 ### `expected_tools` rule syntax
 
@@ -374,16 +428,16 @@ after reviewing the BPMN's agent prompt and tool wiring:
 
 ## Tech stack
 
-| Component            | Technology                                                                                                                                   |
-|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| Workflow engine      | [Fluxnova](https://fluxnova.io) (Camunda-based)                                                                                              |
-| BPMN                 | Camunda BPMN 2.0                                                                                                                             |
+| Component            | Technology                                                                                                                                            |
+|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Workflow engine      | [Fluxnova](https://fluxnova.io) (Camunda-based)                                                                                                       |
+| BPMN                 | Camunda BPMN 2.0                                                                                                                                      |
 | Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/services/postgres-up.sh`) |
-| Harness runtime      | Python 3.11, requests, PyYAML                                                                                                                |
-| Mock workers         | `camunda-external-task-client-python3`                                                                                                       |
-| LLM agent            | Ollama / llama3.2 (runs inside Fluxnova)                                                                                                     |
-| Evaluation framework | [DeepEval](https://deepeval.com) or [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/) (alternatives)             |
-| Judge model          | Ollama / llama3.2                                                                                                                            |
+| Harness runtime      | Python 3.11, requests, PyYAML                                                                                                                         |
+| Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
+| LLM agent            | Ollama / llama3.2 (runs inside Fluxnova)                                                                                                              |
+| Evaluation framework | [DeepEval](https://deepeval.com) or [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/) (alternatives)                      |
+| Judge model          | Ollama / llama3.2                                                                                                                                     |
 
 ## Running the evaluations (DeepEval, deprecated)
 

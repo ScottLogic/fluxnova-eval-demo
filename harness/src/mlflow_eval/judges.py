@@ -3,8 +3,8 @@
 Automatic evaluation (``Scorer.register()`` + ``Scorer.start()``) runs
 entirely inside the MLflow server itself, scoring new traces as they land —
 no code needs to run continuously. This script is the "on/off switch" for
-that: it registers the gateway-backed judges from ``mlflow_eval.main`` (see
-``automatic_judges()``) against a target experiment, then starts or stops
+that: it registers the gateway-backed judges from ``fluxnova_mlflow_dataset.scorers``
+(see ``automatic_judges()``) against a target experiment, then starts or stops
 automatic sampling for them.
 
 Automatic judges require a `gateway:/<endpoint>` model URI (see Phase 0 in
@@ -35,9 +35,8 @@ import argparse
 from collections.abc import Iterable
 
 import mlflow
+from fluxnova_mlflow_dataset import GATEWAY_JUDGE_MODEL, automatic_judges
 from mlflow.genai.scorers import ScorerSamplingConfig, get_scorer, list_scorers
-
-from mlflow_eval.main import GATEWAY_JUDGE_MODEL, automatic_judges
 
 _DEFAULT_TRACKING_URI = "http://localhost:5000"
 

@@ -67,12 +67,13 @@ if podman pod exists "$POD_NAME"; then
   echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
   podman pod start "$POD_NAME" >/dev/null
 else
-  echo "Creating pod '$POD_NAME' (fluxnova:${FLUXNOVA_PORT}->8080, otel-collector:4317/4318)..."
+  echo "Creating pod '$POD_NAME' (fluxnova:${FLUXNOVA_PORT}->8080, otel-collector:4317/4318, otel-metrics:8889)..."
   # --add-host must be set at pod level (not per-container) since networking is shared.
   podman pod create --name "$POD_NAME" \
     -p "${FLUXNOVA_PORT}:8080" \
     -p 4317:4317 \
     -p 4318:4318 \
+    -p 8889:8889 \
     --network "$DEV_NETWORK" \
     --add-host host.containers.internal:host-gateway
 
@@ -133,6 +134,7 @@ echo "Fluxnova:      ${FLUXNOVA_URL}/engine-rest"
 echo "Fluxnova UI:   ${FLUXNOVA_URL}/fluxnova-welcome/index.html"
 echo "OTel gRPC:     localhost:4317"
 echo "OTel HTTP:     localhost:4318"
+echo "OTel metrics:  localhost:8889/metrics  (Prometheus scrape endpoint — see observability-up.sh)"
 echo "Logs:          podman pod logs -f $POD_NAME   (or: podman logs -f fluxnova / otel-collector)"
 echo "Stop/remove:   ./fluxnova-down.sh"
 
