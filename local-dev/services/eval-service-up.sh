@@ -42,15 +42,27 @@ fi
 # Reach the sibling pods by container/pod name on the shared network, not localhost.
 EVAL_SERVICE_FLUXNOVA_URL="${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}"
 EVAL_SERVICE_TRACKING_URI="${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}"
+# EVAL_SERVICE_EXPERIMENT_NAME (the MLflow experiment the worker reads traces from) is
+# sourced from .env above — it must match where the OTel collector writes traces
+# (MLFLOW_EXPERIMENT_ID). Kept in .env, not hardcoded here, so compose.yaml uses the
+# same source of truth.
 
 podman network create --ignore "$DEV_NETWORK"
 
-echo "Building $IMAGE_NAME..."
-podman build -f "$REPO_ROOT/eval-service-worker/Dockerfile" -t "$IMAGE_NAME" "$REPO_ROOT"
+# Only build when the image is missing, so repeated up-runs (e.g. after changing
+# only BPMN/config/runner code) don't pay the pip-install cost. Force a rebuild
+# after changing eval-service-worker/ or fluxnova-mlflow-dataset/ with REBUILD=1.
+if [ "${REBUILD:-}" = "1" ] || ! podman image exists "$IMAGE_NAME"; then
+  echo "Building $IMAGE_NAME..."
+  podman build -f "$REPO_ROOT/eval-service-worker/Dockerfile" -t "$IMAGE_NAME" "$REPO_ROOT"
+else
+  echo "Image '$IMAGE_NAME' already exists — skipping build (REBUILD=1 to force)."
+fi
 
 # Idempotent: if the pod already exists (e.g. this script was run before), just make
 # sure it's started rather than failing on `podman pod create`/`podman run` name clashes.
-# The image is always rebuilt above so a restart picks up any code changes.
+# Note: an existing pod is only *started* here, so to pick up a fresh image after a
+# REBUILD you must recreate it — run ./eval-service-down.sh first, then this script.
 if podman pod exists "$POD_NAME"; then
   echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
   podman pod start "$POD_NAME" >/dev/null
@@ -64,10 +76,12 @@ else
   podman run -d --pod "$POD_NAME" --name eval-service-worker \
     -e EVAL_SERVICE_FLUXNOVA_URL="$EVAL_SERVICE_FLUXNOVA_URL" \
     -e EVAL_SERVICE_TRACKING_URI="$EVAL_SERVICE_TRACKING_URI" \
+    -e EVAL_SERVICE_EXPERIMENT_NAME="$EVAL_SERVICE_EXPERIMENT_NAME" \
     "$IMAGE_NAME"
 fi
 
 echo
 echo "Worker running. Topic: agent-output-eval (override with EVAL_SERVICE_TOPIC)"
+echo "Reading traces from experiment: $EVAL_SERVICE_EXPERIMENT_NAME"
 echo "Logs:          podman logs -f eval-service-worker"
 echo "Stop/remove:   ./eval-service-down.sh"

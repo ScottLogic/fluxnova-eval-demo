@@ -27,6 +27,7 @@ from fluxnova_mlflow_dataset import (
     MlflowTraceReader,
     decision_quality_judge,
     experiment_name_for,
+    stringify_output,
     write_to_mlflow_dataset,
 )
 
@@ -165,7 +166,7 @@ def _log_dataset_record(
 
     record = {
         "inputs": {"process_instance_id": process_instance_id},
-        "outputs": final_output,
+        "outputs": stringify_output(final_output),
         "expectations": {},
         "tags": tags,
     }

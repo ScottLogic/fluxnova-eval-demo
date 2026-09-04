@@ -44,6 +44,27 @@ class FluxnovaClient:
         self._raise_for_status(response, "get variables")
         return {item["name"]: item["value"] for item in response.json()}
 
+    def get_child_instance_id(self, parent_instance_id: str) -> str | None:
+        """Return the process-instance id of the (single) child instance started
+        by a Call Activity in ``parent_instance_id``, or ``None`` if there is none.
+
+        Uses the *historic* process-instance API so it works after the child has
+        already ended — which it always has by the time a downstream step (e.g.
+        the eval service task) runs. A Call Activity spawns exactly one child
+        instance, so the first match is returned; if the parent happens to have
+        several (multiple call activities), the most recently started one wins.
+        """
+        response = self._session.get(
+            f"{self._base}/history/process-instance",
+            params={"superProcessInstanceId": parent_instance_id},
+        )
+        self._raise_for_status(response, "get child process instance")
+        instances = response.json()
+        if not instances:
+            return None
+        instances.sort(key=lambda item: item.get("startTime") or "", reverse=True)
+        return instances[0]["id"]
+
     @staticmethod
     def _raise_for_status(response: requests.Response, action: str) -> None:
         if not response.ok:

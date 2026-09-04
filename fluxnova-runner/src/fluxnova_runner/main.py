@@ -46,7 +46,8 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
             "Instead of waiting for the whole process to finish, return as soon as "
             "this BPMN activity (e.g. AdHocSubProcess_LoanAssessmentAgent) completes "
             "— useful when a downstream step (like an eval service task) shouldn't "
-            "block this run from being considered done."
+            "block this run from being considered done. Overrides the config file's "
+            "'wait_for_activity' field when both are given."
         ),
     )
     return parser.parse_args(list(argv) if argv is not None else None)
@@ -55,7 +56,13 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 def deploy(config: RunnerConfig, client: Client, skip: bool) -> None:
     if not skip:
         print(f"Deploying {config.bpmn_path} …")
-        deployment = client.deploy(config.bpmn_path, deployment_name=config.deployment_name)
+        for extra in config.additional_bpmn_paths:
+            print(f"  + additional resource {extra}")
+        deployment = client.deploy(
+            config.bpmn_path,
+            deployment_name=config.deployment_name,
+            additional_paths=config.additional_bpmn_paths,
+        )
         print(f"  Deployed '{deployment.get('name')}' (id={deployment.get('id')})")
 
 
@@ -89,10 +96,13 @@ def main(argv: Iterable[str] | None = None) -> None:
 
     instance_id = initiate(config=cfg, client=client)
 
-    if args.wait_for_activity:
-        print(f"Waiting for activity '{args.wait_for_activity}' to complete …")
-        client.wait_for_activity_completion(instance_id, args.wait_for_activity)
-        print(f"Activity '{args.wait_for_activity}' on {instance_id} completed.")
+    # CLI flag takes precedence; otherwise fall back to the config file's field.
+    wait_for_activity = args.wait_for_activity or cfg.wait_for_activity
+
+    if wait_for_activity:
+        print(f"Waiting for activity '{wait_for_activity}' to complete …")
+        client.wait_for_activity_completion(instance_id, wait_for_activity)
+        print(f"Activity '{wait_for_activity}' on {instance_id} completed.")
     else:
         print("Waiting for process to complete …")
         client.wait_for_completion(instance_id)

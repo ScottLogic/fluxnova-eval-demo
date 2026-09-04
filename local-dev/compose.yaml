@@ -167,6 +167,9 @@ services:
     environment:
       EVAL_SERVICE_FLUXNOVA_URL: ${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
       EVAL_SERVICE_TRACKING_URI: ${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}
+      # MLflow experiment the worker reads traces from — must match where the OTel
+      # collector writes them (MLFLOW_EXPERIMENT_ID). Single source of truth is .env.
+      EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
     extra_hosts:
       - "host.containers.internal:host-gateway"
 

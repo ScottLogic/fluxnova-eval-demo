@@ -77,7 +77,7 @@ def tracking_uri_for(tracking_uri_override: str | None, repo_root: Path) -> str:
     return tracking_uri_override or default_tracking_uri(repo_root)
 
 
-def _stringify_output(final_output: str | dict[str, Any] | list[Any] | None) -> str | None:
+def stringify_output(final_output: str | dict[str, Any] | list[Any] | None) -> str | None:
     """Normalise a run's final output to a plain string (or ``None``).
 
     The MLflow evaluation dataset's ``outputs`` field is schema-locked to a
@@ -128,7 +128,7 @@ def build_mlflow_record(
             "available_tools": available_tools,
             "expected_tools": resolve_expected_tools(expected_tool_rules, input_variables),
         },
-        "outputs": _stringify_output(final_output),
+        "outputs": stringify_output(final_output),
         "expectations": {
             "expected_output": golden["expected_output"] if golden else None,
         },

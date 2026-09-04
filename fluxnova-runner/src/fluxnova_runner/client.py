@@ -38,25 +38,43 @@ class Client:
         if username is not None or password is not None:
             self._session.auth = (username or "", password or "")
 
-    def deploy(self, bpmn_path: Path, deployment_name: str) -> dict[str, Any]:
-        """Deploy a BPMN file and return the deployment resource.
+    def deploy(
+        self,
+        bpmn_path: Path,
+        deployment_name: str,
+        additional_paths: "list[Path] | tuple[Path, ...]" = (),
+    ) -> dict[str, Any]:
+        """Deploy one or more BPMN files as a single deployment.
 
         Args:
-            bpmn_path: Path to the .bpmn file, relative to the client root directory.
+            bpmn_path: Path to the primary .bpmn file, relative to the client
+                root directory.
             deployment_name: Human-readable name shown in Fluxnova Cockpit.
+            additional_paths: Extra .bpmn files (e.g. a called subprocess
+                definition) to include in the *same* deployment, so cross-file
+                references like a Call Activity's ``calledElement`` resolve.
 
         Returns:
             The deployment response dict from Fluxnova.
         """
         name = deployment_name
-        resolved = self._root / bpmn_path
-        with resolved.open("rb") as fh:
+        resolved_paths = [self._root / bpmn_path] + [self._root / p for p in additional_paths]
+        open_files = [p.open("rb") for p in resolved_paths]
+        try:
+            files: dict[str, Any] = {
+                "deployment-name": (None, name),
+                "enable-duplicate-filtering": (None, "true"),
+            }
+            for path, fh in zip(resolved_paths, open_files, strict=True):
+                files[path.name] = (path.name, fh, "application/octet-stream")
             response = self._session.post(
                 f"{self._base}/deployment/create",
-                data={"deployment-name": name, "enable-duplicate-filtering": "true"},
-                files={"upload": (resolved.name, fh, "application/octet-stream")},
+                files=files,
                 headers={"Content-Type": None},  # type: ignore[arg-type]
             )
+        finally:
+            for fh in open_files:
+                fh.close()
         self._raise_for_status(response, "deploy BPMN")
         return response.json()
 

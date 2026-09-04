@@ -216,6 +216,35 @@ fluxnova-run --skip-deploy config/loan-assesment.yml   # BPMN already deployed
 fluxnova-run config/loan-assesment.yml                 # no mock workers (needs real service-task workers/backends)
 ```
 
+### Running the eval workflow (`config/loan-assesment-eval.yml`)
+
+`bpmn/loan-assesment-eval.bpmn` (`loanAssessmentEvalProcess`) invokes the loan-assessment agent as a **Call Activity**
+(`calledElement="loanAssessmentProcess"`) rather than embedding it, then runs a downstream eval/report/decision flow.
+Because the called process lives in a separate file, both BPMNs must be deployed together — the eval config lists the
+extra file under `additional_bpmn_paths`, which the runner posts in the same deployment:
+
+```yaml
+bpmn_path: bpmn/loan-assesment-eval.bpmn
+additional_bpmn_paths:
+  - bpmn/loan-assesment.bpmn        # the called loanAssessmentProcess
+```
+
+The eval process continues on the engine after the agent finishes (eval service task → decision gateway → human review
+user tasks), which mock workers can't complete. To stop an unattended run hanging on those user tasks, set
+`wait_for_activity` so the runner returns as soon as the agent Call Activity completes instead of waiting for the whole
+process:
+
+```yaml
+wait_for_activity: CallActivity_LoanAssessmentAgent   # omit to wait for the entire process
+```
+
+```bash
+fluxnova-run config/loan-assesment-eval.yml --with-mock-workers
+```
+
+The `--wait-for-activity ACTIVITY_ID` CLI flag overrides the config field for a single run. Scoring of the agent run is
+handled asynchronously by the **eval-service-worker** (see `local-dev/README.md`), not by the runner.
+
 ### Then evaluate that run with `mlflow-eval` (This will become deprecated)
 
 Make sure the MLflow tracking server is running first (see "Running the MLflow tracking server" below) and the OTel

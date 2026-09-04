@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -190,6 +191,29 @@ class TestScoreProcessInstance:
         )
 
         assert outcome.eval_passed is True
+
+    def test_dict_final_output_is_stringified_in_dataset_record(self, monkeypatch):
+        # When the agent's last message is captured as structured JSON, the trace
+        # yields a dict/list rather than a string. The dataset record's `outputs`
+        # must be normalised to a JSON string, otherwise MLflow's server-side
+        # schema inference raises "'str' object does not support item assignment".
+        _OUTPUTS["proc-dict"] = {"recommendation": "APPROVE", "reasons": ["credit", "income"]}
+        calls = _stub_common(monkeypatch, "yes", "ok")
+
+        scoring.score_process_instance(
+            "proc-dict",
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+        )
+
+        outputs = calls["dataset_kwargs"]["record"]["outputs"]
+        assert isinstance(outputs, str)
+        assert json.loads(outputs) == {
+            "recommendation": "APPROVE",
+            "reasons": ["credit", "income"],
+        }
 
     def test_raises_no_final_output_error_when_run_has_no_output_yet(self, monkeypatch):
         _OUTPUTS["proc-4"] = None

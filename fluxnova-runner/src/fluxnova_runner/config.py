@@ -24,6 +24,8 @@ class RunnerConfig:
     subprocess_id: str | None = None
     variables: dict[str, Any] = field(default_factory=dict)
     mock_workers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    additional_bpmn_paths: list[Path] = field(default_factory=list)
+    wait_for_activity: str | None = None
 
     @classmethod
     def from_file(cls, path: Path) -> RunnerConfig:
@@ -39,6 +41,12 @@ class RunnerConfig:
         bpmn_path = Path(raw["bpmn_path"])
         if not bpmn_path.is_absolute():
             bpmn_path = root_dir / bpmn_path
+
+        def _resolve(p: str | Path) -> Path:
+            resolved = Path(p)
+            return resolved if resolved.is_absolute() else root_dir / resolved
+
+        additional_bpmn_paths = [_resolve(p) for p in (raw.get("additional_bpmn_paths") or [])]
         return cls(
             fluxnova_url=raw["fluxnova_url"].rstrip("/"),
             bpmn_path=bpmn_path,
@@ -47,4 +55,6 @@ class RunnerConfig:
             subprocess_id=raw.get("subprocess_id"),
             variables=raw.get("variables") or {},
             mock_workers=raw.get("mock_workers") or {},
+            additional_bpmn_paths=additional_bpmn_paths,
+            wait_for_activity=raw.get("wait_for_activity"),
         )
