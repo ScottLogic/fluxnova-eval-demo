@@ -201,6 +201,12 @@ Once Fluxnova responds, `fluxnova-up.sh` opens the Fluxnova web UI (`/fluxnova-w
 browser automatically — same behaviour as `mlflow-up.sh` below, including the `localhost`-unreachable fallback
 (see "Troubleshooting"). Set `FLUXNOVA_OPEN_BROWSER=false` to skip the auto-open.
 
+### Troubleshooting: fluxnova-up does not start the fluxnova container
+
+Make sure that you have not manually created the container from the fluxnova-edd-platform image, but instead rely on the script to create this for you. 
+
+If you manually create the container the script will sometimes skip over this step. Remove the container entirely and re-run the fluxnova-up script.
+
 ## Optional: run the MLflow tracking server in its own Podman pod
 
 `mlflow-up.sh` / `mlflow-down.sh` run the MLflow tracking server (see the main README's "Running the MLflow
@@ -257,28 +263,55 @@ you don't hit this on your machine, `http://localhost:5000` works as documented 
 MLflow's built-in AI Gateway (`http://localhost:5000/#/gateway`, part of the same `mlflow-local` pod/server — no
 separate service to run) is required for **automatic evaluation** judges (`Scorer.register()` + `Scorer.start()`),
 which — unlike offline/EDD judges — must reference a `gateway:/<endpoint-name>` model URI rather than calling Ollama
-directly. Here's how to reproduce a working local `fluxnova-judge` endpoint backed by Ollama:
+directly. Here's how to reproduce a working local `fluxnova-judge` endpoint backed by a host-run Ollama:
 
-1. Make sure `mlflow-local` is running (`./mlflow-up.sh`) with the `--add-host host.containers.internal:host-gateway`
-   flag included at pod-create time (already the default in this script) — without it, the container can't reach a
-   host-run Ollama server at all.
-2. Open `http://localhost:5000/#/gateway` and click **Create Endpoint**.
-3. Name it `fluxnova-judge`, select provider **Ollama**.
-4. Pick a model from the picker — at time of writing only `llama3.1` was offered here even though `llama3.2` was
+1. Make sure Ollama itself is listening on all interfaces, not just `127.0.0.1` — the `mlflow-local` container needs
+   to reach it from outside the Windows host's own loopback, which is not the default. Set `OLLAMA_HOST` and
+   restart Ollama:
+   ```powershell
+   [System.Environment]::SetEnvironmentVariable('OLLAMA_HOST', '0.0.0.0:11434', 'User')
+   ```
+   Setting the variable alone does **not** reconfigure an already-running Ollama process, and relaunching it via its
+   tray icon may not help either — Explorer (and anything it spawns) only picks up new User environment variables
+   after you log off/on or reboot. To apply it immediately, quit Ollama and relaunch it from a shell that already
+   has `OLLAMA_HOST` set in its own process environment:
+   ```powershell
+   Stop-Process -Name "ollama app" -Force
+   Stop-Process -Name "ollama" -Force
+   $env:OLLAMA_HOST = "0.0.0.0:11434"
+   Start-Process "$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe"
+   ```
+   Confirm it worked: `Get-NetTCPConnection -LocalPort 11434 | Select LocalAddress` should show `::` (or
+   `0.0.0.0`), not `127.0.0.1`. See "Troubleshooting" below if the container still can't reach it after this.
+2. Make sure `mlflow-local` is running (`./services/mlflow-up.sh`) with the `--add-host
+   host.containers.internal:host-gateway` flag included at pod-create time (already the default in this script).
+3. Open `http://localhost:5000/#/gateway` and click **Create Endpoint**.
+4. Name it `fluxnova-judge`, select provider **Ollama**.
+5. Pick a model from the picker — at time of writing only `llama3.1` was offered here even though `llama3.2` was
    already pulled locally (`ollama list`); `llama3.1` works fine and is what this repo's example endpoint uses. Note
    this means the automatic-evaluation judge model may differ from whatever `ollama/llama3.2` model the existing
    hand-rolled `_llm_judge()` offline scorers use, unless reconciled later.
-5. Create a new connection for it:
-   - **Base URL**: `http://host.containers.internal:11434/v1` — the `/v1` suffix is required. MLflow's
-     `OllamaProvider` appends `/chat/completions` directly onto whatever base URL is configured, with no separate
-     `/v1` insertion, so omitting it causes every request to 404 (you'll see Ollama's own literal
+6. Create a new connection for it:
+   - **Base URL**: try `http://host.containers.internal:11434/v1` first — it works out of the box for most setups.
+     On some Windows/Podman-machine/WSL2 setups it doesn't, though: if the Podman machine uses rootless `pasta`
+     networking, the `host.containers.internal` alias resolves to the WSL VM's *own* loopback rather than the
+     Windows host, so the connection fails no matter how Ollama/the firewall are configured (see "Troubleshooting"
+     below for how to tell the difference from an Ollama/firewall problem). If you hit that, fall back to the
+     Podman machine's actual default-gateway IP instead, found with:
+     ```bash
+     wsl.exe -d podman-machine-default -- ip route show default   # note the "via <ip>" address
+     ```
+     e.g. `http://172.17.112.1:11434/v1`. The `/v1` suffix is required either way — MLflow's `OllamaProvider`
+     appends `/chat/completions` directly onto whatever base URL is configured, with no separate `/v1` insertion, so
+     omitting it causes every request to 404 (you'll see Ollama's own literal
      `{"detail":{"message":"404 page not found"}}` body passed through — this looks like an MLflow failure at first
-     glance but is actually Ollama's router rejecting the wrong path).
+     glance but is actually Ollama's router rejecting the wrong path). That gateway IP can change across reboots or
+     Podman machine resets — re-run the `wsl.exe` command above and update the endpoint if it stops connecting.
    - **API key name/value**: any placeholder (e.g. `OLLAMA_API_KEY` / `unused`) — local Ollama needs no real
      authentication, but the UI form requires something be entered.
-6. Save. There's no in-place "edit the base URL" option once an endpoint/connection is created in this MLflow
+7. Save. There's no in-place "edit the base URL" option once an endpoint/connection is created in this MLflow
    version — to fix a mistake, delete and recreate rather than editing.
-7. Verify with the OpenAI-compatible unified endpoint (works with `curl` or the OpenAI Python SDK):
+8. Verify with the OpenAI-compatible unified endpoint (works with `curl` or the OpenAI Python SDK):
    ```python
    from openai import OpenAI
 
@@ -293,6 +326,49 @@ directly. Here's how to reproduce a working local `fluxnova-judge` endpoint back
    print(response.choices[0].message)
    ```
    A real completion coming back (rather than a 404/500) confirms the endpoint is wired up correctly.
+
+### Troubleshooting: gateway endpoint returns a 500 with an Ollama connection error
+
+If step 8 above (or a real judge run) returns a 500 with a traceback ending in something like
+`ClientConnectorError: Cannot connect to host ...` or `ConnectionRefusedError`, work through these in order — each
+was hit in turn getting this working on a Windows/Podman-machine/WSL2 setup:
+
+1. **Ollama isn't listening on all interfaces.** Check on the Windows host:
+   ```powershell
+   Get-NetTCPConnection -LocalPort 11434 | Select-Object LocalAddress,LocalPort,State
+   ```
+   `LocalAddress` of `127.0.0.1` means Ollama only accepts loopback connections — nothing outside the Windows
+   host's own localhost, including containers, can reach it. Fix as in step 1 above, making sure to relaunch Ollama
+   from a shell that already has `OLLAMA_HOST` set (a registry-only User env var change doesn't reach
+   already-running or already-spawned process trees).
+
+2. **Windows Firewall is silently dropping the inbound connection.** Even with Ollama listening on `0.0.0.0`/`::`,
+   the container's connection attempt can still time out if nothing allows inbound TCP 11434 from the WSL2 virtual
+   network. A timeout (as opposed to an instant refusal) from inside the Podman VM's own network namespace is the
+   signature of this:
+   ```bash
+   wsl.exe -d podman-machine-default -- sh -c "curl -sv --max-time 5 http://<gateway-ip>:11434/api/version"
+   ```
+   Fix with a standard inbound allow rule (run as Administrator):
+   ```powershell
+   New-NetFirewallRule -DisplayName "Ollama TCP 11434 (WSL)" -Direction Inbound -Protocol TCP -LocalPort 11434 -Action Allow -Profile Any
+   ```
+   Note: on newer Windows builds the WSL vEthernet adapter shows up as `vEthernet (WSL (Hyper-V firewall))`, which
+   might suggest the newer per-VM `New-NetFirewallHyperVRule` cmdlet is the right tool — in testing on this repo it
+   wasn't: `Get-NetFirewallHyperVPort` showed no live VM port for such a rule to bind to, and it had no effect even
+   after a full `wsl --shutdown` + restart. The plain `New-NetFirewallRule` above is what actually worked.
+
+3. **If 1 and 2 are both fixed and it's still failing, `host.containers.internal` may not resolve to the Windows
+   host at all on your setup.** This only affects some rootless/pasta-networked Podman machines — plenty of setups
+   work fine with `host.containers.internal` and never hit this. If yours doesn't, an endpoint configured against
+   `host.containers.internal` will keep failing no matter how Ollama/the firewall are configured; point it at the
+   Podman machine's actual default-gateway IP instead (`wsl.exe -d podman-machine-default -- ip route show
+   default`) — see the Base URL bullet above.
+
+If you're not on Windows, or your Podman machine uses a different networking backend (e.g. rootful mode, or a
+`gvproxy`-backed `host.containers.internal` that actually reaches the host), your mileage on 2–3 may vary — the
+underlying goal is just "the `mlflow-local` container can reach `<something>:11434` on the host machine"; adapt the
+diagnostic commands to whatever your container runtime's host-networking mechanism actually is.
 
 ## Toggling automatic evaluation judges on/off
 

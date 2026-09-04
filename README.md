@@ -16,10 +16,11 @@ Goals of this project are:
 
 This project is split into three independent Python packages:
 
-1. **`fluxnova-runner`** (`fluxnova-runner/`) — deploys a BPMN workflow to Fluxnova, starts a process instance with
-   configurable input variables, drives mock external-task workers, and polls until the sub-process completes.
-2. **`fluxnova-mlflow-dataset`** (`fluxnova-mlflow-dataset/`) — a small shared library (no CLI) used by the harness's
-   `mlflow-eval` suite. It provides:
+1. **`fluxnova-runner`** ([`fluxnova-runner/`](fluxnova-runner/README.md)) — deploys a BPMN workflow to Fluxnova,
+   starts a process instance with configurable input variables, drives mock external-task workers, and polls until
+   the sub-process completes.
+2. **`fluxnova-mlflow-dataset`** ([`fluxnova-mlflow-dataset/`](fluxnova-mlflow-dataset/README.md)) — a small shared
+   library (no CLI) used by the harness's `mlflow-eval` suite. It provides:
     - **collection** (`collect_new_runs`) — an on-demand pre-step (run via `mlflow-eval --collect`, not a background
       service) that finds newly-completed agentic subprocess runs directly in MLflow's own trace store (populated by an
       OTel Collector exporting straight to MLflow), builds an agent-history report by joining that trace data with the
@@ -27,7 +28,7 @@ This project is split into three independent Python packages:
       into a persistent MLflow evaluation dataset (skip-if-exists/idempotent).
     - **record shaping/read/write** — builds MLflow-dataset records from agent-history data and reads/writes the
       persistent PostgreSQL-backed MLflow evaluation dataset.
-3. **`harness`** (`harness/`) — the two evaluation suites:
+3. **`harness`** ([`harness/`](harness/README.md)) — the two evaluation suites:
     - **MLflow evaluation suite** (`mlflow-eval`) — the primary evaluation suite, evaluating agent-history data with
       `mlflow.genai.evaluate` scorers, with results browsable in the MLflow UI. It can evaluate a single ad-hoc report
       file, a single previously recorded run (by process instance ID, read from the MLflow dataset), or every recorded
@@ -161,9 +162,7 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    python -m venv .venv
    source .venv/Scripts/activate
 
-   pip install -e ".[dev]"
-   pip install -e ../fluxnova-mlflow-dataset[dev]
-   pip install -e ../fluxnova-runner[dev]
+   pip install -e ".[dev]" -e "../fluxnova-mlflow-dataset[dev]" -e "../fluxnova-runner[dev]"
    ```
    This installs four console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and
    `deep-eval` / `mlflow-eval` (harness evaluation suites).
