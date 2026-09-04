@@ -59,7 +59,7 @@ services:
   # entrypoint as services/mlflow-up.sh: install the psycopg2 driver, then run the
   # server. Artifacts land on the host bind-mount (Postgres only stores metadata).
   mlflow-local:
-    image: ${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:latest}
+    image: ${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:v3.15.2}
     container_name: mlflow
     depends_on:
       postgres-local:
@@ -95,7 +95,7 @@ services:
   # the `fluxnova-local` network alias makes fluxnova reachable by that name from siblings
   # (e.g. the eval worker) even though it has no network identity of its own.
   otel-collector-local:
-    image: ${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:latest}
+    image: ${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:0.160.0}
     container_name: otel-collector
     command: ["--config=/etc/otelcol/config.yaml"]
     environment:
@@ -183,7 +183,7 @@ services:
   # the :8889 endpoint) — so prometheus.yml needs no edits.
   prometheus-local:
     profiles: ["grafana"]
-    image: ${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:latest}
+    image: ${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:v3.14.0}
     container_name: prometheus
     depends_on:
       # Not a hard requirement (Prometheus just retries scrapes), but this ensures the
@@ -210,7 +210,7 @@ services:
   # dashboard are auto-provisioned.
   grafana-local:
     profiles: ["grafana"]
-    image: ${GRAFANA_IMAGE:-docker.io/grafana/grafana:latest}
+    image: ${GRAFANA_IMAGE:-docker.io/grafana/grafana:13.2.1}
     container_name: grafana
     network_mode: "service:prometheus-local"
     depends_on:

@@ -43,8 +43,8 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set +a
 fi
 
-PROMETHEUS_IMAGE="${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:latest}"
-GRAFANA_IMAGE="${GRAFANA_IMAGE:-docker.io/grafana/grafana:latest}"
+PROMETHEUS_IMAGE="${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:v3.14.0}"
+GRAFANA_IMAGE="${GRAFANA_IMAGE:-docker.io/grafana/grafana:13.2.1}"
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
 GRAFANA_PORT="${GRAFANA_PORT:-3000}"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
