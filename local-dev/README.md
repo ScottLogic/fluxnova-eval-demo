@@ -360,7 +360,7 @@ scorers are recorded for visibility/audit only, not yet wired into the gate).
 original `loan-assesment.bpmn`) has a `ServiceTask_EvaluateAgentOutput` on this worker's topic (`agent-output-eval`)
 right after the loan-assessment ad-hoc subprocess, followed by `ExclusiveGateway_EvalPassed` routing to
 `EndEvent_EvalPassed`/`EndEvent_EvalFailed` based on `evalPassed` — confirmed working end-to-end against a live
-process instance. Use `harness/config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN, and set
+process instance. Use `config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN, and set
 `MLFLOW_EXPERIMENT_ID` in `.env` to that config's experiment (`fluxnova-loanAssessmentEvalProcess`) so traces route to
 where the worker looks for them. You can also trigger a one-off scoring run manually — see
 `eval-service-worker/README.md` (or call `eval_service_worker.scoring.score_process_instance(...)` directly) with a

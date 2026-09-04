@@ -2,7 +2,7 @@
 DeepEval tests for the Fluxnova loan assessment agent subprocess.
 
 Run via the entry point (generates both the DeepEval score summary and an HTML report):
-    deep-eval harness/config/loan-assesment.yml \\
+    deep-eval config/loan-assesment.yml \\
               harness/.fluxnova/loanAssessmentProcess/<id>.json
 
 The HTML report is written next to the agent-history JSON:
@@ -10,11 +10,11 @@ The HTML report is written next to the agent-history JSON:
 
 Or invoke deepeval / pytest directly:
     deepeval test run src/deep_eval/main.py \\
-        --config harness/config/loan-assesment.yml \\
+        --config config/loan-assesment.yml \\
         --report harness/.fluxnova/loanAssessmentProcess/<id>.json
 
     pytest src/deep_eval/main.py -v \\
-        --config harness/config/loan-assesment.yml \\
+        --config config/loan-assesment.yml \\
         --report harness/.fluxnova/loanAssessmentProcess/<id>.json \\
         --html harness/.fluxnova/loanAssessmentProcess/<id>-eval.html --self-contained-html
 """

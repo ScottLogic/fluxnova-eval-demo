@@ -338,7 +338,7 @@ For **alternative run walkthroughs** (e.g. WSL with rootless Podman), see [`RUNN
 
 All harness and evaluation behaviour is driven by a single YAML file.
 
-[Example](harness/config/loan-assesment.yml)
+[Example](config/loan-assesment.yml)
 
 ### `expected_tools` rule syntax
 

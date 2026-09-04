@@ -26,7 +26,7 @@ pip install -e .
 ## Config
 
 Deliberately **no config file** — this worker is meant to be a slim, independently deployable service, so depending on
-another service's YAML (e.g. `harness/config/loan-assesment.yml`) would recreate the exact coupling this worker avoids
+another service's YAML (e.g. `config/loan-assesment.yml`) would recreate the exact coupling this worker avoids
 everywhere else. Instead, every setting has a hardcoded default in `src/eval_service_worker/config.py`, overridable via
 either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 

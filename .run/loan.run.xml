@@ -18,7 +18,7 @@
     <option name="DEBUG_JUST_MY_CODE" value="false" />
     <option name="RUN_TOOL" value="" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/fluxnova-runner/src/fluxnova_runner/main.py" />
-    <option name="PARAMETERS" value="&quot;harness/config/loan-assesment.yml&quot; --with-mock-workers" />
+    <option name="PARAMETERS" value="&quot;config/loan-assesment.yml&quot; --with-mock-workers" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

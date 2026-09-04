@@ -21,6 +21,7 @@ class RunnerConfig:
     bpmn_path: Path
     process_key: str
     deployment_name: str
+    subprocess_id: str | None = None
     variables: dict[str, Any] = field(default_factory=dict)
     mock_workers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -29,10 +30,9 @@ class RunnerConfig:
         """Load a workflow YAML config file.
 
         ``bpmn_path`` is resolved relative to the repo root if not absolute.
-        Extra keys (e.g. ``subprocess_id``, ``available_tools``,
-        ``mlflow_dataset`` — used by the harness's eval tools) are simply
-        ignored, so the same YAML file used for evaluation config can be
-        reused here unchanged.
+        Extra keys (e.g. ``available_tools``, ``mlflow_dataset`` — used by the
+        harness's eval tools) are simply ignored, so the same YAML file used
+        for evaluation config can be reused here unchanged.
         """
         root_dir = Path(__file__).resolve().parent.parent.parent.parent
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -44,6 +44,7 @@ class RunnerConfig:
             bpmn_path=bpmn_path,
             process_key=raw["process_key"],
             deployment_name=raw.get("deployment_name"),
+            subprocess_id=raw.get("subprocess_id"),
             variables=raw.get("variables") or {},
             mock_workers=raw.get("mock_workers") or {},
         )

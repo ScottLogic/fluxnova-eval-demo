@@ -1,7 +1,7 @@
 """Configuration for the ``eval-service-worker`` standalone service.
 
 Deliberately **not** read from ``harness``'s workflow YAML config
-(``harness/config/loan-assesment.yml``) — this worker is meant to be a slim,
+(``config/loan-assesment.yml``) — this worker is meant to be a slim,
 independently deployable service (its own Podman pod/container), and depending
 on another service's config file for its own connection settings would
 recreate exactly the coupling that was avoided everywhere else (no BPMN

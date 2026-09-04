@@ -18,6 +18,18 @@
       "applicantType": "EMPLOYED",
       "hasCollateral": false,
       "expectedDecision": "APPROVE"
+    },
+    "input_variables": {
+      "requestedAmount": 50000,
+      "applicantType": "EMPLOYED",
+      "hasCollateral": false,
+      "loanPurpose": "Home improvement"
+    },
+    "tool_responses": {
+      "credit-score-check": { "creditScore": 720, "creditRiskBand": "LOW" },
+      "fraud-screening": { "fraudRiskScore": 12 },
+      "employment-verification": { "employmentVerified": true, "annualIncome": 55000 },
+      "affordability-assessment": { "debtToIncomeRatio": 0.28, "affordabilityPassed": true }
     }
   },
   {
@@ -40,6 +52,19 @@
       "applicantType": "EMPLOYED",
       "hasCollateral": true,
       "expectedDecision": "APPROVE"
+    },
+    "input_variables": {
+      "requestedAmount": 75000,
+      "applicantType": "EMPLOYED",
+      "hasCollateral": true,
+      "loanPurpose": "Property purchase"
+    },
+    "tool_responses": {
+      "credit-score-check": { "creditScore": 680, "creditRiskBand": "MEDIUM" },
+      "fraud-screening": { "fraudRiskScore": 8 },
+      "employment-verification": { "employmentVerified": true, "annualIncome": 62000 },
+      "collateral-valuation": { "collateralValue": 220000 },
+      "affordability-assessment": { "debtToIncomeRatio": 0.32, "affordabilityPassed": true }
     }
   },
   {
@@ -61,6 +86,18 @@
       "applicantType": "SELF_EMPLOYED",
       "hasCollateral": false,
       "expectedDecision": "APPROVE"
+    },
+    "input_variables": {
+      "requestedAmount": 35000,
+      "applicantType": "SELF_EMPLOYED",
+      "hasCollateral": false,
+      "loanPurpose": "Business expansion"
+    },
+    "tool_responses": {
+      "credit-score-check": { "creditScore": 750, "creditRiskBand": "LOW" },
+      "fraud-screening": { "fraudRiskScore": 5 },
+      "bank-statement-analysis": { "bankStatementScore": 88, "annualIncome": 72000 },
+      "affordability-assessment": { "debtToIncomeRatio": 0.22, "affordabilityPassed": true }
     }
   },
   {
@@ -82,6 +119,18 @@
       "applicantType": "EMPLOYED",
       "hasCollateral": false,
       "expectedDecision": "REJECT"
+    },
+    "input_variables": {
+      "requestedAmount": 40000,
+      "applicantType": "EMPLOYED",
+      "hasCollateral": false,
+      "loanPurpose": "Debt consolidation"
+    },
+    "tool_responses": {
+      "credit-score-check": { "creditScore": 700, "creditRiskBand": "MEDIUM" },
+      "fraud-screening": { "fraudRiskScore": 78 },
+      "employment-verification": { "employmentVerified": true, "annualIncome": 38000 },
+      "affordability-assessment": { "debtToIncomeRatio": 0.61, "affordabilityPassed": false }
     }
   },
   {
@@ -103,6 +152,18 @@
       "applicantType": "SELF_EMPLOYED",
       "hasCollateral": false,
       "expectedDecision": "REJECT"
+    },
+    "input_variables": {
+      "requestedAmount": 60000,
+      "applicantType": "SELF_EMPLOYED",
+      "hasCollateral": false,
+      "loanPurpose": "Home renovation"
+    },
+    "tool_responses": {
+      "credit-score-check": { "creditScore": 480, "creditRiskBand": "HIGH" },
+      "fraud-screening": { "fraudRiskScore": 19 },
+      "bank-statement-analysis": { "bankStatementScore": 32, "annualIncome": 28000 },
+      "affordability-assessment": { "debtToIncomeRatio": 0.65, "affordabilityPassed": false }
     }
   },
   {
@@ -125,6 +186,19 @@
       "applicantType": "EMPLOYED",
       "hasCollateral": true,
       "expectedDecision": "REJECT"
+    },
+    "input_variables": {
+      "requestedAmount": 90000,
+      "applicantType": "EMPLOYED",
+      "hasCollateral": true,
+      "loanPurpose": "Vehicle purchase"
+    },
+    "tool_responses": {
+      "credit-score-check": { "creditScore": 610, "creditRiskBand": "MEDIUM" },
+      "fraud-screening": { "fraudRiskScore": 22 },
+      "employment-verification": { "employmentVerified": true, "annualIncome": 44000 },
+      "collateral-valuation": { "collateralValue": 45000 },
+      "affordability-assessment": { "debtToIncomeRatio": 0.58, "affordabilityPassed": false }
     }
   }
 ]
