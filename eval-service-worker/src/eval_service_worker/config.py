@@ -40,11 +40,13 @@ DEFAULT_TOPIC = "agent-output-eval"
 DEFAULT_JUDGE_MODEL = "gateway:/fluxnova-judge"
 
 # Judge calls routed through the gateway to a local Ollama model have been
-# observed taking 90+ seconds in this environment (see
+# observed taking 90+ seconds in this environment — and much longer (several
+# minutes) on CPU-only boxes under memory pressure (see
 # EDD-AND-PRODUCTION-EVAL-ANALYSIS.md / EVAL-SERVICE-WORKER-PLAN.md) — the lock
 # duration must comfortably exceed that so Fluxnova doesn't reassign the task
-# to another worker mid-scoring.
-DEFAULT_LOCK_DURATION_MS = 180_000
+# to another worker mid-scoring. Override per-environment with
+# EVAL_SERVICE_LOCK_DURATION_MS.
+DEFAULT_LOCK_DURATION_MS = 600_000
 
 # MLflow tracking server address — must be an HTTP(S) URL (not a direct
 # postgresql:// path), since gateway-routed judge models are resolved by the

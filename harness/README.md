@@ -6,7 +6,8 @@ them with one of two evaluation suites. See the repo root [`README.md`](../READM
 (architecture diagram, first-time setup, end-to-end walkthrough) — this README covers the code layout and APIs
 specific to this directory.
 
-**Two evaluation suites, same config file, same underlying judge model, neither depends on the other:**
+**Two evaluation suites, same config file, neither depends on the other** (each uses its own judge model —
+`mlflow-eval` the `gemma4:e2b` judge, `deep-eval` `llama3.2`)**:**
 
 - **`mlflow-eval`** (`src/mlflow_eval/`) — the primary suite. Scores agent-history data with `mlflow.genai.evaluate`
   scorers; results are browsable in the MLflow UI. Can evaluate a single ad-hoc report, a single previously recorded

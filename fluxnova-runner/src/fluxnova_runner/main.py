@@ -50,6 +50,17 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
             "'wait_for_activity' field when both are given."
         ),
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        metavar="SECONDS",
+        help=(
+            "Maximum seconds to wait for the process (or --wait-for-activity "
+            "activity) to complete before raising a TimeoutError. Raise this for "
+            "slower CPU-only local models (default: 600)."
+        ),
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -101,11 +112,13 @@ def main(argv: Iterable[str] | None = None) -> None:
 
     if wait_for_activity:
         print(f"Waiting for activity '{wait_for_activity}' to complete …")
-        client.wait_for_activity_completion(instance_id, wait_for_activity)
+        client.wait_for_activity_completion(
+            instance_id, wait_for_activity, timeout=args.timeout
+        )
         print(f"Activity '{wait_for_activity}' on {instance_id} completed.")
     else:
         print("Waiting for process to complete …")
-        client.wait_for_completion(instance_id)
+        client.wait_for_completion(instance_id, timeout=args.timeout)
         print(f"Process {instance_id} completed.")
     print(
         "Run 'mlflow-eval <config> --collect' to record the completed subprocess run "

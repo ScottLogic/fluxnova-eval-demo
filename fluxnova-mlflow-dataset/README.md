@@ -103,7 +103,7 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 `decision_quality_judge(model)` builds the one `Guidelines` judge (`DECISION_QUALITY_NAME` /
 `DECISION_QUALITY_GUIDELINES`) used identically by:
 
-- `harness/src/mlflow_eval/main.py` — offline batch evaluation, called with a direct `"ollama:/llama3.2"`-style URI.
+- `harness/src/mlflow_eval/main.py` — offline batch evaluation, called with a direct `"ollama:/gemma4:e2b"`-style URI.
 - `eval-service-worker` — synchronous per-run scoring, called with a `"gateway:/<endpoint>"` URI (required for
   anything routed through the MLflow AI Gateway).
 
