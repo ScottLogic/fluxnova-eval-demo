@@ -14,3 +14,4 @@ src/eval_service_worker.egg-info/top_level.txt
 tests/test_config.py
 tests/test_main.py
 tests/test_scoring.py
+tests/test_worker.py

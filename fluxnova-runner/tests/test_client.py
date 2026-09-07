@@ -75,6 +75,15 @@ class TestRunnerConfig:
         cfg = RunnerConfig.from_file(cfg_file)
         assert not cfg.fluxnova_url.endswith("/")
 
+    def test_wait_for_activity_defaults_to_none(self, tmp_path: Path):
+        cfg = RunnerConfig.from_file(self._cfg_file(tmp_path))
+        assert cfg.wait_for_activity is None
+
+    def test_loads_wait_for_activity(self, tmp_path: Path):
+        extra = "wait_for_activity: CallActivity_LoanAssessmentAgent\n"
+        cfg = RunnerConfig.from_file(self._cfg_file(tmp_path, extra))
+        assert cfg.wait_for_activity == "CallActivity_LoanAssessmentAgent"
+
     def test_ignores_eval_only_extra_fields(self, tmp_path: Path):
         """Fields owned by the listener/eval tools (subprocess_id, available_tools,
         expected_tools, dataset_path, mlflow_dataset) should be silently ignored so
@@ -181,8 +190,31 @@ class TestClientDeploy:
         with patch.object(client._session, "post", return_value=mock_resp) as mock_post:
             client.deploy(Path("flows/my.bpmn"), "My Flow")
         _, kwargs = mock_post.call_args
-        uploaded_path = list(kwargs["files"]["upload"])[0]
+        files = kwargs["files"]
+        assert files["deployment-name"] == (None, "My Flow")
+        assert files["enable-duplicate-filtering"] == (None, "true")
+        uploaded_path = list(files["my.bpmn"])[0]
         assert uploaded_path == "my.bpmn"
+
+    def test_includes_additional_bpmn_resources(self, tmp_path: Path):
+        primary = tmp_path / "flows" / "main.bpmn"
+        primary.parent.mkdir()
+        primary.write_bytes(b"<bpmn/>")
+        sub = tmp_path / "flows" / "sub.bpmn"
+        sub.write_bytes(b"<bpmn/>")
+        client = Client(base_url="http://localhost:8080", root=tmp_path)
+        mock_resp = MagicMock(ok=True)
+        mock_resp.json.return_value = {"name": "My Flow", "id": "1"}
+        with patch.object(client._session, "post", return_value=mock_resp) as mock_post:
+            client.deploy(
+                Path("flows/main.bpmn"),
+                "My Flow",
+                additional_paths=[Path("flows/sub.bpmn")],
+            )
+        _, kwargs = mock_post.call_args
+        files = kwargs["files"]
+        assert list(files["main.bpmn"])[0] == "main.bpmn"
+        assert list(files["sub.bpmn"])[0] == "sub.bpmn"
 
     def test_raises_on_http_error(self, tmp_path: Path):
         bpmn = tmp_path / "my.bpmn"

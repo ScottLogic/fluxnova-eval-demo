@@ -48,6 +48,7 @@ from fluxnova_mlflow_dataset.store import (
     experiment_name_for,
     get_or_create_dataset,
     record_exists,
+    stringify_output,
     tracking_uri_for,
     write_to_mlflow_dataset,
 )
@@ -71,6 +72,7 @@ __all__ = [
     "experiment_name_for",
     "get_or_create_dataset",
     "record_exists",
+    "stringify_output",
     "tracking_uri_for",
     "write_to_mlflow_dataset",
     "BpmnLookup",

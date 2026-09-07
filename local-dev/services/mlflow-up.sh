@@ -32,7 +32,7 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set +a
 fi
 
-MLFLOW_IMAGE="${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:latest}"
+MLFLOW_IMAGE="${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:v3.15.2}"
 MLFLOW_PORT="${MLFLOW_PORT:-5000}"
 # Backend store is now PostgreSQL (postgres-local's mlflow database, created by
 # postgres-up.sh's postgres/init.sh) instead of the old SQLite file. Artifacts

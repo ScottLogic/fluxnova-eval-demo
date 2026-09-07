@@ -14,7 +14,16 @@ All four scorers' `Feedback` are logged back onto the same real trace as MLflow 
 Evaluation Run (via `mlflow.genai.evaluate(data=[{"trace": trace}], scorers=[...])`), plus a lightweight MLflow
 evaluation-dataset record. The task completes with `evalPassed` (Boolean, driven solely by `decision_quality`) /
 `evalRationale` (String) output variables, which `loan-assesment-eval.bpmn`'s `ExclusiveGateway_EvalPassed` uses to
-route to `EndEvent_EvalPassed`/`EndEvent_EvalFailed` — confirmed working end-to-end against a live process instance.
+route the flow: on pass → `ServiceTask_GenerateReport` → `Gateway_AssessmentDecision` (approve/reject) with a human
+`UserTask_ApprovalReview`; on fail → `UserTask_ReviewFailedEval`. Confirmed working end-to-end against a live process
+instance.
+
+**Correlating the agent run (Call Activity):** the eval process invokes the loan-assessment agent as a **Call Activity**
+(`CallActivity_LoanAssessmentAgent` → `loanAssessmentProcess`), so the agent — and therefore its trace — runs in a
+*child* process instance, while `ServiceTask_EvaluateAgentOutput` fires in the *parent*. The worker resolves the child
+instance for the parent it's handed (via Fluxnova's history API,
+`FluxnovaClient.get_child_instance_id`) and scores the child's trace, falling back to the parent instance id when there
+is no child (e.g. running `loan-assesment.bpmn` standalone).
 
 ## Install (editable, into the harness venv or your own)
 
@@ -43,6 +52,13 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 | Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0` |
 
 A CLI flag always wins over the matching env var, which always wins over the default.
+
+> **Experiment alignment (important):** the OTel collector routes **every** trace — from the parent eval process *and*
+> the called agent child process — to the single MLflow experiment named by `MLFLOW_EXPERIMENT_ID` (a static collector
+> header), regardless of process key. The worker must therefore read from that **same** experiment, so
+> `EVAL_SERVICE_EXPERIMENT_NAME` has to name whatever experiment `MLFLOW_EXPERIMENT_ID` points at. `local-dev/` keeps
+> both in `local-dev/.env` so they stay in sync (currently `fluxnova-loanAssessmentEvalProcess`). See
+> `local-dev/README.md`.
 
 ## Run as a worker (host)
 

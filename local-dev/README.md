@@ -433,26 +433,44 @@ Evaluation Run, plus a lightweight MLflow evaluation-dataset record; the task th
 scorers are recorded for visibility/audit only, not yet wired into the gate).
 
 **BPMN wiring:** `bpmn/loan-assesment-eval.bpmn` (a separate process definition, `loanAssessmentEvalProcess`, from the
-original `loan-assesment.bpmn`) has a `ServiceTask_EvaluateAgentOutput` on this worker's topic (`agent-output-eval`)
-right after the loan-assessment ad-hoc subprocess, followed by `ExclusiveGateway_EvalPassed` routing to
-`EndEvent_EvalPassed`/`EndEvent_EvalFailed` based on `evalPassed` — confirmed working end-to-end against a live
-process instance. Use `config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN, and set
-`MLFLOW_EXPERIMENT_ID` in `.env` to that config's experiment (`fluxnova-loanAssessmentEvalProcess`) so traces route to
-where the worker looks for them. You can also trigger a one-off scoring run manually — see
+original `loan-assesment.bpmn`) invokes the loan-assessment agent as a **Call Activity**
+(`CallActivity_LoanAssessmentAgent` → `loanAssessmentProcess`, defined in `loan-assesment.bpmn`), then runs
+`ServiceTask_EvaluateAgentOutput` on this worker's topic (`agent-output-eval`), followed by `ExclusiveGateway_EvalPassed`
+routing on `evalPassed`: on pass → generate-report → approve/reject decision (with a human review task); on fail → a
+`UserTask_ReviewFailedEval` human step. Because the agent runs in the Call Activity's *child* instance, the worker
+resolves that child from the parent instance it's handed before reading its trace (see `eval-service-worker/README.md`).
+
+Use `config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN — it lists `loan-assesment.bpmn` under
+`additional_bpmn_paths` so both process definitions deploy together, and sets `wait_for_activity:
+CallActivity_LoanAssessmentAgent` so `fluxnova-run` returns once the agent finishes instead of hanging on the downstream
+human tasks.
+
+**Experiment alignment:** the OTel collector routes **every** trace (from the parent eval process and the called agent
+child process alike) to the single MLflow experiment named by `MLFLOW_EXPERIMENT_ID` — a static collector header, not
+per-process-key. The worker reads agent traces from `EVAL_SERVICE_EXPERIMENT_NAME`, so that name **must** resolve to the
+same experiment `MLFLOW_EXPERIMENT_ID` points at (currently `fluxnova-loanAssessmentEvalProcess`, experiment id `3`). Both
+are kept in `local-dev/.env` (the single source of truth, also consumed by `compose.yaml`) so they stay in sync;
+`eval-service-up.sh` passes `EVAL_SERVICE_EXPERIMENT_NAME` through to the container. You can also trigger a one-off
+scoring run manually — see
 `eval-service-worker/README.md` (or call `eval_service_worker.scoring.score_process_instance(...)` directly) with a
 real `processInstanceId` from a completed run.
 
 ```bash
 cd local-dev
-./services/eval-service-up.sh      # builds the image, starts the eval-service-local pod
-./services/eval-service-down.sh    # stop and remove it
+./services/eval-service-up.sh          # build image if missing, start the eval-service-local pod
+REBUILD=1 ./services/eval-service-up.sh  # force a rebuild after changing worker / fluxnova-mlflow-dataset code
+./services/eval-service-down.sh        # stop and remove it
 ```
 
 Or start it as part of the whole stack with `./pods-up.sh` (it's the last pod started, after fluxnova/mlflow, which
-it depends on). This builds `eval-service-worker/Dockerfile` from the repo root (so it can install the local
-`fluxnova-mlflow-dataset` path dependency too) and passes `EVAL_SERVICE_FLUXNOVA_URL`/`EVAL_SERVICE_TRACKING_URI`
-env vars pointed at the sibling `fluxnova-local`/`mlflow-local` pod names (rather than `localhost`, which only
-resolves for host-run tools) on the shared `fluxnova-dev` network. Both those pods must already be running.
+it depends on). It builds `eval-service-worker/Dockerfile` from the repo root (so it can install the local
+`fluxnova-mlflow-dataset` path dependency too) **only when the image is missing** — repeated up-runs skip the pip-install
+cost, so pass `REBUILD=1` to force a rebuild after changing `eval-service-worker/` or `fluxnova-mlflow-dataset/`. It
+passes `EVAL_SERVICE_FLUXNOVA_URL`/`EVAL_SERVICE_TRACKING_URI`/`EVAL_SERVICE_EXPERIMENT_NAME`
+env vars (sourced from `local-dev/.env`) pointed at the sibling `fluxnova-local`/`mlflow-local` pod names (rather than
+`localhost`, which only resolves for host-run tools) on the shared `fluxnova-dev` network. Both those pods must already
+be running. Because Podman bakes env vars at `podman run`, run `./services/eval-service-down.sh` then
+`./services/eval-service-up.sh` to pick up any `.env` change (an existing pod is only *started*, not recreated).
 
 The worker has **no config file of its own** — every setting (`fluxnova_url`, `experiment_name`, `process_key`,
 `topic`, `judge_model`, `lock_duration_ms`, `tracking_uri`) is a hardcoded default in

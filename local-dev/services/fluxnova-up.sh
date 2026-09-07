@@ -36,7 +36,7 @@ fi
 
 FLUXNOVA_IMAGE="${FLUXNOVA_IMAGE:-fluxnova:local}"
 FLUXNOVA_PORT="${FLUXNOVA_PORT:-8080}"
-OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:latest}"
+OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:0.160.0}"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
 # Fluxnova's PostgreSQL datasource credentials — read from .env (never hardcoded) and
 # passed through as env vars for default.yml's ${VAR:default} placeholders to resolve

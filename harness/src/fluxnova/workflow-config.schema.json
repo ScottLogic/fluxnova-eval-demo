@@ -27,6 +27,17 @@
       "type": "string",
       "description": "BPMN element ID of the ad-hoc subprocess that contains the LLM agent."
     },
+    "additional_bpmn_paths": {
+      "type": "array",
+      "description": "Additional BPMN files to include in the SAME deployment (e.g. a called process referenced by a Call Activity). Paths are relative to the repo root, or absolute.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "wait_for_activity": {
+      "type": "string",
+      "description": "Optional BPMN activity ID (the element 'id' attribute). When set, the runner returns as soon as this activity completes instead of waiting for the whole process instance to finish — useful when downstream steps (eval service task, human review) shouldn't block the run. Omit to wait for the entire process. Overridden by the --wait-for-activity CLI flag."
+    },
     "variables": {
       "type": "object",
       "description": "Initial process variables passed to the workflow instance.",

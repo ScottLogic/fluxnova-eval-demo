@@ -10,12 +10,28 @@ fluxnova_url: http://localhost:8080/engine-rest
 # Path from root to the BPMN file — relative to this config file or absolute
 bpmn_path: bpmn/loan-assesment-eval.bpmn
 
+# Additional BPMN resources to include in the SAME deployment. The eval process
+# invokes the loan-assessment agent via a Call Activity (calledElement=
+# loanAssessmentProcess), which is defined in bpmn/loan-assesment.bpmn — so that
+# file must be deployed alongside this one for the call to resolve.
+additional_bpmn_paths:
+  - bpmn/loan-assesment.bpmn
+
 # Process definition key (the `id` attribute on <process> in the BPMN)
 # Distinct from loan-assesment.yml's `loanAssessmentProcess` — this BPMN has its
 # own <process id="loanAssessmentEvalProcess"> so the two definitions deploy as
 # separate process definitions in Fluxnova rather than two versions of one.
 process_key: loanAssessmentEvalProcess
 subprocess_id: AdHocSubProcess_LoanAssessmentAgent
+
+# When set, the runner (fluxnova-run) returns as soon as this BPMN activity
+# completes, instead of blocking until the whole process instance finishes.
+# The eval process continues on the engine (eval service task, decision gateway,
+# human review tasks) — but this run is considered "done" once the loan-assessment
+# agent subprocess has finished, so unattended runs don't hang on the downstream
+# user tasks. Omit this field to wait for the entire process. The --wait-for-activity
+# CLI flag overrides this value.
+wait_for_activity: CallActivity_LoanAssessmentAgent
 
 # Path to the golden dataset used for evaluation (relative to the repo root).
 # Generate or regenerate with: python datasets/loan-assessment/generate.py

@@ -16,6 +16,7 @@ src/fluxnova_mlflow_dataset.egg-info/requires.txt
 src/fluxnova_mlflow_dataset.egg-info/top_level.txt
 tests/test_bpmn.py
 tests/test_collect.py
+tests/test_fluxnova_client.py
 tests/test_report.py
 tests/test_tools_and_goldens.py
 tests/test_traces.py
