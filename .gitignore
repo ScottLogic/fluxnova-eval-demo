@@ -5,3 +5,4 @@ harness/.fluxnova
 .venv
 .fluxnova/
 *.db
+harness/.mlflow/

@@ -13,16 +13,17 @@
   directly, and `localhost:5000` / `localhost:8080` / `localhost:5432` work without any VM-IP fallback.
 - **Python 3.11+** (and [uv](https://docs.astral.sh/uv/) or plain `venv`/`pip`) for the harness.
 - **[Ollama](https://ollama.com)** running in the same WSL distro, reachable from containers at
-  `host.containers.internal:11434`. This setup runs **`gemma4:e2b` for both the agent and the judge**
-  (`ollama pull gemma4:e2b`) — see [Models](#models) for where to point each. (The upstream defaults
-  are `llama3.1` agent / `llama3.2` judge; you can skip those pulls if you're only using gemma.)
+  `host.containers.internal:11434`. This setup runs **`gemma4:e2b` for the agent (and the offline
+  `mlflow-eval` judge) and `qwen2.5:1.5b` for the online judge**
+  (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`) — see [Models](#models) for where to point each. (The upstream
+  defaults are `llama3.1` agent / `llama3.2` judge.)
 - The Fluxnova engine image — pull the public one: `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0`
   and make sure `local-dev/.env`'s `FLUXNOVA_IMAGE` points at it.
 
 ## Models
 
-This setup runs a single small model, **`gemma4:e2b`**, for *both* roles (`ollama pull gemma4:e2b`).
-There are three places to point at it:
+This setup runs **`gemma4:e2b`** for the agent and the offline judge, and **`qwen2.5:1.5b`** for the online judge
+(`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`). There are three places to point them:
 
 - **Agent** (the tool-calling loop) — in the BPMN `agent:config` near line 10 of
   [bpmn/loan-assesment.bpmn](bpmn/loan-assesment.bpmn) (and
@@ -31,9 +32,11 @@ There are three places to point at it:
   rebuild is needed. The agent model must support Ollama tool calling — confirm with
   `ollama show gemma4:e2b` (look for `tools` under Capabilities).
 - **Judge, offline (`mlflow-eval`)** — set `_NATIVE_JUDGE_MODEL` / `_JUDGE_MODEL` in
-  [harness/src/mlflow_eval/main.py](harness/src/mlflow_eval/main.py) to `ollama:/gemma4:e2b`.
+  [fluxnova-mlflow-dataset/src/fluxnova_mlflow_dataset/scorers.py](fluxnova-mlflow-dataset/src/fluxnova_mlflow_dataset/scorers.py)
+  to `ollama:/gemma4:e2b`.
 - **Judge, online (`eval-service-worker`)** — repoint the `fluxnova-judge` MLflow AI Gateway endpoint
-  at `gemma4:e2b`.
+  at `qwen2.5:1.5b`. The endpoint's model is stored in MLflow's Postgres, not the repo — see
+  [local-dev/README.md](local-dev/README.md).
 
 ## Gotcha to watch for
 

@@ -288,8 +288,9 @@ directly. Here's how to reproduce a working local `fluxnova-judge` endpoint back
 3. Open `http://localhost:5000/#/gateway` and click **Create Endpoint**.
 4. Name it `fluxnova-judge`, select provider **Ollama**.
 5. Pick a model from the picker — at time of writing only `llama3.1` was offered here even though `llama3.2` was
-   already pulled locally (`ollama list`); `llama3.1` works fine and is what this repo's example endpoint uses. Note
-   this means the automatic-evaluation judge model may differ from whatever `ollama/llama3.2` model the existing
+   already pulled locally (`ollama list`); `llama3.1` works fine, though this repo's `fluxnova-judge` example endpoint
+   now uses `qwen2.5:1.5b` (a small, fast judge chosen so CPU-only judging stays under the gateway timeout). Note
+   this means the automatic-evaluation judge model may differ from the `ollama/gemma4:e2b` model the existing
    hand-rolled `_llm_judge()` offline scorers use, unless reconciled later.
 6. Create a new connection for it:
    - **Base URL**: try `http://host.containers.internal:11434/v1` first — it works out of the box for most setups.

@@ -78,7 +78,7 @@ This project is split into three independent Python packages:
 │  Evaluates with DeepEval metrics             │  OR reads an existing MLflow dataset    │
 │  (Ollama / llama3.2)                         │  record by --instance-id / --all        │
 │  Outputs pass/fail per test                  │  Evaluates with MLflow scorers          │
-│  + terminal summary + HTML report            │  (Ollama / llama3.2)                    │
+│  + terminal summary + HTML report            │  (Ollama / gemma4:e2b)                  │
 │                                              │  Outputs metrics summary; browse in the │
 │                                              │  MLflow UI                              │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -150,8 +150,9 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
       ([Podman Desktop](https://podman-desktop.io) is recommended, though not required, for a GUI to view/manage pods,
       containers, and logs)
     - Python 3.11+
-    - [Ollama](https://ollama.com) with `llama3.2` pulled (`ollama pull llama3.2`) — the judge model used by both
-      evaluation suites
+    - [Ollama](https://ollama.com) with `gemma4:e2b` (agent + offline `mlflow-eval` judge) and
+      `qwen2.5:1.5b` (online `eval-service-worker` judge) pulled
+      (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`)
     - The **Fluxnova** engine image — pull the public one from GHCR:
       `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0` (no login needed)
 
@@ -261,8 +262,8 @@ primary)" and "Collecting completed runs" below for the other modes (`--all`, `-
 
 ## Running the evaluations (MLflow, primary)
 
-`mlflow-eval` is the primary evaluation suite (`deep-eval` is deprecated) — same config YAML, same underlying
-Ollama/llama3.2 judge model, but scored with `mlflow.genai.evaluate` scorers. It supports:
+`mlflow-eval` is the primary evaluation suite (`deep-eval` is deprecated) — same config YAML, scored with
+the Ollama/gemma4:e2b judge model via `mlflow.genai.evaluate` scorers. It supports:
 
 ```bash
 # 1. A single previously recorded run, read back from the MLflow dataset by process instance ID
@@ -464,9 +465,9 @@ after reviewing the BPMN's agent prompt and tool wiring:
 | Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/services/postgres-up.sh`) |
 | Harness runtime      | Python 3.11, requests, PyYAML                                                                                                                         |
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
-| LLM agent            | Ollama / llama3.2 (runs inside Fluxnova)                                                                                                              |
+| LLM agent            | Ollama / gemma4:e2b (runs inside Fluxnova)                                                                                                              |
 | Evaluation framework | [DeepEval](https://deepeval.com) or [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/) (alternatives)                      |
-| Judge model          | Ollama / llama3.2                                                                                                                                     |
+| Judge model          | Ollama / gemma4:e2b (offline `mlflow-eval`) · Ollama / qwen2.5:1.5b (online `eval-service-worker`, via the `fluxnova-judge` gateway endpoint)            |
 
 ## Running the evaluations (DeepEval, deprecated)
 

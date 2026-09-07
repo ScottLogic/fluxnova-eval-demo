@@ -73,12 +73,12 @@ def decision_quality_judge(model: str) -> Guidelines:
 
 # Bespoke litellm-backed judge model, used by `_llm_judge` (predates the
 # MLflow-native `Guidelines` judge used by `decision_quality_judge` above).
-_JUDGE_MODEL = "ollama/llama3.2"
+_JUDGE_MODEL = "ollama/gemma4:e2b"
 
 # MLflow-native judges (e.g. Guidelines) use MLflow's own "<provider>:/<model>"
 # URI scheme, which differs from the litellm-style "<provider>/<model>" used by
 # the bespoke `_llm_judge()` helper below. Same underlying local Ollama model.
-_NATIVE_JUDGE_MODEL = "ollama:/llama3.2"
+_NATIVE_JUDGE_MODEL = "ollama:/gemma4:e2b"
 
 # Automatic (online) evaluation -- Scorer.register()/.start() -- requires a
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly
