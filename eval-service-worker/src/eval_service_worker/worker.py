@@ -7,8 +7,8 @@ deterministic scorers (see ``scoring.py``), logs the results to MLflow (trace
 assessments + an Evaluation Run + a dataset record), and completes the task
 with ``evalPassed``/``evalRationale`` output variables that drive the BPMN
 gateway (``loan-assesment-eval.bpmn``'s ``ExclusiveGateway_EvalPassed``) —
-gating is driven solely by ``decision_quality``; the deterministic scorers are
-recorded for visibility only, not (yet) wired into the gateway condition.
+gating requires *all* scorers to pass: both the nondeterministic
+``decision_quality`` judge and the deterministic scorers.
 """
 
 from __future__ import annotations

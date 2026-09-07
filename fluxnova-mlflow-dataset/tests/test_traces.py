@@ -12,6 +12,7 @@ from fluxnova_mlflow_dataset.traces import (
     MlflowTraceReader,
     ToolCallSpan,
     TraceStoreError,
+    _status_str,
 )
 
 _NS_PER_MS = 1_000_000
@@ -184,6 +185,35 @@ class TestGetToolCallSpans:
         traces = [_trace(_span("invoke_agent", {"gen_ai.conversation.id": "proc-123"}))]
         reader = _reader(monkeypatch, traces)
         assert reader.get_tool_call_spans("proc-123") == []
+
+
+class TestStatusStr:
+    """Regression coverage for how a span's OTel status is read.
+
+    Real MLflow (3.x) spans expose their status at ``span.status.status_code``,
+    not ``span.status_code`` — reading the wrong path silently mapped every OK
+    tool call to ``ERROR``, failing the ``no_tool_errors``/``required_tools_called``
+    scorers on every run.
+    """
+
+    @dataclass
+    class _NestedStatus:
+        status_code: _FakeStatus
+
+    @dataclass
+    class _RealShapeSpan:
+        status: "TestStatusStr._NestedStatus"
+
+    def test_reads_ok_from_nested_status(self):
+        span = self._RealShapeSpan(status=self._NestedStatus(_FakeStatus("OK")))
+        assert _status_str(span) == "OK"
+
+    def test_reads_error_from_nested_status(self):
+        span = self._RealShapeSpan(status=self._NestedStatus(_FakeStatus("ERROR")))
+        assert _status_str(span) == "ERROR"
+
+    def test_falls_back_to_flat_status_code(self):
+        assert _status_str(_FakeSpan(attributes={}, status_code=_FakeStatus("OK"))) == "OK"
 
 
 class TestGetLlmMessages:

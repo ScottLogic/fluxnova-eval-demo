@@ -25,7 +25,7 @@ class TestParseArgs:
         assert args.fluxnova_url == "http://localhost:8080/engine-rest"
         assert args.tracking_uri == "http://localhost:5000"
         assert args.topic == "agent-output-eval"
-        assert args.lock_duration_ms == 180_000
+        assert args.lock_duration_ms == 600_000
         assert args.trace_poll_timeout == 30.0
         assert args.trace_poll_interval == 3.0
 

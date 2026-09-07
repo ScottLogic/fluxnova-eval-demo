@@ -39,6 +39,17 @@ _PASS_VALUE = "yes"
 
 _DECISION_QUALITY_NAME = "decision_quality"
 
+
+def _scorer_passed(name: str, value: Any) -> bool:
+    """Return whether one scorer's raw value counts as a pass.
+
+    ``decision_quality`` (the Guidelines judge) reports a categorical
+    ``"yes"``/``"no"`` string; the deterministic scorers report plain booleans.
+    """
+    if name == _DECISION_QUALITY_NAME:
+        return str(value).strip().lower() == _PASS_VALUE
+    return bool(value)
+
 # Tag value used to distinguish worker-triggered dataset records from ones
 # written by MLflow's built-in automatic-judge scheduler (which uses the same
 # judge name but runs on a sample of traces, unprompted).
@@ -58,8 +69,9 @@ class EvalOutcome:
     eval_rationale: str
     final_output: str
     # One entry per scorer that ran (including decision_quality), each
-    # {"value": ..., "rationale": ...} — lets callers/tests see every check's
-    # result, not just the one (decision_quality) that gates the BPMN gateway.
+    # {"value": ..., "rationale": ...} — every one of these checks (the
+    # decision_quality judge and the deterministic scorers) must pass for
+    # eval_passed to be True.
     scorer_results: dict[str, dict[str, Any]]
 
 
@@ -80,10 +92,9 @@ def score_process_instance(
     Logs every scorer's ``Feedback`` back onto the trace as an assessment and
     registers one MLflow Evaluation Run grouping them, merges a lightweight
     record into the MLflow evaluation dataset, then returns the pass/fail
-    outcome for the caller (the BPMN worker) to act on — gating is still
-    driven solely by ``decision_quality`` (the only nondeterministic/judgement
-    call among the scorers); the deterministic scorers are recorded for
-    visibility, not (yet) wired into the BPMN gateway condition.
+    outcome for the caller (the BPMN worker) to act on — gating requires *every*
+    scorer to pass: both the nondeterministic ``decision_quality`` judge and all
+    of the deterministic trace-only scorers.
 
     ``trace_poll_timeout``/``trace_poll_interval`` control how long to retry
     looking up the trace before giving up — the OTel Collector delivers spans
@@ -114,9 +125,23 @@ def score_process_instance(
         for s in scorers
     }
 
-    decision_quality = scorer_results[_DECISION_QUALITY_NAME]
-    eval_passed = str(decision_quality["value"]).strip().lower() == _PASS_VALUE
-    rationale = decision_quality["rationale"] or ""
+    failed = {
+        name: res
+        for name, res in scorer_results.items()
+        if not _scorer_passed(name, res["value"])
+    }
+    eval_passed = not failed
+
+    if eval_passed:
+        decision_quality = scorer_results[_DECISION_QUALITY_NAME]
+        rationale = (
+            decision_quality["rationale"]
+            or "All deterministic and non-deterministic evaluation checks passed."
+        )
+    else:
+        rationale = "; ".join(
+            f"{name}: {res['rationale'] or 'failed'}" for name, res in failed.items()
+        )
 
     _log_dataset_record(
         process_key=process_key,
