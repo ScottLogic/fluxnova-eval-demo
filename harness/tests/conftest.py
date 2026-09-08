@@ -34,3 +34,12 @@ def pytest_configure(config: pytest.Config) -> None:
         "MLFLOW_EXPERIMENT_NAME",
         experiment_name_for("loanAssessmentProcess-regression"),
     )
+    # Serialize scoring: mlflow.genai.evaluate fans out every row's judge call
+    # concurrently (MLFLOW_GENAI_EVAL_MAX_WORKERS defaults to 10). Against the
+    # local CPU-bound Ollama judge (a single gemma4:e2b instance) those parallel
+    # requests never get scheduled and every judge thread blocks forever in
+    # socket.readinto with no client timeout, hanging the whole run. Capping to
+    # one worker means one judge call hits Ollama at a time — the sequential path
+    # that completes reliably. Overridable in CI where a scalable judge backend
+    # can handle real concurrency.
+    os.environ.setdefault("MLFLOW_GENAI_EVAL_MAX_WORKERS", "1")

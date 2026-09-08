@@ -215,4 +215,11 @@ def test_agent_reproduces_golden_decisions(evaluation_data: list[dict]) -> None:
         "decision_quality did not produce a verdict for every golden — scoring "
         f"errored. Verdicts: {verdicts.tolist()}"
     )
-    assert result.passed, result.reason
+    # Assert on the actual decision_quality verdicts rather than result.passed:
+    # result.passed also inspects the expected_output expectation column (whose
+    # value is the golden's free-text recommendation, not a yes/no rating), so it
+    # reports false failures even when every scorer verdict is "yes".
+    failed = verdicts[verdicts.str.lower() != "yes"]
+    assert failed.empty, (
+        f"decision_quality failed for {len(failed)} golden(s): {failed.tolist()}"
+    )
