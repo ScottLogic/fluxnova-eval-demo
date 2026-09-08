@@ -38,7 +38,9 @@ Run with:
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from pathlib import Path
 
 import mlflow
@@ -69,6 +71,8 @@ _ACTIVITY_TIMEOUT = float(os.environ.get("REGRESSION_ACTIVITY_TIMEOUT", "600"))
 # Matches fluxnova_runner.mock_workers._MOCK_VAR_PREFIX — the namespace under
 # which each golden's tool_responses are fed to the shared mock-worker pool.
 _MOCK_PREFIX = "_mock_output_"
+
+_log = logging.getLogger("fluxnova.regression")
 
 # Minimum ``matches_golden`` score (0.0-1.0) a golden must reach for the agent's
 # actual output to count as reproducing the golden's decision + evidence.
@@ -188,16 +192,32 @@ def evaluation_data(cfg: RunnerConfig, loan_agent: Client) -> list[dict]:
     goldens = load_goldens(_GOLDENS_PATH)
     assert goldens, f"No goldens found at {_GOLDENS_PATH}"
 
+    total = len(goldens)
+    _log.info("Phase 1: running the live agent on %d golden(s)...", total)
     data: list[dict] = []
-    for golden in goldens:
+    for index, golden in enumerate(goldens, start=1):
+        scenario = golden.get("additional_metadata", {}).get("scenario", f"golden-{index}")
         variables = _golden_to_variables(cfg, golden)
+        _log.info("[%d/%d] Running scenario %r...", index, total, scenario)
+        started = time.perf_counter()
+        output = _run_agent(loan_agent, cfg, variables)
+        elapsed = time.perf_counter() - started
+        _log.info(
+            "[%d/%d] Scenario %r finished in %.1fs (%d chars of output)",
+            index,
+            total,
+            scenario,
+            elapsed,
+            len(output),
+        )
         data.append(
             {
                 "inputs": {"variables": variables},
-                "outputs": _run_agent(loan_agent, cfg, variables),
+                "outputs": output,
                 "expectations": {"expected_output": golden["expected_output"]},
             }
         )
+    _log.info("Phase 1 complete: collected agent output for %d golden(s)", total)
     return data
 
 
@@ -218,12 +238,14 @@ def test_agent_reaches_evidence_backed_decision(evaluation_data: list[dict]) -> 
     golden's own reference answer. ``@mlflow.test`` tags this as a regression
     test run (run type ``test`` + a session id) and records its pass/fail status.
     """
+    _log.info("Phase 2: scoring %d golden(s) with decision_quality...", len(evaluation_data))
     result = mlflow.genai.evaluate(data=evaluation_data, scorers=[decision_quality])
 
     # Guard against every scorer silently erroring (which leaves zero recorded
     # assessments and makes result.passed default to truthy): require a real
     # decision_quality verdict for every row before trusting the pass/fail.
     verdicts = result.tables["eval_results"]["decision_quality/value"]
+    _log.info("decision_quality verdicts: %s", verdicts.tolist())
     assert verdicts.notna().all(), (
         "decision_quality did not produce a verdict for every golden — scoring "
         f"errored. Verdicts: {verdicts.tolist()}"
@@ -250,11 +272,13 @@ def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
     (see ``fluxnova_mlflow_dataset.scorers.matches_golden``). ``@mlflow.test``
     tags this as a regression test run and records its pass/fail status.
     """
+    _log.info("Phase 2: scoring %d golden(s) with matches_golden...", len(evaluation_data))
     result = mlflow.genai.evaluate(data=evaluation_data, scorers=[matches_golden])
 
     # matches_golden returns None (recorded as NaN) when a golden lacks an
     # expected_output; every golden must have one for this gate to be meaningful.
     scores = result.tables["eval_results"]["matches_golden/value"]
+    _log.info("matches_golden scores: %s", scores.tolist())
     assert scores.notna().all(), (
         "matches_golden did not produce a score for every golden — scoring "
         f"errored or a golden is missing expected_output. Scores: {scores.tolist()}"

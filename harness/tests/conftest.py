@@ -19,6 +19,7 @@ erroring during collection.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -27,8 +28,41 @@ from fluxnova_mlflow_dataset import default_tracking_uri, experiment_name_for
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# Third-party loggers that emit chatty INFO/DEBUG output on their own named
+# loggers. With live logging enabled (log_cli in pyproject.toml) these would
+# drown out the suite's own progress lines, so cap them to WARNING while leaving
+# the root/our loggers free to report INFO progress.
+_NOISY_LOGGERS = (
+    "httpx",
+    "httpcore",
+    "urllib3",
+    "requests",
+    "litellm",
+    "LiteLLM",
+    "mlflow",
+    "openai",
+)
+
+
+class _DropCamundaNoise(logging.Filter):
+    """Drop camunda's per-poll worker chatter.
+
+    The camunda external-task client logs its "Fetching and Locking..." spam via
+    ``logging.info`` (the *root* logger, not a ``camunda.*`` logger), so a plain
+    ``setLevel`` on a named logger can't silence it. Filtering on the record's
+    originating module drops that noise while leaving the suite's own INFO
+    progress lines (and any other library's) intact.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "camunda" not in (record.pathname or "").lower()
+
 
 def pytest_configure(config: pytest.Config) -> None:
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+    logging.getLogger().addFilter(_DropCamundaNoise())
+
     os.environ.setdefault("MLFLOW_TRACKING_URI", default_tracking_uri(_REPO_ROOT))
     os.environ.setdefault(
         "MLFLOW_EXPERIMENT_NAME",
