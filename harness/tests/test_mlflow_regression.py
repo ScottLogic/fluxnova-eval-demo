@@ -7,8 +7,9 @@ scores across every *recorded* run) or ``deep_eval`` (DEPRECATED), this is a
 gating check that actually runs the live agent: for every scenario in the
 golden dataset (``datasets/loan-assessment/goldens.json``) it drives the agent
 end-to-end via ``fluxnova-runner`` and asserts the agent's *actual* output
-still satisfies the shared ``decision_quality`` guideline judge (see
-``fluxnova_mlflow_dataset.scorers``). This matches MLflow's canonical
+still satisfies the shared ``decision_quality`` guideline judge *and* still
+matches the golden's ``expected_output`` via the shared ``matches_golden`` judge
+(see ``fluxnova_mlflow_dataset.scorers``). This matches MLflow's canonical
 regression-testing pattern — a ``predict_fn`` that invokes the real agent per
 row — rather than merely re-scoring the golden's own reference answer.
 
@@ -46,6 +47,7 @@ import requests
 from fluxnova_mlflow_dataset import (
     decision_quality,
     experiment_name_for,
+    matches_golden,
 )
 from fluxnova_mlflow_dataset.goldens import load_goldens
 from fluxnova_runner.agent_output import agent_final_output
@@ -67,6 +69,11 @@ _ACTIVITY_TIMEOUT = float(os.environ.get("REGRESSION_ACTIVITY_TIMEOUT", "600"))
 # Matches fluxnova_runner.mock_workers._MOCK_VAR_PREFIX — the namespace under
 # which each golden's tool_responses are fed to the shared mock-worker pool.
 _MOCK_PREFIX = "_mock_output_"
+
+# Minimum ``matches_golden`` score (0.0-1.0) a golden must reach for the agent's
+# actual output to count as reproducing the golden's decision + evidence.
+# Overridable via env.
+_GOLDEN_MATCH_THRESHOLD = float(os.environ.get("REGRESSION_GOLDEN_MATCH_THRESHOLD", "0.7"))
 
 
 def _golden_to_variables(cfg: RunnerConfig, golden: dict) -> dict:
@@ -195,9 +202,15 @@ def evaluation_data(cfg: RunnerConfig, loan_agent: Client) -> list[dict]:
 
 
 @mlflow.test
-def test_agent_reproduces_golden_decisions(evaluation_data: list[dict]) -> None:
+def test_agent_reaches_evidence_backed_decision(evaluation_data: list[dict]) -> None:
     """Assert the loan-assessment agent's *actual* output on every golden still
     satisfies the shared ``decision_quality`` guideline judge.
+
+    Note this does *not* compare against the golden's ``expected_output`` — that
+    is what ``test_agent_matches_golden_decisions`` does. ``decision_quality``
+    grades the output against fixed guidelines only: that it reaches a definitive
+    APPROVE/REJECT recommendation backed by specific cited evidence (see
+    ``fluxnova_mlflow_dataset.scorers.decision_quality``).
 
     This is MLflow's regression-testing pattern adapted for an out-of-process
     agent: the live agent is driven per golden (in the ``evaluation_data``
@@ -222,4 +235,34 @@ def test_agent_reproduces_golden_decisions(evaluation_data: list[dict]) -> None:
     failed = verdicts[verdicts.str.lower() != "yes"]
     assert failed.empty, (
         f"decision_quality failed for {len(failed)} golden(s): {failed.tolist()}"
+    )
+
+
+@mlflow.test
+def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
+    """Assert the loan-assessment agent's *actual* output on every golden matches
+    that golden's ``expected_output`` via the shared ``matches_golden`` judge.
+
+    Complements ``decision_quality`` (which grades the output against fixed
+    guidelines, ignoring the golden): this scores the live agent output *against
+    the scenario's reference answer*, awarding a high score only when both reach
+    the same APPROVE/REJECT decision and cite the same categories of evidence
+    (see ``fluxnova_mlflow_dataset.scorers.matches_golden``). ``@mlflow.test``
+    tags this as a regression test run and records its pass/fail status.
+    """
+    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[matches_golden])
+
+    # matches_golden returns None (recorded as NaN) when a golden lacks an
+    # expected_output; every golden must have one for this gate to be meaningful.
+    scores = result.tables["eval_results"]["matches_golden/value"]
+    assert scores.notna().all(), (
+        "matches_golden did not produce a score for every golden — scoring "
+        f"errored or a golden is missing expected_output. Scores: {scores.tolist()}"
+    )
+    # matches_golden yields a 0.0-1.0 similarity score (not a yes/no verdict), so
+    # gate on the configurable threshold rather than an exact match.
+    failed = scores[scores < _GOLDEN_MATCH_THRESHOLD]
+    assert failed.empty, (
+        f"matches_golden scored below {_GOLDEN_MATCH_THRESHOLD} for "
+        f"{len(failed)} golden(s): {failed.tolist()}"
     )
