@@ -95,7 +95,7 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 "`expected_tools` rule syntax" section for the full reference table.
 
 > **Note:** `harness/src/fluxnova/config.py` defines its own near-identical `ExpectedToolRule` (same regex, same
-> semantics) for the harness's own config-loading needs (e.g. DeepEval's fixture resolution). The two haven't been
+> semantics) for the harness's own config-loading needs (used by `mlflow-eval`). The two haven't been
 > deduplicated — if the rule syntax ever changes, both copies need updating.
 
 ## Shared judge/scorer definitions: `scorers.py`

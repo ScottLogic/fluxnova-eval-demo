@@ -75,7 +75,7 @@ Notes:
   directory. Activation (`source .venv/bin/activate`) only matters for calling the console
   scripts directly; otherwise use `uv run <script> ...` from the repo root.
 - This installs the console scripts: `fluxnova-run`, `fluxnova-run-mock-workers`, `mlflow-eval`,
-  `mlflow-judges`, `eval-service-worker`, and `deep-eval` (deprecated).
+  `mlflow-judges`, and `eval-service-worker`.
 
 ## Bring the stack up (order matters)
 

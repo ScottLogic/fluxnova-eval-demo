@@ -1,8 +1,7 @@
 """MLflow GenAI evaluation for the Fluxnova loan assessment agent subprocess.
 
-This is an MLflow-based alternative to ``deep_eval`` (see
-``harness/src/deep_eval/main.py``), covering the same scenarios but using
-``mlflow.genai.evaluate`` and MLflow scorers instead of DeepEval metrics.
+Uses ``mlflow.genai.evaluate`` and MLflow scorers to evaluate the agent's
+loan-assessment behaviour.
 
 Two ways to select what to evaluate (use forward slashes for paths — on
 Windows Git Bash / MINGW64, backslashes are treated as escape characters and

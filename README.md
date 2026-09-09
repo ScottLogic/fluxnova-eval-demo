@@ -28,16 +28,12 @@ This project is split into three independent Python packages:
       into a persistent MLflow evaluation dataset (skip-if-exists/idempotent).
     - **record shaping/read/write** — builds MLflow-dataset records from agent-history data and reads/writes the
       persistent PostgreSQL-backed MLflow evaluation dataset.
-3. **`harness`** ([`harness/`](harness/README.md)) — the two evaluation suites:
-    - **MLflow evaluation suite** (`mlflow-eval`) — the primary evaluation suite, evaluating agent-history data with
+3. **`harness`** ([`harness/`](harness/README.md)) — the evaluation suite:
+    - **MLflow evaluation suite** (`mlflow-eval`) — evaluates agent-history data with
       `mlflow.genai.evaluate` scorers, with results browsable in the MLflow UI. It can evaluate a single ad-hoc report
       file, a single previously recorded run (by process instance ID, read from the MLflow dataset), or every recorded
-      run at once — optionally collecting newly-completed runs first (`--collect`).
-    - **DeepEval evaluation suite** (`deep-eval`) — *DEPRECATED - DO NOT USE*. Loads an agent-history JSON report and
-      evaluates the LLM agent's behaviour using configurable metrics: tool correctness, argument correctness, decision
-      quality, evidence citation, and deterministic safety checks. Both evaluation suites can be run independently;
-      neither depends on the other, and neither depends on the runner being active at evaluation time (only on the
-      report file / trace data / dataset records already produced).
+      run at once — optionally collecting newly-completed runs first (`--collect`). It doesn't depend on the runner
+      being active at evaluation time (only on the report file / trace data / dataset records already produced).
 
 ## Architecture
 
@@ -72,15 +68,12 @@ This project is split into three independent Python packages:
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  deep-eval CLI (deprecated)                  │  mlflow-eval CLI                        │
-│                                              │                                         │
-│  Reads config YAML + agent-history JSON      │  Reads config YAML + agent-history JSON │
-│  Evaluates with DeepEval metrics             │  OR reads an existing MLflow dataset    │
-│  (Ollama / llama3.2)                         │  record by --instance-id / --all        │
-│  Outputs pass/fail per test                  │  Evaluates with MLflow scorers          │
-│  + terminal summary + HTML report            │  (Ollama / gemma4:e2b)                  │
-│                                              │  Outputs metrics summary; browse in the │
-│                                              │  MLflow UI                              │
+│  mlflow-eval CLI                                                                        │
+│                                                                                         │
+│  Reads config YAML + agent-history JSON OR reads an existing MLflow dataset             │
+│  record by --instance-id / --all                                                        │
+│  Evaluates with MLflow scorers (Ollama / gemma4:e2b)                                    │
+│  Outputs metrics summary; browse in the MLflow UI                                       │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -171,8 +164,8 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    .venv/Scripts/python -m pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"
    ```
    Pass a specific interpreter (must be Python 3.11+) with `PYTHON=python3.11 ./setup.sh`. This installs four
-   console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and `deep-eval` / `mlflow-eval`
-   (harness evaluation suites).
+   console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and `mlflow-eval` /
+   `mlflow-judges` (harness evaluation suite).
 
 3. **Start the backing services as Podman pods**, from Git Bash at the repo root:
    ```bash
@@ -263,12 +256,12 @@ mlflow-eval config/loan-assesment.yml --collect --instance-id 3816567e-9f94-11f1
 
 `--collect` pulls that instance's completed trace out of MLflow's trace store, joins it with the BPMN and Fluxnova's
 process-variable history, and records it into the persistent MLflow evaluation dataset; `--instance-id` then immediately
-evaluates just that one record and prints the scorer summary to the terminal. See "Running the evaluations (MLflow,
-primary)" and "Collecting completed runs" below for the other modes (`--all`, `--collect` alone).
+evaluates just that one record and prints the scorer summary to the terminal. See "Running the evaluations (MLflow)"
+and "Collecting completed runs" below for the other modes (`--all`, `--collect` alone).
 
-## Running the evaluations (MLflow, primary)
+## Running the evaluations (MLflow)
 
-`mlflow-eval` is the primary evaluation suite (`deep-eval` is deprecated) — same config YAML, scored with
+`mlflow-eval` is the evaluation suite — config YAML scored with
 the Ollama/gemma4:e2b judge model via `mlflow.genai.evaluate` scorers. It supports:
 
 ```bash
@@ -427,7 +420,7 @@ The harness fetches this from the Fluxnova subprocess history endpoint and write
 
 ## Evaluation scorers (MLflow)
 
-`harness/src/mlflow_eval/main.py` covers the same scenarios as the DeepEval suite above, plus a few extra checks added
+`harness/src/mlflow_eval/main.py` runs these checks over the agent-history data, added
 after reviewing the BPMN's agent prompt and tool wiring:
 
 | Scorer                                                | Type       | Description                                                                     |
@@ -446,21 +439,6 @@ after reviewing the BPMN's agent prompt and tool wiring:
 | `requested_amount_passed_to_affordability`            | Code       | Affordability tool receives the correct `customerId` and `requestedAmount`      |
 | `affordability_called_after_income_confirmed`         | Code (new) | Affordability is assessed only after income has been confirmed                  |
 
-## Evaluation tests (DeepEval)
-
-| Test                                            | Metric                                     | Description                                                            |
-|-------------------------------------------------|--------------------------------------------|------------------------------------------------------------------------|
-| `test_tool_correctness`                         | `ToolCorrectnessMetric`                    | Agent calls all expected tools and no inappropriate ones               |
-| `test_tool_argument_correctness`                | `ToolCorrectnessMetric` (INPUT_PARAMETERS) | Each tool is invoked with the correct arguments from process variables |
-| `test_decision_quality`                         | `GEval`                                    | Final output contains a clear, justified APPROVE/REJECT recommendation |
-| `test_evidence_citation`                        | `GEval`                                    | Output cites the key financial data points gathered                    |
-| `test_output_matches_golden`                    | `GEval`                                    | Output reaches the same decision as the matching golden scenario       |
-| `test_no_collateral_check_when_no_collateral`   | Deterministic                              | Value Collateral is not called when `hasCollateral=false`              |
-| `test_no_bank_statement_for_employed_applicant` | Deterministic                              | Bank statements are not analysed for EMPLOYED applicants               |
-| `test_all_tool_calls_completed`                 | Deterministic                              | Every initiated tool call reached COMPLETED status                     |
-| `test_step_efficiency`                          | Deterministic                              | Agent completes within ≤ 3 loop iterations                             |
-| `test_requested_amount_passed_to_affordability` | Deterministic                              | Affordability tool receives the correct `requestedAmount`              |
-
 ## Tech stack
 
 | Component            | Technology                                                                                                                                            |
@@ -471,37 +449,5 @@ after reviewing the BPMN's agent prompt and tool wiring:
 | Harness runtime      | Python 3.11, requests, PyYAML                                                                                                                         |
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
 | LLM agent            | Ollama / gemma4:e2b (runs inside Fluxnova)                                                                                                              |
-| Evaluation framework | [DeepEval](https://deepeval.com) or [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/) (alternatives)                      |
+| Evaluation framework | [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/)                                                                         |
 | Judge model          | Ollama / gemma4:e2b (offline `mlflow-eval`) · Ollama / qwen2.5:1.5b (online `eval-service-worker`, via the `fluxnova-judge` gateway endpoint)            |
-
-## Running the evaluations (DeepEval, deprecated)
-
-> `deep-eval` requires an agent-history JSON report file as input. Since `fluxnova-runner` no longer produces one
-> itself (see above), use `mlflow-eval` instead (below) unless you already have a report file from another source.
-
-```bash
-# Via the entry point (recommended — generates both the DeepEval score summary and an HTML report)
-deep-eval config/loan-assesment.yml \
-          .fluxnova/loanAssessmentProcess/<instanceId>.json
-```
-
-Two reports are written on every run (pass or fail):
-
-| Report                 | Location                                        |
-|------------------------|-------------------------------------------------|
-| DeepEval score summary | printed to terminal at end of session           |
-| HTML report            | `.fluxnova/<processKey>/<instanceId>-eval.html` |
-
-```bash
-# Via the deepeval CLI directly (also generates the DeepEval score summary)
-deepeval test run src/deep_eval/main.py \
-    --config config/loan-assesment.yml \
-    --report .fluxnova/loanAssessmentProcess/<instanceId>.json
-
-# Via pytest (HTML report only — no DeepEval score summary)
-pytest src/deep_eval/main.py -v \
-    --config config/loan-assesment.yml \
-    --report .fluxnova/loanAssessmentProcess/<instanceId>.json \
-    --html .fluxnova/loanAssessmentProcess/<instanceId>-eval.html \
-    --self-contained-html
-```

@@ -3,7 +3,7 @@ https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/) for the
 Fluxnova loan-assessment agent.
 
 Unlike ``mlflow_eval``'s offline batch evaluation (which measures aggregate
-scores across every *recorded* run) or ``deep_eval`` (DEPRECATED), this is a
+scores across every *recorded* run), this is a
 gating check that actually runs the live agent: for every scenario in the
 golden dataset (``datasets/loan-assessment/goldens.json``) it drives the agent
 end-to-end via ``fluxnova-runner`` and asserts the agent's *actual* output

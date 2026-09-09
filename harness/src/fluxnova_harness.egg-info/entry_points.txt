@@ -1,4 +1,3 @@
 [console_scripts]
-deep-eval = deep_eval.main:main
 mlflow-eval = mlflow_eval.main:main
 mlflow-judges = mlflow_eval.judges:main

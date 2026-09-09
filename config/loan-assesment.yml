@@ -15,7 +15,7 @@ process_key: loanAssessmentProcess
 subprocess_id: AdHocSubProcess_LoanAssessmentAgent
 
 # Path to the golden dataset used for evaluation (relative to the repo root).
-# Generate or regenerate with: python datasets/loan-assessment/generate.py
+# Maintained by hand as a fixture — see datasets/loan-assessment/goldens.json.
 dataset_path: datasets/loan-assessment/goldens.json
 
 # Tools available to the agent inside the ad-hoc subprocess.

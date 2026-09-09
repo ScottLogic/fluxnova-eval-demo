@@ -61,7 +61,7 @@
     },
     "dataset_path": {
       "type": "string",
-      "description": "Path to the golden dataset JSON file (relative to the repo root). Generate with datasets/<workflow>/generate.py."
+      "description": "Path to the golden dataset JSON file (relative to the repo root). Maintained by hand as a fixture."
     },
     "available_tools": {
       "type": "object",

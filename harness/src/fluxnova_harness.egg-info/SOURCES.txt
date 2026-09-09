@@ -1,8 +1,5 @@
 README.md
 pyproject.toml
-src/deep_eval/__init__.py
-src/deep_eval/conftest.py
-src/deep_eval/main.py
 src/fluxnova/__init__.py
 src/fluxnova/config.py
 src/fluxnova/mlflow_dataset.py

@@ -118,8 +118,8 @@ def _tool_input(tool_call: dict) -> dict:
 def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL) -> Feedback:
     """Ask a local Ollama model to judge ``context`` against ``criteria``.
 
-    Mirrors the intent of DeepEval's GEval metric: an LLM-as-judge returning a
-    0.0-1.0 score plus a short rationale, parsed from a JSON response.
+    An LLM-as-judge returning a 0.0-1.0 score plus a short rationale, parsed
+    from a JSON response.
     """
     import litellm
 

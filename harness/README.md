@@ -1,19 +1,15 @@
 # harness
 
-The evaluation harness (DeepEval + MLflow) for Fluxnova agentic workflows — the "evaluate" side of the pipeline. It
+The evaluation harness (MLflow) for Fluxnova agentic workflows — the "evaluate" side of the pipeline. It
 reads a workflow YAML config, resolves completed agentic subprocess runs (via `fluxnova-mlflow-dataset`), and scores
-them with one of two evaluation suites. See the repo root [`README.md`](../README.md) for the full picture
+them with the `mlflow-eval` suite. See the repo root [`README.md`](../README.md) for the full picture
 (architecture diagram, first-time setup, end-to-end walkthrough) — this README covers the code layout and APIs
 specific to this directory.
 
-**Two evaluation suites, same config file, neither depends on the other** (each uses its own judge model —
-`mlflow-eval` the `gemma4:e2b` judge, `deep-eval` `llama3.2`)**:**
-
-- **`mlflow-eval`** (`src/mlflow_eval/`) — the primary suite. Scores agent-history data with `mlflow.genai.evaluate`
-  scorers; results are browsable in the MLflow UI. Can evaluate a single ad-hoc report, a single previously recorded
-  run (by process instance ID), or every recorded run at once — optionally collecting newly-completed runs first.
-- **`deep-eval`** (`src/deep_eval/`) — **deprecated, do not use for new work**. Loads an agent-history JSON report
-  and evaluates it with DeepEval metrics (`GEval`, `ToolCorrectnessMetric`). Kept for reference/comparison only.
+- **`mlflow-eval`** (`src/mlflow_eval/`) — the evaluation suite (judge model `gemma4:e2b`). Scores agent-history data
+  with `mlflow.genai.evaluate` scorers; results are browsable in the MLflow UI. Can evaluate a single ad-hoc report, a
+  single previously recorded run (by process instance ID), or every recorded run at once — optionally collecting
+  newly-completed runs first.
 
 ## Install
 
@@ -27,7 +23,7 @@ source .venv/Scripts/activate   # or .venv/bin/activate on macOS/Linux
 
 It creates `.venv` and runs `pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"`.
 
-Installs three console-script entry points from this package: `mlflow-eval`, `mlflow-judges`, and `deep-eval`
+Installs two console-script entry points from this package: `mlflow-eval` and `mlflow-judges`
 (`fluxnova-run`/`fluxnova-run-mock-workers` come from the sibling `fluxnova-runner` install).
 
 ## Config: `fluxnova.config.WorkflowConfig`
@@ -42,7 +38,7 @@ field reference and an [example](config/loan-assesment.yml); in brief:
 | `fluxnova_url`, `bpmn_path`, `process_key`, `deployment_name` | Yes | Same as `fluxnova-runner`'s `RunnerConfig` |
 | `subprocess_id` | For `--collect` | BPMN element ID of the ad-hoc subprocess containing the LLM agent |
 | `variables`, `mock_workers`, `user_tasks` | No | Initial variables / mock worker & user-task completions |
-| `dataset_path` | No | Path to the golden-scenario JSON dataset (see `datasets/loan-assessment/generate.py`) |
+| `dataset_path` | No | Path to the golden-scenario JSON dataset (`datasets/loan-assessment/goldens.json`) |
 | `available_tools` | No | `{BPMN service-task element ID: display name}` |
 | `expected_tools` | No | Ordered list of `{tool, if}` rules — see root README's "`expected_tools` rule syntax" |
 | `mlflow_dataset` | No | `{enabled, name, tracking_uri, also_write_json_report, experiment_name}` — see `MlflowDatasetConfig` |
@@ -77,7 +73,7 @@ results (scores, rationales, inputs/outputs) in the MLflow UI.
 
 **Scorers** (`src/mlflow_eval/main.py`) — code checks plus two flavours of LLM judge: a native MLflow `Guidelines`
 judge (`decision_quality`, shared with `eval-service-worker` via `fluxnova_mlflow_dataset.scorers`) and a bespoke
-`_llm_judge()` helper (litellm-based, mirroring DeepEval's `GEval`) for the others. See the root README's
+`_llm_judge()` helper (litellm-based) for the others. See the root README's
 "Evaluation scorers (MLflow)" table for the full list and what each one checks.
 
 `automatic_judges(model=GATEWAY_JUDGE_MODEL)` builds the subset of judges usable for **automatic (online)**
@@ -101,22 +97,6 @@ through that server process — see [`local-dev/README.md`](../local-dev/README.
 automatic evaluation judges" section for the one-off endpoint setup this depends on. `--filter-string` on `start`
 restricts which traces get sampled (e.g. to exclude EDD regression runs).
 
-## `deep-eval`: the deprecated DeepEval suite
-
-```bash
-deep-eval config/loan-assesment.yml .fluxnova/loanAssessmentProcess/<instanceId>.json
-```
-
-Unlike `mlflow-eval`, this suite reads an **agent-history JSON report file** directly rather than the MLflow
-dataset (`fluxnova-runner` no longer produces one itself — see the root README's note on this). Runs
-`deepeval test run src/deep_eval/main.py` under the hood so DeepEval's own pass/fail score summary prints at the
-end of the session, and writes an HTML report next to the report file
-(`<processKey>/<instanceId>-eval.html`). `src/deep_eval/conftest.py` registers the `--config`/`--report` pytest
-options that drive which config/report the session-scoped fixtures (`workflow_config`, `agent_report`) load — the
-same suite can also be invoked directly via `deepeval test run` or plain `pytest` (see the module docstring in
-`src/deep_eval/main.py` for the exact commands). See the root README's "Evaluation tests (DeepEval)" table for what
-each test checks.
-
 ## Tests
 
 ```bash
@@ -125,7 +105,7 @@ pytest tests
 
 `harness/tests/` has one suite: `test_mlflow_regression.py`, an **MLflow agent regression test**
 (MLflow's [regression-testing pattern](https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/)). Unlike
-`mlflow-eval` (which re-scores already-recorded runs) or `deep-eval`, this test actually drives the live
+`mlflow-eval` (which re-scores already-recorded runs), this test actually drives the live
 loan-assessment agent end-to-end — once per golden scenario in `datasets/loan-assessment/goldens.json` — and asserts
 each real output still satisfies the shared `decision_quality` judge. It's a gating check, not a coverage suite: the
 intent is to catch a behavioural regression before it ships, not to exercise this codebase's own logic.
@@ -143,5 +123,5 @@ pytest tests/test_mlflow_regression.py -v
 
 The logic it depends on most heavily otherwise (record shaping, trace reading, collection, shared judge/scorer
 definitions) is covered by [`fluxnova-mlflow-dataset`](../fluxnova-mlflow-dataset/README.md#tests)'s own test suite
-instead; the harness-specific code (`WorkflowConfig` loading/validation, the `mlflow_eval`/`deep_eval` scorers and
+instead; the harness-specific code (`WorkflowConfig` loading/validation, the `mlflow_eval` scorers and
 CLIs) is currently exercised manually rather than under pytest.
