@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 src/deep_eval/__init__.py
 src/deep_eval/conftest.py
@@ -15,3 +16,4 @@ src/fluxnova_harness.egg-info/top_level.txt
 src/mlflow_eval/__init__.py
 src/mlflow_eval/judges.py
 src/mlflow_eval/main.py
+tests/test_mlflow_regression.py

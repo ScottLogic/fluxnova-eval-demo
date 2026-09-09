@@ -1,5 +1,7 @@
+README.md
 pyproject.toml
 src/fluxnova_runner/__init__.py
+src/fluxnova_runner/agent_output.py
 src/fluxnova_runner/client.py
 src/fluxnova_runner/config.py
 src/fluxnova_runner/main.py
@@ -10,4 +12,5 @@ src/fluxnova_runner.egg-info/dependency_links.txt
 src/fluxnova_runner.egg-info/entry_points.txt
 src/fluxnova_runner.egg-info/requires.txt
 src/fluxnova_runner.egg-info/top_level.txt
+tests/test_agent_output.py
 tests/test_client.py

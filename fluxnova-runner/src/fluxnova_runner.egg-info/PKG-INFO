@@ -6,6 +6,7 @@ Requires-Python: >=3.11
 Requires-Dist: requests>=2.32
 Requires-Dist: pyyaml>=6.0
 Requires-Dist: camunda-external-task-client-python3>=2.3
+Requires-Dist: pydantic>=2.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: ruff>=0.5; extra == "dev"

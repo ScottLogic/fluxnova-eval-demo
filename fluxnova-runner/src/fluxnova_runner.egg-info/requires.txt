@@ -1,6 +1,7 @@
 requests>=2.32
 pyyaml>=6.0
 camunda-external-task-client-python3>=2.3
+pydantic>=2.0
 
 [dev]
 pytest>=8.0

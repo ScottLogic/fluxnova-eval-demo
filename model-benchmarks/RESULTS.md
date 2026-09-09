@@ -160,8 +160,8 @@ For the "use a model better at tool calls" task, the data supports:
 
 ## Reproducing / data
 
-- Raw per-model metric snapshots: `local-model-benchmarks/<model>-after-*.json`
-- Machine-readable summary: `local-model-benchmarks/SUMMARY.json`
+- Raw per-model metric snapshots: ``
+- Machine-readable summary: ``
 - Capture script: `local-model-benchmarks/capture-metrics.sh <model> <before|after>`
 
 To benchmark another model: edit the `model="..."` attribute in

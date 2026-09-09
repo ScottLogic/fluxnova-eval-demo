@@ -156,17 +156,23 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
     - The **Fluxnova** engine image — pull the public one from GHCR:
       `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0` (no login needed)
 
-2. **Create the shared virtual environment** — all three packages install editable into one venv under
-   `harness/.venv`, so changes to any package take effect immediately without reinstalling:
+2. **Create the shared virtual environment** — run the setup script from the repo root. It creates one venv under
+   `.venv` at the repo root and installs all three packages editable into it, so changes to any package take effect
+   immediately without reinstalling:
    ```bash
-   cd harness
-   python -m venv .venv
-   source .venv/Scripts/activate
-
-   pip install -e ".[dev]" -e "../fluxnova-mlflow-dataset[dev]" -e "../fluxnova-runner[dev]"
+   ./setup.sh
    ```
-   This installs four console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and
-   `deep-eval` / `mlflow-eval` (harness evaluation suites).
+   Then activate it: `source .venv/Scripts/activate` (Windows Git Bash) or `source .venv/bin/activate` (macOS/Linux).
+
+   The script is idempotent (safe to re-run) and simply runs:
+   ```bash
+   python -m venv .venv
+   .venv/Scripts/python -m pip install --upgrade pip
+   .venv/Scripts/python -m pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"
+   ```
+   Pass a specific interpreter (must be Python 3.11+) with `PYTHON=python3.11 ./setup.sh`. This installs four
+   console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and `deep-eval` / `mlflow-eval`
+   (harness evaluation suites).
 
 3. **Start the backing services as Podman pods**, from Git Bash at the repo root:
    ```bash
@@ -189,7 +195,7 @@ You're now ready to run a workflow — see "Running `fluxnova-runner`" below.
 
 ## Running `fluxnova-runner` (Windows Git Bash)
 
-From a Git Bash terminal, with `harness/.venv` activated (`source .venv/Scripts/activate` — see Installation above)
+From a Git Bash terminal, with the repo-root `.venv` activated (`source .venv/Scripts/activate` — see Installation above)
 and your working directory at `harness/`:
 
 ```bash
@@ -328,11 +334,10 @@ library) must be running and listening on the URL the Collector's `otlphttp` exp
 (`http://localhost:5000/v1/traces` by default). `mlflow ui` alone does **not** accept incoming trace writes — it only
 reads.
 
-Start it (from the repo root, with `harness/.venv` activated and `local-dev/services/postgres-up.sh` already running)
+Start it (from the repo root, with the repo-root `.venv` activated and `local-dev/services/postgres-up.sh` already running)
 and leave it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
-cd harness
 .venv/Scripts/mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 127.0.0.1 --port 5000
 ```
 
@@ -344,13 +349,13 @@ you no longer need a separate `mlflow ui` process pointed at the same store.
 1. **Run → Edit Configurations… → + → Python** (requires the Python plugin).
 2. **Name:** `MLflow Tracking Server`
 3. **Run** (instead of "Script path"): choose **Module name** and set it to `mlflow`, *or* set "Script path" to
-   `harness/.venv/Scripts/mlflow.exe` (Windows) / `harness/.venv/bin/mlflow` (macOS/Linux).
+   `.venv/Scripts/mlflow.exe` (Windows) / `.venv/bin/mlflow` (macOS/Linux).
 4. **Parameters:**
    ```
    server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 127.0.0.1 --port 5000
    ```
 5. **Working directory:** `<repo root>/harness`
-6. **Python interpreter:** the `harness/.venv` interpreter (add it via **Add Interpreter → Existing** if not already
+6. **Python interpreter:** the repo-root `.venv` interpreter (add it via **Add Interpreter → Existing** if not already
    registered).
 7. Apply, then run this configuration before starting the OTel Collector or running `fluxnova-run` — leave it running in
    the background for the duration of your session.

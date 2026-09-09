@@ -10,7 +10,7 @@
       <env name="FLUXNOVA_PASSWORD" value="demo" />
     </envs>
     <option name="SDK_HOME" value="" />
-    <option name="SDK_NAME" value="C:\dev\fluxnova-eval-demo\harness\.venv" />
+    <option name="SDK_NAME" value="C:\dev\fluxnova-eval-demo\.venv" />
     <option name="WORKING_DIRECTORY" value="" />
     <option name="IS_MODULE_SDK" value="false" />
     <option name="ADD_CONTENT_ROOTS" value="true" />

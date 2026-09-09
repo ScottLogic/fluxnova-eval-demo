@@ -17,18 +17,15 @@ specific to this directory.
 
 ## Install
 
-All three of this repo's Python packages install editable into one shared venv under `harness/.venv` (see the root
-README's "First time setup" for the full sequence):
+All three of this repo's Python packages install editable into one shared venv under `.venv` at the repo root. Run the
+setup script from the repo root (see the root README's "First time setup" for the full sequence):
 
 ```bash
-cd harness
-python -m venv .venv
-source .venv/Scripts/activate
-
-pip install -e ".[dev]"
-pip install -e ../fluxnova-mlflow-dataset[dev]
-pip install -e ../fluxnova-runner[dev]
+./setup.sh
+source .venv/Scripts/activate   # or .venv/bin/activate on macOS/Linux
 ```
+
+It creates `.venv` and runs `pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"`.
 
 Installs three console-script entry points from this package: `mlflow-eval`, `mlflow-judges`, and `deep-eval`
 (`fluxnova-run`/`fluxnova-run-mock-workers` come from the sibling `fluxnova-runner` install).

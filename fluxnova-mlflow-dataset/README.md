@@ -26,7 +26,7 @@ rather than two copies that could drift apart.
 ## Install
 
 ```bash
-pip install -e .            # into the harness venv (harness/.venv), or your own
+pip install -e .            # into the shared venv (repo-root .venv), or your own
 pip install -e ".[dev]"     # + pytest/ruff for running the test suite
 ```
 

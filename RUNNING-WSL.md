@@ -54,14 +54,13 @@ just comment locally.
 
 ## Python environment (uv)
 
-The harness (`fluxnova-run`, `mlflow-eval`, etc.) runs on the host in a venv under `harness/.venv`.
+The harness (`fluxnova-run`, `mlflow-eval`, etc.) runs on the host in a venv under `.venv` at the repo root.
 
 ```bash
-cd harness
 uv venv                              # creates .venv (add --python 3.11 to pin the interpreter)
 
 # Install ALL THREE local packages in ONE command.
-uv pip install -e ".[dev]" -e "../fluxnova-mlflow-dataset[dev]" -e "../fluxnova-runner[dev]"
+uv pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"
 ```
 
 > **Install all three together — this is not optional.** `harness`, `fluxnova-mlflow-dataset`, and
@@ -74,7 +73,7 @@ Notes:
 
 - `uv pip install` does **not** need the venv activated — uv auto-detects `.venv` in the current
   directory. Activation (`source .venv/bin/activate`) only matters for calling the console
-  scripts directly; otherwise use `uv run <script> ...` from `harness/`.
+  scripts directly; otherwise use `uv run <script> ...` from the repo root.
 - This installs the console scripts: `fluxnova-run`, `fluxnova-run-mock-workers`, `mlflow-eval`,
   `mlflow-judges`, `eval-service-worker`, and `deep-eval` (deprecated).
 
