@@ -3,8 +3,7 @@
 A slim, independently-deployable service that **tails an MLflow experiment's trace
 store** and scores each newly-completed agent run once with the shared
 **deterministic (trace-only) scorers**. It's an always-on, event-adjacent
-alternative to the on-demand `mlflow-eval` batch CLI — and the first step towards
-replacing it.
+way to score runs as they land, with no code needing to run on demand.
 
 ## What it does
 

@@ -2,10 +2,11 @@
 
 Reads a YAML config file, deploys the specified BPMN to Fluxnova, optionally
 starts mock external-task workers, starts a process instance, and polls
-until it completes. Reporting/evaluation is *not* this service's job — run
-``mlflow-eval <config> --collect`` afterwards (or independently, any time
-later) to pull the completed agentic subprocess run out of MLflow's trace
-store and record it into the MLflow evaluation dataset.
+until it completes. Reporting/evaluation is *not* this service's job — the
+``eval-trace-listener`` service tails MLflow's trace store and scores each
+completed run automatically (or use ``eval-service-worker`` for synchronous
+per-run scoring). The run's trace is already persisted in MLflow by the time
+this service returns.
 
 Usage
 -----
@@ -121,8 +122,8 @@ def main(argv: Iterable[str] | None = None) -> None:
         client.wait_for_completion(instance_id, timeout=args.timeout)
         print(f"Process {instance_id} completed.")
     print(
-        "Run 'mlflow-eval <config> --collect' to record the completed subprocess run "
-        "into the MLflow evaluation dataset."
+        "The completed subprocess run's trace is persisted in MLflow; the "
+        "eval-trace-listener service (if running) will score it automatically."
     )
 
 

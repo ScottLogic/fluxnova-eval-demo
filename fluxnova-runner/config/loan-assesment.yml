@@ -1,8 +1,6 @@
-# yaml-language-server: $schema=../harness/src/fluxnova/workflow-config.schema.json
-# Fluxnova workflow harness configuration
+# Fluxnova workflow configuration (read by fluxnova-runner)
 #
-# Run with:  harness workflow.yml
-#            harness --wait workflow.yml   (blocks until the instance completes)
+# Run with:  fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
 
 # Engine REST base URL
 fluxnova_url: http://localhost:8080/engine-rest

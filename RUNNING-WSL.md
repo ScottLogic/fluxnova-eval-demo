@@ -11,10 +11,10 @@
   **rootless (user-side) Podman** setup — that's optional, not required, but it's what the commands
   below assume. With rootless Podman on Linux/WSL there's no `podman machine init/start`, Podman runs
   directly, and `localhost:5000` / `localhost:8080` / `localhost:5432` work without any VM-IP fallback.
-- **Python 3.11+** (and [uv](https://docs.astral.sh/uv/) or plain `venv`/`pip`) for the harness.
+- **Python 3.11+** (and [uv](https://docs.astral.sh/uv/) or plain `venv`/`pip`) for the Python tooling.
 - **[Ollama](https://ollama.com)** running in the same WSL distro, reachable from containers at
-  `host.containers.internal:11434`. This setup runs **`gemma4:e2b` for the agent (and the offline
-  `mlflow-eval` judge) and `qwen2.5:1.5b` for the online judge**
+  `host.containers.internal:11434`. This setup runs **`gemma4:e2b` for the agent (and the
+  regression/eval judge) and `qwen2.5:1.5b` for the online judge**
   (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`) — see [Models](#models) for where to point each. (The upstream
   defaults are `llama3.1` agent / `llama3.2` judge.)
 - The Fluxnova engine image — pull the public one: `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0`
@@ -31,7 +31,7 @@ This setup runs **`gemma4:e2b`** for the agent and the offline judge, and **`qwe
   `<agent:config provider="ollama" model="gemma4:e2b" ...>`. `fluxnova-run` re-deploys the BPMN, so no
   rebuild is needed. The agent model must support Ollama tool calling — confirm with
   `ollama show gemma4:e2b` (look for `tools` under Capabilities).
-- **Judge, offline (`mlflow-eval`)** — set `_NATIVE_JUDGE_MODEL` / `_JUDGE_MODEL` in
+- **Judge, offline (regression + eval services)** — set `_NATIVE_JUDGE_MODEL` / `_JUDGE_MODEL` in
   [fluxnova-mlflow-dataset/src/fluxnova_mlflow_dataset/scorers.py](fluxnova-mlflow-dataset/src/fluxnova_mlflow_dataset/scorers.py)
   to `ollama:/gemma4:e2b`.
 - **Judge, online (`eval-service-worker`)** — repoint the `fluxnova-judge` MLflow AI Gateway endpoint
@@ -54,16 +54,16 @@ just comment locally.
 
 ## Python environment (uv)
 
-The harness (`fluxnova-run`, `mlflow-eval`, etc.) runs on the host in a venv under `.venv` at the repo root.
+The Python tooling (`fluxnova-run`, `mlflow-judges`, etc.) runs on the host in a venv under `.venv` at the repo root.
 
 ```bash
 uv venv                              # creates .venv (add --python 3.11 to pin the interpreter)
 
-# Install ALL THREE local packages in ONE command.
-uv pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"
+# Install BOTH local packages in ONE command.
+uv pip install -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"
 ```
 
-> **Install all three together — this is not optional.** `harness`, `fluxnova-mlflow-dataset`, and
+> **Install both together — this is not optional.** `fluxnova-mlflow-dataset` and
 > `fluxnova-runner` depend on each other and none are published to PyPI, so uv has to resolve them in
 > a single pass. Running just `uv pip install -e ".[dev]"` fails with
 > *"fluxnova-mlflow-dataset was not found in the package registry"* because it tries to fetch the
@@ -74,7 +74,7 @@ Notes:
 - `uv pip install` does **not** need the venv activated — uv auto-detects `.venv` in the current
   directory. Activation (`source .venv/bin/activate`) only matters for calling the console
   scripts directly; otherwise use `uv run <script> ...` from the repo root.
-- This installs the console scripts: `fluxnova-run`, `fluxnova-run-mock-workers`, `mlflow-eval`,
+- This installs the console scripts: `fluxnova-run`, `fluxnova-run-mock-workers`,
   `mlflow-judges`, and `eval-service-worker`.
 
 ## Bring the stack up (order matters)

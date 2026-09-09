@@ -2,7 +2,7 @@
 https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/) for the
 Fluxnova loan-assessment agent.
 
-Unlike ``mlflow_eval``'s offline batch evaluation (which measures aggregate
+Unlike an offline batch evaluation (which measures aggregate
 scores across every *recorded* run), this is a
 gating check that actually runs the live agent: for every scenario in the
 golden dataset (``datasets/loan-assessment/goldens.json``) it drives the agent
@@ -59,7 +59,7 @@ from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_CONFIG_PATH = _REPO_ROOT / "config" / "loan-assesment.yml"
+_CONFIG_PATH = _REPO_ROOT / "fluxnova-runner" / "config" / "loan-assesment.yml"
 _GOLDENS_PATH = _REPO_ROOT / "datasets" / "loan-assessment" / "goldens.json"
 
 # Regression runs/assessments are logged under a dedicated experiment so they don't clutter it.

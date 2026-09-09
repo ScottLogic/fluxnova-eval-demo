@@ -1,23 +1,21 @@
-"""Shared MLflow evaluation-dataset logic for the Fluxnova services.
+"""Shared MLflow evaluation-dataset logic for the Fluxnova eval services.
 
-Used by ``harness``'s ``mlflow_eval`` suite to:
-- collect newly-completed agentic subprocess runs (BPMN + MLflow trace data +
-  Fluxnova core-API variables) as an on-demand pre-step (``collect_new_runs``),
-  replacing the old always-running ``fluxnova_listener`` service now that the
-  OTel Collector exports traces directly to MLflow; and
-- read records back (single instance or the whole dataset) and score them.
+Provides the building blocks the eval services share:
+- read records back (single instance or the whole dataset) and score them;
+- the shared scorer/judge definitions (``scorers.py``) — the deterministic
+  trace-only scorers used by ``eval-service-worker``/``eval-trace-listener``,
+  the golden/config-driven scorers used by ``regression/`` (plus more kept
+  available for reuse), and the ``decision_quality`` judge; and
+- the ``mlflow-judges`` online-evaluation toggle CLI (``judges.py``).
 
 Keeping this logic in one standalone, installable package guarantees what
 gets written matches what gets read/evaluated.
 """
 
 from fluxnova_mlflow_dataset.bpmn import BpmnLookup, BpmnLookupError
-from fluxnova_mlflow_dataset.collect import CollectedRun, collect_new_runs
 from fluxnova_mlflow_dataset.fluxnova_client import ApiError, FluxnovaClient
 from fluxnova_mlflow_dataset.goldens import load_goldens, match_golden
-from fluxnova_mlflow_dataset.report import build_agent_report
 from fluxnova_mlflow_dataset.scorers import (
-    BATCH_SCORERS,
     DECISION_QUALITY_GUIDELINES,
     DECISION_QUALITY_NAME,
     DETERMINISTIC_SCORERS,
@@ -85,9 +83,6 @@ __all__ = [
     "InvokeAgentMetrics",
     "ToolCallSpan",
     "ChatMessages",
-    "build_agent_report",
-    "collect_new_runs",
-    "CollectedRun",
     "DECISION_QUALITY_NAME",
     "DECISION_QUALITY_GUIDELINES",
     "decision_quality_judge",
@@ -95,7 +90,6 @@ __all__ = [
     "required_tools_called",
     "no_tool_errors",
     "definitive_decision_stated",
-    "BATCH_SCORERS",
     "GATEWAY_JUDGE_MODEL",
     "GOLDEN_MATCH_THRESHOLD",
     "automatic_judges",

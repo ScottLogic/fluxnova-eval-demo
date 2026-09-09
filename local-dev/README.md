@@ -81,7 +81,7 @@ Notes and differences from the pod scripts:
   core four, and `--profile grafana up -d` brings up the core four plus Prometheus/Grafana (Grafana →
   `http://localhost:3000`, Prometheus → `http://localhost:9090`; see the "GenAI observability dashboard" section below).
 - **`down -v`** deletes the Postgres named volume but **not** MLflow's artifact files (a host bind-mount at
-  `../harness/.mlflow/artifacts`) — unlike `./pods-down.sh --delete-data`, which clears both. Remove that directory by
+  `./.mlflow/artifacts`) — unlike `./pods-down.sh --delete-data`, which clears both. Remove that directory by
   hand for a fully clean slate.
 - The WSL2 `localhost`-unreachable IP fallback and browser auto-open (both in the `*-up.sh` scripts) are **not**
   reproduced here; they aren't needed under rootless Podman on Linux/WSL. A benign
@@ -168,8 +168,8 @@ This creates a `fluxnova-local` pod publishing ports `8080` (Fluxnova), `4317`/`
 Both containers share one network namespace, so they reach each other via `localhost` rather than by container name
 — that's why `default.yml` (mounted by the pod script) points `exporterEndpoint` at `http://localhost:4317`.
 
-- **`fluxnova`** — the Fluxnova engine, published on `http://localhost:8080` (matching `fluxnova_url` in the harness
-  config files), with `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at the collector container.
+- **`fluxnova`** — the Fluxnova engine, published on `http://localhost:8080` (matching `fluxnova_url` in the runner's
+  workflow config files), with `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at the collector container.
 - **`otel-collector`** — an `otlp` receiver (gRPC `4317` / HTTP `4318`, also published to the host) piped through an
   `otlphttp` exporter to the MLflow tracking server (`http://host.containers.internal:5000` or the shared
   `fluxnova-dev` network's `mlflow-local` pod, auto-suffixed with `/v1/traces`). Make sure the MLflow tracking server
@@ -223,10 +223,10 @@ cd local-dev
 ```
 
 This uses the official `ghcr.io/mlflow/mlflow` image, backed by PostgreSQL (`postgres-local` pod's `mlflow`
-database — see "PostgreSQL database" above) for its metadata backend store, so `mlflow-eval` (run on the host) and
+database — see "PostgreSQL database" above) for its metadata backend store, so an MLflow client on the host and
 this container see identical data — you can freely switch between running MLflow as a host process and as this
 container, as long as both point at the same PostgreSQL database. Artifacts (e.g. logged models/files) still live on
-a bind-mounted host directory (`harness/.mlflow/artifacts` by default, override with `MLFLOW_ARTIFACT_DIR`), since
+a bind-mounted host directory (`local-dev/.mlflow/artifacts` by default, override with `MLFLOW_ARTIFACT_DIR`), since
 Postgres only stores metadata, not blobs. The OTel Collector's `otlphttp` exporter
 (`http://host.containers.internal:5000`) reaches it exactly as it would a host-run server, since the pod's port is
 published to the host either way.
@@ -442,7 +442,7 @@ routing on `evalPassed`: on pass → generate-report → approve/reject decision
 `UserTask_ReviewFailedEval` human step. Because the agent runs in the Call Activity's *child* instance, the worker
 resolves that child from the parent instance it's handed before reading its trace (see `eval-service-worker/README.md`).
 
-Use `config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN — it lists `loan-assesment.bpmn` under
+Use `fluxnova-runner/config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN — it lists `loan-assesment.bpmn` under
 `additional_bpmn_paths` so both process definitions deploy together, and sets `wait_for_activity:
 CallActivity_LoanAssessmentAgent` so `fluxnova-run` returns once the agent finishes instead of hanging on the downstream
 human tasks.
@@ -479,7 +479,7 @@ The worker has **no config file of its own** — every setting (`fluxnova_url`, 
 `eval-service-worker/src/eval_service_worker/config.py`, overridable via either a CLI flag (e.g. `--tracking-uri`)
 or an `EVAL_SERVICE_<NAME>` environment variable (e.g. `EVAL_SERVICE_TRACKING_URI`) — see that file or
 `eval-service-worker/README.md` for the full list. This is deliberate: it keeps the worker independently deployable
-without depending on `harness`'s workflow YAML.
+without depending on another service's workflow YAML.
 
 ## GenAI observability dashboard: Prometheus + Grafana
 

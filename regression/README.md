@@ -3,7 +3,7 @@
 The end-to-end **MLflow agent regression suite** for the Fluxnova loan-assessment agent — the project's gating check
 against behavioural regressions. It lives at the repo root (rather than inside any one package) because it drives the
 whole stack: it depends on `fluxnova-runner` (to run the live agent) and `fluxnova-mlflow-dataset` (for the shared
-judges/scorers), not on the `harness` package's own source.
+judges/scorers).
 
 ## What it does
 
@@ -17,7 +17,7 @@ loan-assessment agent end-to-end via `fluxnova-runner`, then scores the agent's 
 - `test_agent_matches_golden_decisions` — the output matches the golden's `expected_output` via the shared
   `matches_golden` judge (thresholded at `GOLDEN_MATCH_THRESHOLD`).
 
-Unlike `mlflow-eval` (which re-scores already-recorded runs), this actually runs the agent. It's a gating check, not a
+This actually runs the agent — it's a gating check, not a
 coverage suite. Results are recorded to the shared PostgreSQL-backed MLflow tracking store under a dedicated
 `fluxnova-loanAssessmentProcess-regression` experiment (kept separate from real recorded agent runs).
 

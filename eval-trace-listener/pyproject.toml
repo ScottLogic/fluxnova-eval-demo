@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eval-trace-listener"
 version = "0.1.0"
-description = "Standalone service: tails an MLflow experiment's trace store for newly-completed agent runs of configured BPMN agents and scores each once with the shared deterministic (trace-only) scorers. An event-adjacent, push-free replacement for the on-demand mlflow-eval batch CLI. See eval-trace-listener/README.md."
+description = "Standalone service: tails an MLflow experiment's trace store for newly-completed agent runs of configured BPMN agents and scores each once with the shared deterministic (trace-only) scorers. An always-on, event-adjacent way to score runs as they land. See eval-trace-listener/README.md."
 requires-python = ">=3.11"
 dependencies = [
     "mlflow[genai]>=3.15",

@@ -22,7 +22,7 @@
 #   podman compose down -v                   # also delete the postgres data volume
 #
 # Note: unlike ./pods-down.sh --delete-data, `down -v` does NOT touch the mlflow
-# artifact files (they're a host bind-mount at ../harness/.mlflow/artifacts) — delete
+# artifact files (they're a host bind-mount at ./.mlflow/artifacts) — delete
 # those by hand if you need a truly clean slate.
 
 services:
@@ -78,7 +78,7 @@ services:
     ports:
       - "${MLFLOW_PORT:-5000}:5000"
     volumes:
-      - ../harness/.mlflow/artifacts:/mlflow-artifacts
+      - ./.mlflow/artifacts:/mlflow-artifacts
     healthcheck:
       # The mlflow image is python-based (no curl guaranteed), so probe with urllib.
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/version')\""]

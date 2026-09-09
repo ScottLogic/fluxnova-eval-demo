@@ -4,8 +4,8 @@ Comparison of small, locally-hosted (Ollama) LLMs on their ability to drive the
 multi-step tool-calling loop in the Fluxnova **loan assessment** agentic process.
 
 - **Date:** 2026-09-04
-- **Benchmark:** `harness/config/loan-assesment.yml`
-- **Runner:** `fluxnova-run config/loan-assesment.yml --with-mock-workers`
+- **Benchmark:** `fluxnova-runner/config/loan-assesment.yml`
+- **Runner:** `fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers`
 - **Metrics source:** OpenTelemetry collector `gen_ai_*` metrics (`http://localhost:8889/metrics`), captured per run as JSON via `capture-metrics.sh`.
 - **Hardware target:** Dell XPS laptop, CPU-only inference (no GPU offload), models run one at a time.
 
@@ -116,7 +116,7 @@ crash — 0 tool errors. Did unnecessary work.
 ### llama3.1:8b / llama3.2:3b — FAILED
 Both called **only** `Run Fraud Screening`, produced ~60–84 output tokens, and stopped —
 never completing the multi-step loop despite the explicit system prompt. **0 tool errors**,
-so this is a model *capability* gap (the model chooses to stop), not a harness/schema bug.
+so this is a model *capability* gap (the model chooses to stop), not a runner/schema bug.
 This reproduces the weak tool-calling behaviour observed on the team's llama-based setup.
 The short wall time is misleading: these runs are fast only because they did almost no work.
 

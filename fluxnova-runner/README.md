@@ -5,9 +5,9 @@ variables, optionally drives mock external-task workers to stand in for real ser
 the run (or one named activity within it) completes. See the repo root [`README.md`](../README.md)'s "Overview"/
 "Architecture" sections for how this fits into the wider pipeline.
 
-Deploy/start/run concerns only — **no reporting or evaluation**. Once a run completes, use `mlflow-eval <config>
---collect` (see [`harness/README.md`](../harness/README.md)) to pull it out of MLflow's trace store and record it
-into the evaluation dataset; `fluxnova-runner` itself doesn't read anything back beyond polling for completion.
+Deploy/start/run concerns only — **no reporting or evaluation**. Once a run completes, its trace is persisted in
+MLflow and the `eval-trace-listener` service (or `eval-service-worker`) scores it; `fluxnova-runner` itself doesn't
+read anything back beyond polling for completion.
 
 ## Install
 
@@ -20,10 +20,10 @@ Installs two console-script entry points: `fluxnova-run` and `fluxnova-run-mock-
 
 ## Config
 
-Reads the same workflow YAML config file used by `harness` (e.g. `harness/config/loan-assesment.yml`) — see the
-repo root README's "Config file" section for the full schema. `RunnerConfig.from_file` only reads the fields it
-needs and silently ignores the rest (`subprocess_id`, `available_tools`, `mlflow_dataset`, etc. — used by the
-harness's eval tools), so the same file works unchanged for both:
+Reads a workflow YAML config file from [`config/`](config/) (e.g. `fluxnova-runner/config/loan-assesment.yml`) — see
+the repo root README's "Config file" section for the full field reference. `RunnerConfig.from_file` only reads the
+fields it needs and silently ignores the rest (`subprocess_id`, `available_tools`, `mlflow_dataset`, etc. — used by
+the eval services), so the same file works unchanged for both:
 
 | Field | Required | Description |
 |-------|----------|--------------|
@@ -37,7 +37,7 @@ harness's eval tools), so the same file works unchanged for both:
 ## Usage
 
 ```bash
-fluxnova-run config/loan-assesment.yml --with-mock-workers
+fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
 ```
 
 Deploys the BPMN, starts a process instance with the config's `variables`, starts one mock external-task worker
@@ -45,9 +45,9 @@ thread per `mock_workers` topic (if `--with-mock-workers` is given), then polls 
 prints the process instance ID.
 
 ```bash
-fluxnova-run --skip-deploy config/loan-assesment.yml        # BPMN already deployed — skip the deploy step
-fluxnova-run config/loan-assesment.yml                       # no mock workers — needs real service-task backends
-fluxnova-run --wait-for-activity AdHocSubProcess_LoanAssessmentAgent config/loan-assesment-eval.yml
+fluxnova-run --skip-deploy fluxnova-runner/config/loan-assesment.yml        # BPMN already deployed — skip the deploy step
+fluxnova-run fluxnova-runner/config/loan-assesment.yml                       # no mock workers — needs real service-task backends
+fluxnova-run --wait-for-activity AdHocSubProcess_LoanAssessmentAgent fluxnova-runner/config/loan-assesment-eval.yml
 ```
 
 `--wait-for-activity ACTIVITY_ID` returns as soon as that one BPMN activity finishes, instead of waiting for the
@@ -60,7 +60,7 @@ environment, never from the config file.
 ### Mock workers standalone
 
 ```bash
-fluxnova-run-mock-workers config/loan-assesment.yml
+fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment.yml
 ```
 
 Starts the same mock external-task workers as `--with-mock-workers` above, without deploying or starting a process

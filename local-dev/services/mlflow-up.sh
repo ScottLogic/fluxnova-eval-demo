@@ -6,7 +6,7 @@
 # This replaces the host-run `mlflow server ...` process described in the main README's
 # "Running the MLflow tracking server" section with a container, backed by the *same*
 # PostgreSQL database (postgres-local's "mlflow" database — see postgres-up.sh) so
-# `mlflow-eval` (run on the host) and this container see identical data. Requires
+# an MLflow client on the host and this container see identical data. Requires
 # postgres-up.sh to already be running.
 #
 # Usage (from this directory):
@@ -52,7 +52,7 @@ MLFLOW_POSTGRES_USER="${MLFLOW_POSTGRES_USER:-mlflow}"
 MLFLOW_POSTGRES_PASSWORD="${MLFLOW_POSTGRES_PASSWORD:-mlflow}"
 MLFLOW_POSTGRES_DB="${MLFLOW_POSTGRES_DB:-mlflow}"
 MLFLOW_BACKEND_STORE_URI="${MLFLOW_BACKEND_STORE_URI:-postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_CONTAINER_PORT}/${MLFLOW_POSTGRES_DB}}"
-MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/../harness/.mlflow/artifacts}"
+MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/.mlflow/artifacts}"
 mkdir -p "$MLFLOW_ARTIFACT_DIR"
 ARTIFACT_DIR_RESOLVED="$(cd "$MLFLOW_ARTIFACT_DIR" && pwd)"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"

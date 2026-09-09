@@ -1,13 +1,4 @@
 """Reads GenAI span data straight out of MLflow's own trace store.
-
-Replaces the previous ``fluxnova_listener`` design (a bespoke local OTLP/HTTP
-receiver + JSON-lines span store) now that the OTel Collector can export
-traces directly to MLflow's native OTLP endpoint (``/v1/traces``) and
-``mlflow.search_traces`` can read them straight back — no separate trace
-transport/storage layer needed on our side. See ``proposal.md`` for the
-rationale and GENAI_SEMCONV_ALIGNMENT.md for the span/attribute shapes this
-reads (``gen_ai.*`` semantic-convention attributes on ``invoke_agent``,
-``execute_tool`` and ``chat`` spans).
 """
 
 from __future__ import annotations
@@ -162,8 +153,8 @@ class MlflowTraceReader:
 
         Deliberately reads nothing beyond MLflow's trace store (no BPMN file, no
         Fluxnova REST API) — callers needing goal/input-variables/tool-call detail
-        too should use :func:`fluxnova_mlflow_dataset.report.build_agent_report`
-        instead.
+        too should read the corresponding spans directly (see
+        :func:`input_variables_from_spans` / :func:`tool_calls_from_spans`).
         """
         spans = self._spans_for_correlation_id(correlation_id)
         return final_output_from_spans(spans)

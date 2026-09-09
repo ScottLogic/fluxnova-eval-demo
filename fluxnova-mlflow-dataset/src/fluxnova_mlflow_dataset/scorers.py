@@ -3,21 +3,23 @@
 Single source of truth for every scorer used across the project, so nothing
 drifts between call sites:
 
-- the offline batch regression/analysis suite (``harness/src/mlflow_eval/main.py``,
-  ``mlflow-eval`` CLI) uses :data:`BATCH_SCORERS` — config/golden-driven scorers
-  that read ``inputs``/``outputs``/``expectations`` shaped by
+- the config/golden-driven scorers (e.g. :func:`decision_quality`, :func:`matches_golden`,
+  :func:`tool_correctness`) read ``inputs``/``outputs``/``expectations`` shaped by
   ``fluxnova_mlflow_dataset.store.build_mlflow_record`` (``expected_tools``,
   ``available_tools``, tool call args, etc. sourced from the workflow YAML config
-  and golden dataset);
+  and golden dataset) — the regression suite (``regression/``) uses
+  :func:`matches_golden`/:func:`decision_quality` today; the rest are kept
+  available for reuse;
 - the synchronous ``eval-service-worker`` (a BPMN external-task worker that scores
   one just-completed subprocess run on demand — see ``EVAL-SERVICE-WORKER-PLAN.md``)
-  uses :data:`DETERMINISTIC_SCORERS` plus :func:`decision_quality_judge` — trace-only
-  scorers with no BPMN/YAML config read at runtime; and
+  and the always-on ``eval-trace-listener`` use :data:`DETERMINISTIC_SCORERS`
+  (plus :func:`decision_quality_judge` for the worker) — trace-only scorers with no
+  BPMN/YAML config read at runtime; and
 - ``fluxnova_mlflow_dataset.judges`` (the automatic/online evaluation on/off toggle CLI) uses
   :func:`automatic_judges`.
 
 ``decision_quality_judge`` in particular is shared so the *same* judge definition
-(guideline text, name) is used identically by both the offline batch suite and the
+(guideline text, name) is used identically by the regression suite and the
 synchronous worker.
 """
 
@@ -53,7 +55,7 @@ def decision_quality_judge(model: str) -> Guidelines:
     """Build the ``decision_quality`` ``Guidelines`` judge for the given model URI.
 
     ``model`` differs by call site: a direct ``"<provider>:/<model>"`` URI (e.g.
-    ``"ollama:/llama3.2"``) for offline batch evaluation, or a
+    ``"ollama:/llama3.2"``) for direct offline/regression evaluation, or a
     ``"gateway:/<endpoint>"`` URI for anything routed through the MLflow AI
     Gateway (automatic/online scoring, and the synchronous eval-service-worker).
     """
@@ -63,13 +65,15 @@ def decision_quality_judge(model: str) -> Guidelines:
 
 
 # ---------------------------------------------------------------------------
-# Batch/config-driven scorers — for the offline `mlflow-eval` regression suite.
+# Config/golden-driven scorers — read `inputs`/`outputs`/`expectations` as
+# shaped by `fluxnova_mlflow_dataset.store.build_mlflow_record` (i.e.
+# `expected_tools`/`available_tools` sourced from the workflow YAML config, and
+# `expectations` from the golden dataset).
 #
 # Unlike the deterministic scorers below (trace-only, hardcoded profile rules,
-# used by eval-service-worker), these read `inputs`/`outputs`/`expectations` as
-# shaped by `fluxnova_mlflow_dataset.store.build_mlflow_record` — i.e.
-# `expected_tools`/`available_tools` sourced from the workflow YAML config, and
-# `expectations` from the golden dataset (see `fluxnova.config.WorkflowConfig`).
+# used by eval-service-worker/eval-trace-listener), these need a pre-built
+# record. `matches_golden`/`decision_quality` are used by the regression suite
+# (`regression/`); the rest are kept available for reuse.
 # ---------------------------------------------------------------------------
 
 # Bespoke litellm-backed judge model, used by `_llm_judge` (predates the
@@ -84,9 +88,8 @@ _NATIVE_JUDGE_MODEL = "ollama:/gemma4:e2b"
 # Automatic (online) evaluation -- Scorer.register()/.start() -- requires a
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly
 # (see Phase 0 in EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), so the judges used
-# there are separate instances from the offline `BATCH_SCORERS` list below,
-# built on demand by `automatic_judges` (used by `fluxnova_mlflow_dataset.judges`, the
-# start/stop toggle CLI).
+# there are separate instances built on demand by `automatic_judges` (used by
+# `fluxnova_mlflow_dataset.judges`, the start/stop toggle CLI).
 GATEWAY_JUDGE_MODEL = "gateway:/fluxnova-judge"
 
 # Minimum `matches_golden` similarity score (0.0-1.0) at which the agent's output
@@ -373,7 +376,7 @@ def affordability_called_after_income_confirmed(inputs: dict) -> Feedback | None
     The BPMN's agent prompt requires Assess Affordability to run "after income
     has been confirmed" — i.e. after Verify Employment (EMPLOYED) or Analyse
     Bank Statements (otherwise). Tool calls are assumed to be ordered
-    chronologically, as produced by fluxnova.report.build_agent_report.
+    chronologically, as produced when building the agent-history record.
     """
     applicant_type = inputs["input_variables"].get("applicantType")
     income_tool = "Verify Employment" if applicant_type == "EMPLOYED" else "Analyse Bank Statements"
@@ -393,29 +396,14 @@ def affordability_called_after_income_confirmed(inputs: dict) -> Feedback | None
     )
 
 
-BATCH_SCORERS = [
-    tool_correctness,
-    tool_argument_correctness,
-    decision_quality,
-    evidence_citation,
-    matches_golden,
-    no_collateral_check_when_no_collateral,
-    collateral_valuation_called_correctly_when_required,
-    no_bank_statement_for_employed_applicant,
-    no_verify_employment_for_self_employed_applicant,
-    all_tool_calls_completed,
-    step_efficiency,
-    requested_amount_passed_to_affordability,
-    affordability_called_after_income_confirmed,
-]
-
 # ---------------------------------------------------------------------------
 # Deterministic (non-LLM) scorers — trace-only, for eval-service-worker.
 #
-# Unlike `BATCH_SCORERS` above (which read `expected_tools`/`available_tools`
-# straight out of the workflow YAML config), these are self-contained: the
+# Unlike the config/golden-driven scorers above (which read
+# `expected_tools`/`available_tools` straight out of the workflow YAML config),
+# these are self-contained: the
 # tool-call/applicant-profile rules below are a hardcoded mirror of
-# `config/loan-assesment-eval.yml`'s `expected_tools` list, kept in sync
+# `fluxnova-runner/config/loan-assesment-eval.yml`'s `expected_tools` list, kept in sync
 # manually. This keeps eval-service-worker trace-only (no BPMN/YAML config
 # read at runtime) at the cost of needing a manual update here if that BPMN's
 # tool set/rules ever change. See EVAL-SERVICE-WORKER-PLAN.md.

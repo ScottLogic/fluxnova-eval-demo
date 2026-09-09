@@ -1,5 +1,5 @@
 {
-  "benchmark": "loan-assessment (config/loan-assesment.yml)",
+  "benchmark": "loan-assessment (fluxnova-runner/config/loan-assesment.yml)",
   "scenario": {
     "applicantType": "EMPLOYED",
     "hasCollateral": false,

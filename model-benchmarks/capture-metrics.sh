@@ -11,7 +11,7 @@
 #
 # Example flow per model:
 #   ./capture-metrics.sh gemma4:e2b before
-#   fluxnova-run ... ; mlflow-eval ...
+#   fluxnova-run ...
 #   ./capture-metrics.sh gemma4:e2b after
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"

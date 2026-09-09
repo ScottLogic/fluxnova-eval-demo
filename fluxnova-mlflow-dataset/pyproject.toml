@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fluxnova-mlflow-dataset"
 version = "0.1.0"
-description = "Shared MLflow evaluation-dataset record shaping/read/write/collect logic used by the harness's mlflow_eval suite"
+description = "Shared MLflow evaluation-dataset record shaping/read/write/collect logic and scorer/judge definitions used by the Fluxnova eval services, plus the mlflow-judges online-evaluation toggle CLI"
 requires-python = ">=3.11"
 dependencies = [
     "mlflow[genai]>=3.15",

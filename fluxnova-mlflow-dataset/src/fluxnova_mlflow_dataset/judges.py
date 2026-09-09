@@ -12,7 +12,7 @@ EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), which in turn requires the tracking URI
 to be the *running MLflow server's* HTTP(S) address (e.g.
 ``http://localhost:5000``) rather than a direct ``postgresql://...`` path — the
 gateway routes judge calls through that server process. This is different
-from ``mlflow-eval``'s default tracking URI (a direct PostgreSQL connection
+from an offline evaluation's default tracking URI (a direct PostgreSQL connection
 used for offline evaluation), even though, in local dev, both ultimately point at the
 same underlying `postgres-local` pod's "mlflow" database (`mlflow-up.sh` points the
 server container at it too).

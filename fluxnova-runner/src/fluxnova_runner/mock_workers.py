@@ -5,7 +5,7 @@ immediately completes each task with the configured output variables.
 
 Usage
 -----
-    fluxnova-run-mock-workers config/loan-assesment.yml
+    fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment.yml
 """
 
 from __future__ import annotations

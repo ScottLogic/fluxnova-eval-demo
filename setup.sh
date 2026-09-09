@@ -40,7 +40,6 @@ echo "=== Upgrading pip ==="
 
 echo "=== Installing editable packages ==="
 "$VENV_PY" -m pip install \
-  -e "harness[dev]" \
   -e "fluxnova-mlflow-dataset[dev]" \
   -e "fluxnova-runner[dev]"
 

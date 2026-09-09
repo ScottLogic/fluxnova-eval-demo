@@ -26,7 +26,7 @@ instance for the parent it's handed (via Fluxnova's history API,
 `FluxnovaClient.get_child_instance_id`) and scores the child's trace, falling back to the parent instance id when there
 is no child (e.g. running `loan-assesment.bpmn` standalone).
 
-## Install (editable, into the harness venv or your own)
+## Install (editable, into the shared repo venv or your own)
 
 ```bash
 pip install -e ../fluxnova-mlflow-dataset   # shared trace-reader + judge definition
@@ -36,7 +36,7 @@ pip install -e .
 ## Config
 
 Deliberately **no config file** — this worker is meant to be a slim, independently deployable service, so depending on
-another service's YAML (e.g. `config/loan-assesment.yml`) would recreate the exact coupling this worker avoids
+another service's YAML (e.g. `fluxnova-runner/config/loan-assesment.yml`) would recreate the exact coupling this worker avoids
 everywhere else. Instead, every setting has a hardcoded default in `src/eval_service_worker/config.py`, overridable via
 either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 
