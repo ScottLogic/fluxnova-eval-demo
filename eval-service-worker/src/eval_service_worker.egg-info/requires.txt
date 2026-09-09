@@ -1,7 +1,0 @@
-mlflow[genai]>=3.15
-fluxnova-mlflow-dataset
-camunda-external-task-client-python3>=2.3
-
-[dev]
-pytest>=8.0
-ruff>=0.5

@@ -35,6 +35,10 @@ This project is split into three independent Python packages:
       run at once — optionally collecting newly-completed runs first (`--collect`). It doesn't depend on the runner
       being active at evaluation time (only on the report file / trace data / dataset records already produced).
 
+The end-to-end **MLflow agent regression suite** ([`regression/`](regression/README.md)) sits alongside these packages
+at the repo root: a gating check that drives the live agent per golden scenario and scores its real output with the
+shared judges. See its [README](regression/README.md) for details.
+
 ## Architecture
 
 ```

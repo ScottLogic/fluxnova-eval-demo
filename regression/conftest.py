@@ -1,4 +1,4 @@
-"""pytest configuration for the harness regression suite.
+"""pytest configuration for the regression suite.
 
 The ``@mlflow.test`` plugin (enabled via ``-p mlflow.pytest.plugin`` in
 ``addopts``) opens the test's MLflow run *before* the test body runs, using
@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 from fluxnova_mlflow_dataset import default_tracking_uri, experiment_name_for
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Third-party loggers that emit chatty INFO/DEBUG output on their own named
 # loggers. With live logging enabled (log_cli in pyproject.toml) these would

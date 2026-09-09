@@ -33,7 +33,7 @@ Postgres store, the OTel collector, MLflow, and Ollama. The test skips cleanly
 if the engine or tracking store isn't reachable.
 
 Run with:
-    pytest harness/tests/test_mlflow_regression.py -v
+    pytest regression/test_mlflow_regression.py -v
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ from fluxnova_runner.client import Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _REPO_ROOT / "config" / "loan-assesment.yml"
 _GOLDENS_PATH = _REPO_ROOT / "datasets" / "loan-assessment" / "goldens.json"
 
@@ -134,7 +134,7 @@ def cfg() -> RunnerConfig:
 def regression_experiment() -> str:
     """Verify the MLflow tracking store is reachable and select the experiment.
 
-    ``tests/conftest.py`` already pointed ``MLFLOW_TRACKING_URI`` /
+    ``conftest.py`` already pointed ``MLFLOW_TRACKING_URI`` /
     ``MLFLOW_EXPERIMENT_NAME`` at the shared Postgres store + regression
     experiment *before* ``@mlflow.test`` opens this run (setting them only inside
     the test body would be too late — the run would open in the ambient local
