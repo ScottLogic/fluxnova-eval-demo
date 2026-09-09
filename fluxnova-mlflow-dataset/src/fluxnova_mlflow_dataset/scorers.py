@@ -24,6 +24,7 @@ synchronous worker.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -87,6 +88,11 @@ _NATIVE_JUDGE_MODEL = "ollama:/gemma4:e2b"
 # built on demand by `automatic_judges` (used by `mlflow_eval.judges`, the
 # start/stop toggle CLI).
 GATEWAY_JUDGE_MODEL = "gateway:/fluxnova-judge"
+
+# Minimum `matches_golden` similarity score (0.0-1.0) at which the agent's output
+# counts as reproducing the golden's decision + evidence, i.e. a "yes" verdict.
+# Overridable via env so CI can tighten/loosen the gate without a code change.
+GOLDEN_MATCH_THRESHOLD = float(os.environ.get("REGRESSION_GOLDEN_MATCH_THRESHOLD", "0.7"))
 
 # Tool -> BPMN camunda:inputParameter names (see bpmn/loan-assesment.bpmn),
 # used to validate that each tool call received the arguments the process
@@ -227,7 +233,15 @@ def evidence_citation(inputs: dict, outputs: str) -> Feedback:
 
 @scorer
 def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
-    """Final output must reach the same APPROVE/REJECT decision as the golden for this scenario."""
+    """Final output must reach the same APPROVE/REJECT decision as the golden for this scenario.
+
+    The underlying LLM judge yields a graduated 0.0-1.0 similarity score, but this
+    scorer returns a ``"yes"``/``"no"`` pass/fail verdict (thresholded at
+    :data:`GOLDEN_MATCH_THRESHOLD`) as its feedback *value* so the MLflow GenAI
+    evaluation UI renders it as a pass/fail badge (numeric feedback values are
+    only shown as bare scores, never as pass/fail). The raw score is preserved in
+    the feedback ``metadata`` under ``"score"`` for anyone who needs the gradation.
+    """
     expected_output = expectations.get("expected_output")
     if not expected_output:
         return None
@@ -238,7 +252,14 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
         "if the decision differs or critical evidence cited in the golden is entirely absent "
         "from the actual output."
     )
-    return _llm_judge(criteria, {"actual_output": outputs, "golden_output": expected_output})
+    judged = _llm_judge(criteria, {"actual_output": outputs, "golden_output": expected_output})
+    score = float(judged.value)
+    passed = score >= GOLDEN_MATCH_THRESHOLD
+    return Feedback(
+        value="yes" if passed else "no",
+        rationale=judged.rationale,
+        metadata={"score": f"{score:.4f}", "threshold": f"{GOLDEN_MATCH_THRESHOLD:.4f}"},
+    )
 
 
 @scorer

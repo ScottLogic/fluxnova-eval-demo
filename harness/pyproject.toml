@@ -63,3 +63,11 @@ indent-style = "space"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short -p mlflow.pytest.plugin -p no:deepeval"
+# Live logging so the long per-golden agent runs and scoring report progress to
+# the console in real time instead of the session appearing to hang. Noisy
+# third-party loggers are capped to WARNING in tests/conftest.py so only the
+# suite's own INFO progress lines show.
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s %(levelname)s %(message)s"
+log_cli_date_format = "%H:%M:%S"

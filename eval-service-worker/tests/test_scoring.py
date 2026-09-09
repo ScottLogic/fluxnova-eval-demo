@@ -77,7 +77,10 @@ _DETERMINISTIC_ROW_DEFAULTS = {
 
 
 def _stub_common(
-    monkeypatch: pytest.MonkeyPatch, decision_quality_value: str, decision_quality_rationale: str
+    monkeypatch: pytest.MonkeyPatch,
+    decision_quality_value: str,
+    decision_quality_rationale: str,
+    deterministic_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     calls: dict[str, Any] = {}
 
@@ -108,6 +111,7 @@ def _stub_common(
             "decision_quality/value": decision_quality_value,
             "decision_quality/rationale": decision_quality_rationale,
             **_DETERMINISTIC_ROW_DEFAULTS,
+            **(deterministic_overrides or {}),
         }
     )
     fake_result = _FakeEvaluateResult(row)
@@ -177,6 +181,46 @@ class TestScoreProcessInstance:
 
         assert outcome.eval_passed is False
         assert calls["dataset_kwargs"]["record"]["tags"]["decision_quality"] == "no"
+
+    def test_fails_when_a_deterministic_scorer_fails_even_if_judge_says_yes(self, monkeypatch):
+        _OUTPUTS["proc-det"] = "APPROVE: strong credit history"
+        calls = _stub_common(
+            monkeypatch,
+            "yes",
+            "Well reasoned.",
+            deterministic_overrides={
+                "required_tools_called/value": False,
+                "required_tools_called/rationale": "missing required tool call(s): ['Check Credit Score']",
+            },
+        )
+
+        outcome = scoring.score_process_instance(
+            "proc-det",
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+        )
+
+        assert outcome.eval_passed is False
+        assert "required_tools_called" in outcome.eval_rationale
+        assert "Check Credit Score" in outcome.eval_rationale
+        assert outcome.scorer_results["decision_quality"]["value"] == "yes"
+
+    def test_passes_only_when_all_scorers_pass(self, monkeypatch):
+        _OUTPUTS["proc-all"] = "APPROVE: strong credit history"
+        _stub_common(monkeypatch, "yes", "Well reasoned.")
+
+        outcome = scoring.score_process_instance(
+            "proc-all",
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+        )
+
+        assert outcome.eval_passed is True
+        assert outcome.eval_rationale == "Well reasoned."
 
     def test_judge_value_comparison_is_case_insensitive(self, monkeypatch):
         _OUTPUTS["proc-3"] = "APPROVE"

@@ -6,13 +6,14 @@ trace store — no BPMN parsing, no Fluxnova REST history calls. See `EVAL-SERVI
 the full background/scope and `local-dev/README.md`'s "eval-service-worker" section for how to run it as a Podman pod.
 
 **Scorers run per task:**
-- `decision_quality` — the nondeterministic `Guidelines` LLM judge (the only one that gates the BPMN outcome).
+- `decision_quality` — the nondeterministic `Guidelines` LLM judge.
 - `required_tools_called`, `no_tool_errors`, `definitive_decision_stated` — deterministic, trace-only checks (see
-  `fluxnova_mlflow_dataset.scorers`), recorded for visibility but not (yet) wired into the gateway condition.
+  `fluxnova_mlflow_dataset.scorers`).
 
-All four scorers' `Feedback` are logged back onto the same real trace as MLflow assessments, grouped under one MLflow
-Evaluation Run (via `mlflow.genai.evaluate(data=[{"trace": trace}], scorers=[...])`), plus a lightweight MLflow
-evaluation-dataset record. The task completes with `evalPassed` (Boolean, driven solely by `decision_quality`) /
+All four scorers gate the BPMN outcome: `evalPassed` is `True` only when the `decision_quality` judge *and* every
+deterministic scorer pass. All four scorers' `Feedback` are logged back onto the same real trace as MLflow assessments,
+grouped under one MLflow Evaluation Run (via `mlflow.genai.evaluate(data=[{"trace": trace}], scorers=[...])`), plus a
+lightweight MLflow evaluation-dataset record. The task completes with `evalPassed` (Boolean, driven by all scorers) /
 `evalRationale` (String) output variables, which `loan-assesment-eval.bpmn`'s `ExclusiveGateway_EvalPassed` uses to
 route the flow: on pass → `ServiceTask_GenerateReport` → `Gateway_AssessmentDecision` (approve/reject) with a human
 `UserTask_ApprovalReview`; on fail → `UserTask_ReviewFailedEval`. Confirmed working end-to-end against a live process
@@ -46,7 +47,7 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 | Process key (tags)  | `--process-key`      | `EVAL_SERVICE_PROCESS_KEY`      | `loanAssessmentEvalProcess`          |
 | External-task topic | `--topic`            | `EVAL_SERVICE_TOPIC`            | `agent-output-eval`                  |
 | Judge model URI     | `--judge-model`      | `EVAL_SERVICE_JUDGE_MODEL`      | `gateway:/fluxnova-judge`            |
-| Lock duration (ms)  | `--lock-duration-ms` | `EVAL_SERVICE_LOCK_DURATION_MS` | `180000` (judge calls can take 90s+) |
+| Lock duration (ms)  | `--lock-duration-ms` | `EVAL_SERVICE_LOCK_DURATION_MS` | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes) |
 | MLflow tracking URI | `--tracking-uri`     | `EVAL_SERVICE_TRACKING_URI`     | `http://localhost:5000`              |
 | Trace poll timeout (s) | `--trace-poll-timeout` | `EVAL_SERVICE_TRACE_POLL_TIMEOUT` | `30.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
 | Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0` |

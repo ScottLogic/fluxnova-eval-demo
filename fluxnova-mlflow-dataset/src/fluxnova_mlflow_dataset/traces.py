@@ -270,7 +270,14 @@ class MlflowTraceReader:
 
 
 def _status_str(span: Any) -> str:
-    status_code = getattr(span, "status_code", None)
+    # MLflow 3.x exposes a span's OTel status at ``span.status.status_code``;
+    # older/fake spans expose ``span.status_code`` directly. Prefer the nested
+    # attribute, falling back to the flat one, so a real span whose status is OK
+    # isn't misread as ERROR (which would fail every tool-call scorer).
+    status = getattr(span, "status", None)
+    status_code = getattr(status, "status_code", None)
+    if status_code is None:
+        status_code = getattr(span, "status_code", None)
     name = getattr(status_code, "name", status_code)
     return "OK" if name == "OK" else "ERROR"
 
