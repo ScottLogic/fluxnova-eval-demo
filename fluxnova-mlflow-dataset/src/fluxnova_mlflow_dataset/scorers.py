@@ -13,7 +13,7 @@ drifts between call sites:
   one just-completed subprocess run on demand — see ``EVAL-SERVICE-WORKER-PLAN.md``)
   uses :data:`DETERMINISTIC_SCORERS` plus :func:`decision_quality_judge` — trace-only
   scorers with no BPMN/YAML config read at runtime; and
-- ``mlflow_eval.judges`` (the automatic/online evaluation on/off toggle CLI) uses
+- ``fluxnova_mlflow_dataset.judges`` (the automatic/online evaluation on/off toggle CLI) uses
   :func:`automatic_judges`.
 
 ``decision_quality_judge`` in particular is shared so the *same* judge definition
@@ -85,7 +85,7 @@ _NATIVE_JUDGE_MODEL = "ollama:/gemma4:e2b"
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly
 # (see Phase 0 in EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), so the judges used
 # there are separate instances from the offline `BATCH_SCORERS` list below,
-# built on demand by `automatic_judges` (used by `mlflow_eval.judges`, the
+# built on demand by `automatic_judges` (used by `fluxnova_mlflow_dataset.judges`, the
 # start/stop toggle CLI).
 GATEWAY_JUDGE_MODEL = "gateway:/fluxnova-judge"
 

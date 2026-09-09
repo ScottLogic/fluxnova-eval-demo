@@ -23,7 +23,6 @@ dev = [
 
 [project.scripts]
 mlflow-eval = "mlflow_eval.main:main"
-mlflow-judges = "mlflow_eval.judges:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

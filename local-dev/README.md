@@ -373,9 +373,10 @@ diagnostic commands to whatever your container runtime's host-networking mechani
 
 ## Toggling automatic evaluation judges on/off
 
-Once the `fluxnova-judge` gateway endpoint exists (see above), use the `mlflow-judges` CLI (installed alongside
-`mlflow-eval` — run `pip install -e .` in `harness/` after pulling if it's missing) to register and toggle automatic
-judges for a given experiment. It targets every judge returned by `mlflow_eval.main.automatic_judges()` (currently
+Once the `fluxnova-judge` gateway endpoint exists (see above), use the `mlflow-judges` CLI (installed by
+`fluxnova-mlflow-dataset` — run `pip install -e .` in `fluxnova-mlflow-dataset/` after pulling if it's missing) to
+register and toggle automatic judges for a given experiment. It targets every judge returned by
+`fluxnova_mlflow_dataset.automatic_judges()` (currently
 `decision_quality`):
 
 ```bash

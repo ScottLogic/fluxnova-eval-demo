@@ -1,7 +1,8 @@
 # fluxnova-mlflow-dataset
 
-A small shared library (no CLI of its own) providing the record-shaping/read/write/collect logic used by both
-`harness`'s `mlflow_eval` suite and `eval-service-worker`. See the repo root [`README.md`](../README.md)'s
+A small shared library providing the record-shaping/read/write/collect logic used by both
+`harness`'s `mlflow_eval` suite and `eval-service-worker`, plus the `mlflow-judges` CLI for toggling automatic
+(online) evaluation on/off. See the repo root [`README.md`](../README.md)'s
 "Overview"/"Architecture" sections for how this fits into the wider pipeline.
 
 Keeping this logic in one standalone, installable package guarantees what gets written matches what gets read/
@@ -29,6 +30,24 @@ rather than two copies that could drift apart.
 pip install -e .            # into the shared venv (repo-root .venv), or your own
 pip install -e ".[dev]"     # + pytest/ruff for running the test suite
 ```
+
+This installs the `mlflow-judges` console script (see below).
+
+## `mlflow-judges`: toggling automatic (online) evaluation
+
+```bash
+mlflow-judges --experiment fluxnova-loanAssessmentProcess start --sample-rate 0.1
+mlflow-judges --experiment fluxnova-loanAssessmentProcess stop
+mlflow-judges --experiment fluxnova-loanAssessmentProcess status
+```
+
+Registers/starts/stops/inspects `automatic_judges()` against a target experiment using MLflow's
+`Scorer.register()`/`.start()`/`.stop()` — once started, the MLflow server scores a sampled fraction of new traces
+automatically, with no code needing to run continuously. `--tracking-uri` (default `http://localhost:5000`) **must**
+be the running server's HTTP(S) address, not a direct `postgresql://...` path, since gateway-backed judges route
+through that server process — see [`local-dev/README.md`](../local-dev/README.md)'s "MLflow AI Gateway endpoint for
+automatic evaluation judges" section for the one-off endpoint setup this depends on. `--filter-string` on `start`
+restricts which traces get sampled (e.g. to exclude EDD regression runs).
 
 ## Collecting completed runs: `collect_new_runs`
 

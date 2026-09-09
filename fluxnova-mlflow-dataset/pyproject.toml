@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Shared MLflow evaluation-dataset record shaping/read/write/collect logic used by the harness's mlflow_eval suite"
 requires-python = ">=3.11"
 dependencies = [
-    "mlflow>=2.18",
+    "mlflow[genai]>=3.15",
     "requests>=2.32",
     "psycopg2-binary>=2.9",
     "litellm>=1.55",
@@ -19,6 +19,9 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.5",
 ]
+
+[project.scripts]
+mlflow-judges = "fluxnova_mlflow_dataset.judges:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -58,7 +58,7 @@ from fluxnova.mlflow_dataset import (
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # All scorer/judge definitions (including `BATCH_SCORERS` used below, and
-# `automatic_judges`/`GATEWAY_JUDGE_MODEL` used by `mlflow_eval.judges`) now
+# `automatic_judges`/`GATEWAY_JUDGE_MODEL` used by `fluxnova_mlflow_dataset.judges`) now
 # live in `fluxnova_mlflow_dataset.scorers` — the single source of truth
 # shared with `eval-service-worker`.
 

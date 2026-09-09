@@ -178,7 +178,7 @@ treated as escape characters and silently mangle paths, e.g. `config\loan-assesm
    ```
    Pass a specific interpreter (must be Python 3.11+) with `PYTHON=python3.11 ./setup.sh`. This installs four
    console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and `mlflow-eval` /
-   `mlflow-judges` (harness evaluation suite).
+   `mlflow-judges` (`fluxnova-mlflow-dataset`).
 
 3. **Start the backing services as Podman pods**, from Git Bash at the repo root:
    ```bash

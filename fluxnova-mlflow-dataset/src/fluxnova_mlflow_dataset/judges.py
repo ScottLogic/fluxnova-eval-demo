@@ -35,8 +35,9 @@ import argparse
 from collections.abc import Iterable
 
 import mlflow
-from fluxnova_mlflow_dataset import GATEWAY_JUDGE_MODEL, automatic_judges
 from mlflow.genai.scorers import ScorerSamplingConfig, get_scorer, list_scorers
+
+from fluxnova_mlflow_dataset.scorers import GATEWAY_JUDGE_MODEL, automatic_judges
 
 _DEFAULT_TRACKING_URI = "http://localhost:5000"
 

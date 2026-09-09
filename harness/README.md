@@ -23,8 +23,9 @@ source .venv/Scripts/activate   # or .venv/bin/activate on macOS/Linux
 
 It creates `.venv` and runs `pip install -e "harness[dev]" -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"`.
 
-Installs two console-script entry points from this package: `mlflow-eval` and `mlflow-judges`
-(`fluxnova-run`/`fluxnova-run-mock-workers` come from the sibling `fluxnova-runner` install).
+Installs the `mlflow-eval` console-script entry point from this package
+(`fluxnova-run`/`fluxnova-run-mock-workers` come from the sibling `fluxnova-runner` install, and `mlflow-judges` from
+the sibling `fluxnova-mlflow-dataset` install).
 
 ## Config: `fluxnova.config.WorkflowConfig`
 
@@ -78,23 +79,14 @@ judge (`decision_quality`, shared with `eval-service-worker` via `fluxnova_mlflo
 `automatic_judges(model=GATEWAY_JUDGE_MODEL)` builds the subset of judges usable for **automatic (online)**
 evaluation — currently just `decision_quality`, rebuilt with a `gateway:/<endpoint>` model URI instead of a direct
 `ollama:/...` one, since automatic evaluation runs inside the MLflow server itself and must route through the AI
-Gateway. This is what `mlflow-judges` (below) registers/starts.
+Gateway. This is what the `mlflow-judges` CLI registers/starts.
 
 ## `mlflow-judges`: toggling automatic (online) evaluation
 
-```bash
-mlflow-judges --experiment fluxnova-loanAssessmentProcess start --sample-rate 0.1
-mlflow-judges --experiment fluxnova-loanAssessmentProcess stop
-mlflow-judges --experiment fluxnova-loanAssessmentProcess status
-```
-
-Registers/starts/stops/inspects `automatic_judges()` against a target experiment using MLflow's
-`Scorer.register()`/`.start()`/`.stop()` — once started, the MLflow server scores a sampled fraction of new traces
-automatically, with no code needing to run continuously. `--tracking-uri` (default `http://localhost:5000`) **must**
-be the running server's HTTP(S) address, not a direct `postgresql://...` path, since gateway-backed judges route
-through that server process — see [`local-dev/README.md`](../local-dev/README.md)'s "MLflow AI Gateway endpoint for
-automatic evaluation judges" section for the one-off endpoint setup this depends on. `--filter-string` on `start`
-restricts which traces get sampled (e.g. to exclude EDD regression runs).
+The `mlflow-judges` CLI now lives in the sibling `fluxnova-mlflow-dataset` package (co-located with the
+`automatic_judges()` definitions it drives) — see
+[`fluxnova-mlflow-dataset/README.md`](../fluxnova-mlflow-dataset/README.md#mlflow-judges-toggling-automatic-online-evaluation)
+for its usage.
 
 ## Tests
 
