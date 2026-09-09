@@ -39,6 +39,15 @@ The end-to-end **MLflow agent regression suite** ([`regression/`](regression/REA
 at the repo root: a gating check that drives the live agent per golden scenario and scores its real output with the
 shared judges. See its [README](regression/README.md) for details.
 
+Two standalone, independently-deployable **evaluation services** also live at the repo root, both scoring live agent
+traces via the shared scorers (see each README for how they're deployed to Podman):
+
+- **`eval-service-worker`** ([`eval-service-worker/`](eval-service-worker/README.md)) — a BPMN external-task worker that
+  scores one just-completed run on demand (driven by the `loan-assesment-eval.bpmn` gateway).
+- **`eval-trace-listener`** ([`eval-trace-listener/`](eval-trace-listener/README.md)) — an always-on service that tails
+  the MLflow trace store and scores newly-completed runs of the configured agents with the deterministic (trace-only)
+  scorers. An event-adjacent step towards replacing the on-demand `mlflow-eval` batch CLI.
+
 ## Architecture
 
 ```

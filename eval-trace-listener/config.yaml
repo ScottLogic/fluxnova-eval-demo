@@ -1,0 +1,27 @@
+# eval-trace-listener configuration (static data for the service).
+#
+# Every key is optional — omitted keys fall back to the built-in defaults in
+# eval_trace_listener/config.py. CLI flags / EVAL_LISTENER_* env vars override
+# anything set here (see main.py), which is how the container deployment points
+# at pod-name-based URLs (local-dev/services/eval-listener-up.sh).
+
+# MLflow tracking server the OTel Collector exports traces into. Must be an
+# HTTP(S) URL (not a postgresql:// path) so the trace store is queryable.
+tracking_uri: http://localhost:5000
+
+# The experiment whose traces are tailed — must match where the collector writes
+# (MLFLOW_EXPERIMENT_ID in local-dev/.env). The collector routes every trace to a
+# single experiment, so this matches eval-service-worker's EVAL_SERVICE_EXPERIMENT_NAME.
+experiment_name: fluxnova-loanAssessmentEvalProcess
+
+# Only runs whose invoke_agent span gen_ai.agent.name is in this list get scored
+# (the trace-only "which BPMN agents we care about" filter). Leave empty/remove
+# to score every agent in the experiment.
+agent_names:
+  - AdHocSubProcess_LoanAssessmentAgent
+
+# How often to re-poll for newly-completed runs.
+poll_interval_s: 10
+
+# Upper bound on recent traces pulled per poll (already-scored ones are skipped).
+max_traces_per_poll: 200
