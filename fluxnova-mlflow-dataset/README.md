@@ -94,9 +94,9 @@ CI-style `if` condition evaluated against a run's input variables:
 Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See the repo root README's
 "`expected_tools` rule syntax" section for the full reference table.
 
-> **Note:** `harness/src/fluxnova/config.py` defines its own near-identical `ExpectedToolRule` (same regex, same
-> semantics) for the harness's own config-loading needs (used by `mlflow-eval`). The two haven't been
-> deduplicated — if the rule syntax ever changes, both copies need updating.
+> **Note:** `harness/src/fluxnova/config.py` reuses this `ExpectedToolRule` (imported from
+> `fluxnova_mlflow_dataset.tools`) for its own config-loading needs (used by `mlflow-eval`), so the rule
+> parsing/evaluation lives in a single place.
 
 ## Shared judge/scorer definitions: `scorers.py`
 

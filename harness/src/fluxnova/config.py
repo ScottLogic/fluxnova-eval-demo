@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import jsonschema
 import yaml
+from fluxnova_mlflow_dataset.tools import ExpectedToolRule
 
 _SCHEMA_PATH = Path(__file__).parent / "workflow-config.schema.json"
 _SCHEMA = None  # cached after first load
@@ -20,57 +20,6 @@ def _schema() -> dict:
     if _SCHEMA is None:
         _SCHEMA = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
     return _SCHEMA
-
-
-# Matches:  $varName == "string"  |  $varName != true  |  $varName == 42
-_IF_PATTERN = re.compile(
-    r'^\$(?P<variable>\w+)\s*(?P<op>==|!=)\s*(?P<value>.+)$'
-)
-
-
-@dataclass
-class ExpectedToolRule:
-    """A single rule from the ``expected_tools`` config list.
-
-    ``tool`` is the display name of the tool.
-    ``if_expr`` is an optional GitLab-style condition string, e.g.
-    ``'$applicantType == "EMPLOYED"'``.  When absent the tool is always
-    expected.
-    """
-
-    tool: str
-    if_expr: str | None = None
-
-    def matches(self, input_variables: dict[str, Any]) -> bool:
-        """Return True if this rule's condition is satisfied (or absent)."""
-        if self.if_expr is None:
-            return True
-        m = _IF_PATTERN.match(self.if_expr.strip())
-        if not m:
-            raise ValueError(f"Cannot parse expected_tools if expression: {self.if_expr!r}")
-        variable, op, raw_value = m.group("variable"), m.group("op"), m.group("value").strip()
-        resolved = _coerce(raw_value)
-        actual = input_variables.get(variable)
-        if op == "==":
-            return actual == resolved
-        return actual != resolved  # !=
-
-
-def _coerce(raw: str) -> Any:
-    """Cast a raw YAML expression value to its Python equivalent."""
-    if raw == "true":
-        return True
-    if raw == "false":
-        return False
-    if raw.startswith('"') and raw.endswith('"'):
-        return raw[1:-1]
-    if raw.startswith("'") and raw.endswith("'"):
-        return raw[1:-1]
-    try:
-        return int(raw)
-    except ValueError:
-        return raw
-
 
 
 @dataclass

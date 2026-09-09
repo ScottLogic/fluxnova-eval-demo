@@ -43,10 +43,9 @@ field reference and an [example](config/loan-assesment.yml); in brief:
 | `expected_tools` | No | Ordered list of `{tool, if}` rules — see root README's "`expected_tools` rule syntax" |
 | `mlflow_dataset` | No | `{enabled, name, tracking_uri, also_write_json_report, experiment_name}` — see `MlflowDatasetConfig` |
 
-> **Note:** `fluxnova/config.py` defines its own `ExpectedToolRule` (parsing/evaluating the same `$var == value`
-> syntax) independently of `fluxnova_mlflow_dataset.tools.ExpectedToolRule` — the two implementations are
-> near-identical but not shared. See [`fluxnova-mlflow-dataset/README.md`](../fluxnova-mlflow-dataset/README.md) for
-> the rule syntax reference.
+> **Note:** `fluxnova/config.py` reuses `fluxnova_mlflow_dataset.tools.ExpectedToolRule` (rather than defining its
+> own) for parsing/evaluating the `$var == value` syntax. See
+> [`fluxnova-mlflow-dataset/README.md`](../fluxnova-mlflow-dataset/README.md) for the rule syntax reference.
 
 `fluxnova/mlflow_dataset.py` adapts `fluxnova-mlflow-dataset`'s `build_mlflow_record`/`write_to_mlflow_dataset`/etc.
 to accept a `WorkflowConfig` directly, so `mlflow_eval.main`'s call sites don't need to unpack `config.mlflow_dataset`
