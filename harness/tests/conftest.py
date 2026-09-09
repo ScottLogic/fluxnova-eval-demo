@@ -44,6 +44,27 @@ _NOISY_LOGGERS = (
 )
 
 
+class _DropMlflowTypeHintNoise(logging.Filter):
+    """Drop MLflow's cosmetic "inferred as AnyType" type-hint warnings.
+
+    When ``mlflow.genai.evaluate`` first imports ``mlflow.pyfunc``, MLflow
+    infers a schema from its *own* ``ResponsesAgentRequest`` pydantic model
+    (``mlflow/types/responses.py``), whose fields use multi-type Unions. That
+    inference logs several ``Union type hint ... is inferred as AnyType`` /
+    ``Any type hint is inferred as AnyType`` warnings on the
+    ``mlflow.types.type_hints`` logger. They come entirely from MLflow internals
+    (nothing in this repo), are purely informational, and would otherwise clutter
+    every ``evaluate()`` run — so we filter just those messages.
+
+    The filter is attached to the originating ``mlflow.types.type_hints`` logger
+    rather than the root: a logger's filters only apply to records emitted *at*
+    that logger, not to records propagated up from descendants.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "inferred as AnyType" not in record.getMessage()
+
+
 class _DropCamundaNoise(logging.Filter):
     """Drop camunda's per-poll worker chatter.
 
@@ -62,6 +83,7 @@ def pytest_configure(config: pytest.Config) -> None:
     for name in _NOISY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
     logging.getLogger().addFilter(_DropCamundaNoise())
+    logging.getLogger("mlflow.types.type_hints").addFilter(_DropMlflowTypeHintNoise())
 
     os.environ.setdefault("MLFLOW_TRACKING_URI", default_tracking_uri(_REPO_ROOT))
     os.environ.setdefault(

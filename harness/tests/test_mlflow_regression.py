@@ -47,6 +47,7 @@ import mlflow
 import pytest
 import requests
 from fluxnova_mlflow_dataset import (
+    GOLDEN_MATCH_THRESHOLD,
     decision_quality,
     experiment_name_for,
     matches_golden,
@@ -73,11 +74,6 @@ _ACTIVITY_TIMEOUT = float(os.environ.get("REGRESSION_ACTIVITY_TIMEOUT", "600"))
 _MOCK_PREFIX = "_mock_output_"
 
 _log = logging.getLogger("fluxnova.regression")
-
-# Minimum ``matches_golden`` score (0.0-1.0) a golden must reach for the agent's
-# actual output to count as reproducing the golden's decision + evidence.
-# Overridable via env.
-_GOLDEN_MATCH_THRESHOLD = float(os.environ.get("REGRESSION_GOLDEN_MATCH_THRESHOLD", "0.7"))
 
 
 def _golden_to_variables(cfg: RunnerConfig, golden: dict) -> dict:
@@ -267,26 +263,29 @@ def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
 
     Complements ``decision_quality`` (which grades the output against fixed
     guidelines, ignoring the golden): this scores the live agent output *against
-    the scenario's reference answer*, awarding a high score only when both reach
-    the same APPROVE/REJECT decision and cite the same categories of evidence
-    (see ``fluxnova_mlflow_dataset.scorers.matches_golden``). ``@mlflow.test``
-    tags this as a regression test run and records its pass/fail status.
+    the scenario's reference answer*, returning a ``"yes"`` verdict only when both
+    reach the same APPROVE/REJECT decision and cite the same categories of
+    evidence (see ``fluxnova_mlflow_dataset.scorers.matches_golden``, which
+    thresholds its 0.0-1.0 judge score at ``GOLDEN_MATCH_THRESHOLD``).
+    ``@mlflow.test`` tags this as a regression test run and records its pass/fail
+    status.
     """
     _log.info("Phase 2: scoring %d golden(s) with matches_golden...", len(evaluation_data))
     result = mlflow.genai.evaluate(data=evaluation_data, scorers=[matches_golden])
 
     # matches_golden returns None (recorded as NaN) when a golden lacks an
     # expected_output; every golden must have one for this gate to be meaningful.
-    scores = result.tables["eval_results"]["matches_golden/value"]
-    _log.info("matches_golden scores: %s", scores.tolist())
-    assert scores.notna().all(), (
-        "matches_golden did not produce a score for every golden — scoring "
-        f"errored or a golden is missing expected_output. Scores: {scores.tolist()}"
+    verdicts = result.tables["eval_results"]["matches_golden/value"]
+    _log.info("matches_golden verdicts: %s", verdicts.tolist())
+    assert verdicts.notna().all(), (
+        "matches_golden did not produce a verdict for every golden — scoring "
+        f"errored or a golden is missing expected_output. Verdicts: {verdicts.tolist()}"
     )
-    # matches_golden yields a 0.0-1.0 similarity score (not a yes/no verdict), so
-    # gate on the configurable threshold rather than an exact match.
-    failed = scores[scores < _GOLDEN_MATCH_THRESHOLD]
+    # matches_golden now returns a "yes"/"no" pass/fail verdict (thresholded at
+    # GOLDEN_MATCH_THRESHOLD inside the scorer, with the raw 0.0-1.0 score kept in
+    # the feedback metadata), so gate on the verdict rather than a numeric score.
+    failed = verdicts[verdicts.str.lower() != "yes"]
     assert failed.empty, (
-        f"matches_golden scored below {_GOLDEN_MATCH_THRESHOLD} for "
+        f"matches_golden scored below the {GOLDEN_MATCH_THRESHOLD} threshold for "
         f"{len(failed)} golden(s): {failed.tolist()}"
     )
