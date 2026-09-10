@@ -1,16 +1,19 @@
 """Scores one just-completed agentic subprocess run against a set of scorers —
-the nondeterministic ``decision_quality`` LLM judge plus trace-only
-deterministic checks (required tool calls, no tool errors, a definitive
-decision keyword) — reading trace data only (no BPMN parsing, no Fluxnova REST
-API calls). See EVAL-SERVICE-WORKER-PLAN.md.
+the nondeterministic ``decision_quality`` LLM judge plus deterministic checks
+(required tool calls, no tool errors, a definitive decision keyword). It reads
+the run's MLflow trace and extracts the plain values the scorers need (via
+``fluxnova_mlflow_dataset.scorer_inputs_from_trace`` — the scorers themselves
+know nothing about tracing); no BPMN parsing, no Fluxnova REST API calls. See
+EVAL-SERVICE-WORKER-PLAN.md.
 
-Uses ``mlflow.genai.evaluate(data=[{"trace": trace}], scorers=[...])`` (rather
-than a bare ``mlflow.log_feedback`` call per scorer) so that:
+Uses ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
+"outputs": ...}], scorers=[...])`` (rather than a bare ``mlflow.log_feedback``
+call per scorer) so that:
 
 - every scorer's ``Feedback`` is logged back onto the *same* real agentic
-  subprocess trace (confirmed empirically — passing an existing ``Trace``
-  object via the ``trace`` column attaches assessments to it directly, not to
-  a newly-synthesized one), and
+  subprocess trace (confirmed empirically — including the ``trace`` column
+  attaches assessments to it directly, not to a newly-synthesized one,
+  regardless of which columns the scorers actually read), and
 - MLflow registers a proper "Evaluation Run" grouping all of them together
   (visible under MLflow's Evaluations UI) — not just isolated per-trace
   assessments with no run to group them.
@@ -18,6 +21,7 @@ than a bare ``mlflow.log_feedback`` call per scorer) so that:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +31,7 @@ from fluxnova_mlflow_dataset import (
     MlflowTraceReader,
     decision_quality_judge,
     experiment_name_for,
+    scorer_inputs_from_trace,
     stringify_output,
     write_to_mlflow_dataset,
 )
@@ -45,7 +50,16 @@ def _scorer_passed(name: str, value: Any) -> bool:
 
     ``decision_quality`` (the Guidelines judge) reports a categorical
     ``"yes"``/``"no"`` string; the deterministic scorers report plain booleans.
+
+    A scorer may also report *no verdict* — ``None`` (surfaced as ``NaN`` in the
+    result table, or as a missing column when it's the only value) — meaning the
+    check was **not applicable** to this run (e.g.
+    ``no_verify_employment_for_self_employed_applicant`` skips EMPLOYED
+    applicants). A not-applicable verdict must never fail the eval, so it counts
+    as a pass.
     """
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return True
     if name == _DECISION_QUALITY_NAME:
         return str(value).strip().lower() == _PASS_VALUE
     return bool(value)
@@ -117,11 +131,16 @@ def score_process_instance(
         )
 
     scorers = [decision_quality_judge(judge_model), *DETERMINISTIC_SCORERS]
-    result = mlflow.genai.evaluate(data=[{"trace": trace}], scorers=scorers)
+    row = {
+        "trace": trace,
+        "inputs": scorer_inputs_from_trace(trace),
+        "outputs": final_output,
+    }
+    result = mlflow.genai.evaluate(data=[row], scorers=scorers)
     row = result.tables["eval_results"].iloc[0]
 
     scorer_results = {
-        s.name: {"value": row[f"{s.name}/value"], "rationale": row.get(f"{s.name}/rationale")}
+        s.name: {"value": row.get(f"{s.name}/value"), "rationale": row.get(f"{s.name}/rationale")}
         for s in scorers
     }
 

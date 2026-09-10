@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eval-trace-listener"
+version = "0.1.0"
+description = "Standalone service: tails an MLflow experiment's trace store for newly-completed agent runs of configured BPMN agents and scores each once with the shared deterministic (trace-only) scorers. An always-on, event-adjacent way to score runs as they land. See eval-trace-listener/README.md."
+requires-python = ">=3.11"
+dependencies = [
+    "mlflow[genai]==3.16.0",
+    "fluxnova-mlflow-dataset",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+eval-trace-listener = "eval_trace_listener.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["eval_trace_listener"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short"

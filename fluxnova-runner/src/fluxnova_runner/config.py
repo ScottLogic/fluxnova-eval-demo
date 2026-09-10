@@ -1,7 +1,7 @@
 """Configuration for the standalone Fluxnova automated-run service.
 
 Deploy/deploy-and-start concerns only — no reporting or evaluation fields
-(those live in the harness's ``WorkflowConfig``, read by ``mlflow-eval``).
+(evaluation is handled by the separate eval services, not here).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ class RunnerConfig:
 
         ``bpmn_path`` is resolved relative to the repo root if not absolute.
         Extra keys (e.g. ``available_tools``, ``mlflow_dataset`` — used by the
-        harness's eval tools) are simply ignored, so the same YAML file used
+        eval services) are simply ignored, so the same YAML file used
         for evaluation config can be reused here unchanged.
         """
         root_dir = Path(__file__).resolve().parent.parent.parent.parent

@@ -73,6 +73,24 @@ def default_tracking_uri(repo_root: Path) -> str:
     return f"postgresql://{user_enc}:{password_enc}@{host}:{port}/{db}"
 
 
+def default_server_tracking_uri() -> str:
+    """The local-dev MLflow *tracking server* URL (HTTP), for clients that should
+    go through the server rather than connecting to Postgres directly.
+
+    Reading/writing via the HTTP server (the way the eval services and the MLflow
+    UI already work) means the server owns the DB schema, so the client never runs
+    MLflow's strict SqlAlchemyStore schema-version check — a direct-Postgres client
+    otherwise refuses to talk to a store whose Alembic head differs from its own
+    MLflow version (see ``local-dev/services/mlflow-up.sh`` and the version pin in
+    ``local-dev/.env``). Host/port come from ``MLFLOW_HOST``/``MLFLOW_PORT`` (matching
+    ``mlflow-up.sh``'s published port), defaulting to the local-dev pod's
+    ``http://localhost:5000``.
+    """
+    host = os.environ.get("MLFLOW_HOST", "localhost")
+    port = os.environ.get("MLFLOW_PORT", "5000")
+    return f"http://{host}:{port}"
+
+
 def tracking_uri_for(tracking_uri_override: str | None, repo_root: Path) -> str:
     return tracking_uri_override or default_tracking_uri(repo_root)
 

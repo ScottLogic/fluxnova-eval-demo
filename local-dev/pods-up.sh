@@ -11,7 +11,7 @@
 # pods alone rather than erroring on a name clash (see their "already exists" branch).
 #
 # Usage (from this directory):
-#   ./pods-up.sh                    # start postgres, mlflow, fluxnova, eval-service, observability (in order)
+#   ./pods-up.sh                    # start postgres, mlflow, fluxnova, eval-service, eval-listener, observability (in order)
 #   ./pods-up.sh mlflow             # start only mlflow
 #   ./pods-up.sh postgres fluxnova  # start only postgres and fluxnova (still in order)
 set -euo pipefail
@@ -20,7 +20,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # Per-service scripts live in the services/ subfolder.
 SERVICES_DIR="services"
 # Canonical start order — also the order pods are started in when no args are given.
-ALL_PODS=(postgres mlflow fluxnova eval-service observability)
+ALL_PODS=(postgres mlflow fluxnova eval-service eval-listener observability)
 
 usage() {
   cat <<EOF
@@ -28,7 +28,7 @@ Usage: ./pods-up.sh [pod ...]
 
 Starts one or more of the local-dev pods via their respective services/*-up.sh
 scripts, always in dependency order (postgres, then mlflow, then fluxnova, then
-eval-service, then observability) regardless of the order given on the command
+eval-service, then eval-listener, then observability) regardless of the order given on the command
 line. Idempotent — already-running pods are left untouched.
 
 With no arguments, starts all pods: ${ALL_PODS[*]}.
@@ -38,6 +38,7 @@ Pods:
   mlflow        MLflow tracking server (services/mlflow-up.sh)
   fluxnova      Fluxnova engine + OTel Collector (services/fluxnova-up.sh)
   eval-service  Eval-service worker (services/eval-service-up.sh)
+  eval-listener Eval trace listener (services/eval-listener-up.sh)
   observability Prometheus + Grafana (services/observability-up.sh)
 
 Examples:
@@ -58,7 +59,7 @@ else
   selected=("$@")
   for pod in "${selected[@]}"; do
     case "$pod" in
-      postgres|mlflow|fluxnova|eval-service|observability) ;;
+      postgres|mlflow|fluxnova|eval-service|eval-listener|observability) ;;
       *)
         echo "Unknown pod: '$pod' (expected one of: ${ALL_PODS[*]})" >&2
         usage >&2

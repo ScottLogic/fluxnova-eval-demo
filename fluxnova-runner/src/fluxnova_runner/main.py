@@ -2,10 +2,11 @@
 
 Reads a YAML config file, deploys the specified BPMN to Fluxnova, optionally
 starts mock external-task workers, starts a process instance, and polls
-until it completes. Reporting/evaluation is *not* this service's job — run
-``mlflow-eval <config> --collect`` afterwards (or independently, any time
-later) to pull the completed agentic subprocess run out of MLflow's trace
-store and record it into the MLflow evaluation dataset.
+until it completes. Reporting/evaluation is *not* this service's job — the
+``eval-trace-listener`` service tails MLflow's trace store and scores each
+completed run automatically (or use ``eval-service-worker`` for synchronous
+per-run scoring). The run's trace is already persisted in MLflow by the time
+this service returns.
 
 Usage
 -----
@@ -22,7 +23,7 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
-from fluxnova_runner.client import Client
+from fluxnova_runner.client import ApiError, Client
 from fluxnova_runner.config import RunnerConfig
 
 
@@ -64,17 +65,44 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
+def clean_stale_locks(client: Client) -> None:
+    """Pre-run cleanup: clear orphaned external-task locks left behind by a worker
+    that crashed or was redeployed mid-task, so a fresh worker can drain them
+    instead of the job appearing stuck until its lock expires. Best-effort — a
+    cleanup failure must never stop the run itself."""
+    try:
+        unlocked = client.unlock_stale_external_tasks()
+    except ApiError as exc:
+        print(f"  Warning: could not clear stale external-task locks: {exc}")
+        return
+    if unlocked:
+        print(f"Cleared {len(unlocked)} stale external-task lock(s): {', '.join(unlocked)}")
+    else:
+        print("No stale external-task locks to clear.")
+
+
 def deploy(config: RunnerConfig, client: Client, skip: bool) -> None:
-    if not skip:
-        print(f"Deploying {config.bpmn_path} …")
-        for extra in config.additional_bpmn_paths:
-            print(f"  + additional resource {extra}")
-        deployment = client.deploy(
-            config.bpmn_path,
-            deployment_name=config.deployment_name,
-            additional_paths=config.additional_bpmn_paths,
-        )
-        print(f"  Deployed '{deployment.get('name')}' (id={deployment.get('id')})")
+    if skip:
+        return
+    # Delete any existing deployment(s) of the same name first so the redeploy is
+    # clean: enable-duplicate-filtering would otherwise reuse the previous version
+    # and leave its stale process instances / external tasks lying around.
+    if config.deployment_name:
+        deleted = client.delete_deployments_by_name(config.deployment_name)
+        if deleted:
+            print(
+                f"Deleted {len(deleted)} existing '{config.deployment_name}' "
+                f"deployment(s) before redeploy: {', '.join(deleted)}"
+            )
+    print(f"Deploying {config.bpmn_path} …")
+    for extra in config.additional_bpmn_paths:
+        print(f"  + additional resource {extra}")
+    deployment = client.deploy(
+        config.bpmn_path,
+        deployment_name=config.deployment_name,
+        additional_paths=config.additional_bpmn_paths,
+    )
+    print(f"  Deployed '{deployment.get('name')}' (id={deployment.get('id')})")
 
 
 def initiate(config: RunnerConfig, client: Client) -> str:
@@ -93,6 +121,10 @@ def main(argv: Iterable[str] | None = None) -> None:
         username=os.environ.get("FLUXNOVA_USERNAME"),
         password=os.environ.get("FLUXNOVA_PASSWORD"),
     )
+
+    # Pre-run cleanup: clear orphaned external-task locks before we touch the
+    # deployment or start a new instance.
+    clean_stale_locks(client)
 
     deploy(config=cfg, client=client, skip=args.skip_deploy)
 
@@ -121,8 +153,8 @@ def main(argv: Iterable[str] | None = None) -> None:
         client.wait_for_completion(instance_id, timeout=args.timeout)
         print(f"Process {instance_id} completed.")
     print(
-        "Run 'mlflow-eval <config> --collect' to record the completed subprocess run "
-        "into the MLflow evaluation dataset."
+        "The completed subprocess run's trace is persisted in MLflow; the "
+        "eval-trace-listener service (if running) will score it automatically."
     )
 
 

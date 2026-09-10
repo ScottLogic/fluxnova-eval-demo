@@ -3,7 +3,7 @@
 # The PostgreSQL backend store (postgres-local's "mlflow" database) is untouched — it
 # lives in the separate postgres-local pod, stop that (optionally with --delete-data)
 # via ./postgres-down.sh if needed.
-# By default local artifact files (harness/.mlflow/artifacts by default) are left in
+# By default local artifact files (local-dev/.mlflow/artifacts by default) are left in
 # place — pass --delete-data (or set MLFLOW_DELETE_DATA=true) to also remove them.
 #
 # Usage:
@@ -38,7 +38,7 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   source "$LOCAL_DEV_DIR/.env"
   set +a
 fi
-MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/../harness/.mlflow/artifacts}"
+MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/.mlflow/artifacts}"
 
 podman pod stop "$POD_NAME" 2>/dev/null || true
 podman pod rm "$POD_NAME" 2>/dev/null || true

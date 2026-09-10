@@ -1,8 +1,7 @@
 .idea/
 __pycache__/
-harness/.deepeval
-harness/.fluxnova
+*.egg-info/
 .venv
 .fluxnova/
 *.db
-harness/.mlflow/
+local-dev/.mlflow/

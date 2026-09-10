@@ -6,7 +6,7 @@
 # This replaces the host-run `mlflow server ...` process described in the main README's
 # "Running the MLflow tracking server" section with a container, backed by the *same*
 # PostgreSQL database (postgres-local's "mlflow" database — see postgres-up.sh) so
-# `mlflow-eval` (run on the host) and this container see identical data. Requires
+# an MLflow client on the host and this container see identical data. Requires
 # postgres-up.sh to already be running.
 #
 # Usage (from this directory):
@@ -32,7 +32,7 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set +a
 fi
 
-MLFLOW_IMAGE="${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:v3.15.2}"
+MLFLOW_IMAGE="${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:v3.16.0}"
 MLFLOW_PORT="${MLFLOW_PORT:-5000}"
 # Backend store is now PostgreSQL (postgres-local's mlflow database, created by
 # postgres-up.sh's postgres/init.sh) instead of the old SQLite file. Artifacts
@@ -52,7 +52,7 @@ MLFLOW_POSTGRES_USER="${MLFLOW_POSTGRES_USER:-mlflow}"
 MLFLOW_POSTGRES_PASSWORD="${MLFLOW_POSTGRES_PASSWORD:-mlflow}"
 MLFLOW_POSTGRES_DB="${MLFLOW_POSTGRES_DB:-mlflow}"
 MLFLOW_BACKEND_STORE_URI="${MLFLOW_BACKEND_STORE_URI:-postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_CONTAINER_PORT}/${MLFLOW_POSTGRES_DB}}"
-MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/../harness/.mlflow/artifacts}"
+MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/.mlflow/artifacts}"
 mkdir -p "$MLFLOW_ARTIFACT_DIR"
 ARTIFACT_DIR_RESOLVED="$(cd "$MLFLOW_ARTIFACT_DIR" && pwd)"
 DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
@@ -79,11 +79,19 @@ else
     --add-host host.containers.internal:host-gateway
 
   echo "Starting mlflow..."
+  # `mlflow db upgrade` runs Alembic migrations to bring a *persisted* backend store
+  # up to this image's schema head BEFORE the server starts. The tracking server does
+  # not auto-migrate on boot, so without this a DB left behind by an older MLflow image
+  # keeps its stale schema stamp — which the regression suite's direct-Postgres client
+  # then rejects with "Detected out-of-date database schema". Running it every start is
+  # safe and idempotent (a no-op when the schema is already at head). Combined with the
+  # image/client version pin (see .env's MLFLOW_IMAGE) this keeps server, clients and DB
+  # schema in lockstep across version bumps.
   podman run -d --pod "$POD_NAME" --name mlflow \
     -v "${ARTIFACT_DIR_RESOLVED}:/mlflow-artifacts" \
     --entrypoint sh \
     "$MLFLOW_IMAGE" \
-    -c "pip install --quiet psycopg2-binary && mlflow server \
+    -c "pip install --quiet psycopg2-binary && mlflow db upgrade '${MLFLOW_BACKEND_STORE_URI}' && mlflow server \
       --backend-store-uri '${MLFLOW_BACKEND_STORE_URI}' \
       --default-artifact-root /mlflow-artifacts \
       --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*'"

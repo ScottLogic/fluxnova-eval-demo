@@ -1,0 +1,87 @@
+{
+  "benchmark": "loan-assessment (fluxnova-runner/config/loan-assesment.yml)",
+  "scenario": {
+    "applicantType": "EMPLOYED",
+    "hasCollateral": false,
+    "requestedAmount": 50000,
+    "expected_tools": ["Check Credit Score", "Run Fraud Screening", "Assess Affordability", "Verify Employment"],
+    "not_expected": ["Value Collateral (hasCollateral=false)", "Analyse Bank Statements (applicant is EMPLOYED)"]
+  },
+  "date": "2026-09-03",
+  "source": "OTel collector :8889 gen_ai_* metrics (per-run JSON snapshots in this dir)",
+  "notes": "One run per model, single scenario. MLflow eval scores unavailable (mlflow /v1/traces returns 404 - infra issue). Judge-based scoring not included.",
+  "results": {
+    "gemma4:e2b": {
+      "instance_id": "9167935b-a7a6-11f1-aaf6-fed25176574f",
+      "tool_calls": 4,
+      "inference_calls": 5,
+      "tokens_input": 4691,
+      "tokens_output": 1898,
+      "tool_errors": 0,
+      "tools_called": ["Run Fraud Screening", "Check Credit Score", "Verify Employment", "Assess Affordability"],
+      "correct_tool_set": true,
+      "over_called": [],
+      "wall_time_approx_min": 4,
+      "verdict": "Correct: all 4 expected tools, no extras. Highest output token use. Slowest."
+    },
+    "qwen3.5:4b": {
+      "instance_id": "94ebe354-a7a7-11f1-aaf6-fed25176574f",
+      "tool_calls": 4,
+      "inference_calls": 3,
+      "tokens_input": 3855,
+      "tokens_output": 819,
+      "tool_errors": 0,
+      "tools_called": ["Check Credit Score", "Verify Employment", "Run Fraud Screening", "Assess Affordability"],
+      "correct_tool_set": true,
+      "over_called": [],
+      "wall_time_approx_min": 1,
+      "verdict": "Correct: all 4 expected tools, no extras. Fewest inference calls (3, batched parallel tool calls). Fastest. Most efficient."
+    },
+    "granite4:3b": {
+      "instance_id": "3206d99f-a7a8-11f1-aaf6-fed25176574f",
+      "tool_calls": 5,
+      "inference_calls": 6,
+      "tokens_input": 6488,
+      "tokens_output": 287,
+      "tool_errors": 0,
+      "tools_called": ["Run Fraud Screening", "Check Credit Score", "Verify Employment", "Assess Affordability", "Value Collateral"],
+      "correct_tool_set": false,
+      "over_called": ["Value Collateral"],
+      "wall_time_approx_min": 2.5,
+      "verdict": "Over-called: added Value Collateral although hasCollateral=false. 4/4 expected tools present but 1 spurious call. Most inference calls."
+    },
+    "llama3.1:8b": {
+      "instance_id": "6cc1d551-a7a9-11f1-aaf6-fed25176574f",
+      "tool_calls": 1,
+      "inference_calls": 2,
+      "tokens_input": 1370,
+      "tokens_output": 84,
+      "tool_errors": 0,
+      "tools_called": ["Run Fraud Screening"],
+      "correct_tool_set": false,
+      "under_called": ["Check Credit Score", "Verify Employment", "Assess Affordability"],
+      "wall_time_approx_min": 0.5,
+      "verdict": "FAILED workflow: called only 1 of 4 expected tools then stopped. Reproduces the colleague's weak-tool-calling problem. Fast only because it did no work."
+    },
+    "llama3.2:3b": {
+      "instance_id": "b51faec8-a7a9-11f1-aaf6-fed25176574f",
+      "tool_calls": 1,
+      "inference_calls": 2,
+      "tokens_input": 1366,
+      "tokens_output": 61,
+      "tool_errors": 0,
+      "tools_called": ["Run Fraud Screening"],
+      "correct_tool_set": false,
+      "under_called": ["Check Credit Score", "Verify Employment", "Assess Affordability"],
+      "wall_time_approx_min": 0.5,
+      "verdict": "FAILED workflow: called only 1 of 4 expected tools then stopped. Same failure mode as llama3.1:8b. Confirms llama family is weak at multi-step tool loops in this task."
+    }
+  },
+  "ranking_tool_calling": [
+    "qwen3.5:4b (correct set, fewest inference calls, fastest) - BEST",
+    "gemma4:e2b (correct set, more tokens/calls, slowest)",
+    "granite4:3b (correct set + 1 spurious Value Collateral call)",
+    "llama3.1:8b (FAILED - only 1/4 tools)",
+    "llama3.2:3b (FAILED - only 1/4 tools)"
+  ]
+}

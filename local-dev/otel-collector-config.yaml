@@ -3,7 +3,7 @@
 # Receives OTLP traces from the Fluxnova container (and, if you point your local
 # agent instrumentation at this collector too, from the host) and forwards them
 # straight to the MLflow tracking server's native OTLP endpoint, per the main
-# README's architecture (OTel Collector -> MLflow /v1/traces -> mlflow-eval --collect).
+# README's architecture (OTel Collector -> MLflow /v1/traces -> trace store).
 #
 # `mlflow-local` here is the pod name of the MLflow tracking server (mlflow-up.sh),
 # resolved via the shared `fluxnova-dev` user-defined network both pod scripts attach to

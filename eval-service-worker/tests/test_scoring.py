@@ -81,6 +81,7 @@ def _stub_common(
     decision_quality_value: str,
     decision_quality_rationale: str,
     deterministic_overrides: dict[str, Any] | None = None,
+    extra_scorers: list[str] | None = None,
 ) -> dict[str, Any]:
     calls: dict[str, Any] = {}
 
@@ -93,9 +94,13 @@ def _stub_common(
         lambda name: (calls.setdefault("experiment_name", name), _FakeExperiment())[1],
     )
     monkeypatch.setattr(scoring, "MlflowTraceReader", _FakeTraceReader)
+    monkeypatch.setattr(scoring, "scorer_inputs_from_trace", lambda trace: {"trace_ref": trace})
     monkeypatch.setattr(
         scoring, "decision_quality_judge", lambda model: _FakeScorer(name="decision_quality")
     )
+    # Extra scorers are appended WITHOUT seeding a row column, reproducing MLflow
+    # dropping a scorer's `/value` column when it returns None (not applicable)
+    # for the only row.
     monkeypatch.setattr(
         scoring,
         "DETERMINISTIC_SCORERS",
@@ -103,6 +108,7 @@ def _stub_common(
             _FakeScorer(name="required_tools_called"),
             _FakeScorer(name="no_tool_errors"),
             _FakeScorer(name="definitive_decision_stated"),
+            *[_FakeScorer(name=name) for name in (extra_scorers or [])],
         ],
     )
 
@@ -151,8 +157,15 @@ class TestScoreProcessInstance:
         assert outcome.scorer_results["no_tool_errors"]["value"] is True
         assert outcome.scorer_results["definitive_decision_stated"]["value"] is True
 
-        # Scores against the real trace object, not a synthesized one.
-        assert calls["evaluate_data"] == [{"trace": "trace-for-proc-1"}]
+        # Scores against the real trace object, not a synthesized one, and passes
+        # the extracted plain values as inputs plus the final output.
+        assert calls["evaluate_data"] == [
+            {
+                "trace": "trace-for-proc-1",
+                "inputs": {"trace_ref": "trace-for-proc-1"},
+                "outputs": "APPROVE: strong credit history",
+            }
+        ]
         assert [s.name for s in calls["evaluate_scorers"]] == [
             "decision_quality",
             "required_tools_called",
@@ -184,7 +197,7 @@ class TestScoreProcessInstance:
 
     def test_fails_when_a_deterministic_scorer_fails_even_if_judge_says_yes(self, monkeypatch):
         _OUTPUTS["proc-det"] = "APPROVE: strong credit history"
-        calls = _stub_common(
+        _stub_common(
             monkeypatch,
             "yes",
             "Well reasoned.",
@@ -221,6 +234,54 @@ class TestScoreProcessInstance:
 
         assert outcome.eval_passed is True
         assert outcome.eval_rationale == "Well reasoned."
+
+    def test_passes_when_a_scorer_is_not_applicable_and_its_column_is_absent(self, monkeypatch):
+        # A scorer that returns None (e.g. no_verify_employment_for_self_employed_applicant
+        # for an EMPLOYED applicant) leaves no `/value` column in a single-row eval —
+        # extraction must not KeyError and the missing verdict must count as a pass.
+        _OUTPUTS["proc-na"] = "APPROVE: strong credit history"
+        _stub_common(
+            monkeypatch,
+            "yes",
+            "Well reasoned.",
+            extra_scorers=["no_verify_employment_for_self_employed_applicant"],
+        )
+
+        outcome = scoring.score_process_instance(
+            "proc-na",
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+        )
+
+        assert outcome.eval_passed is True
+        assert outcome.eval_rationale == "Well reasoned."
+        assert (
+            outcome.scorer_results["no_verify_employment_for_self_employed_applicant"]["value"]
+            is None
+        )
+
+    def test_passes_when_a_scorer_reports_nan_verdict(self, monkeypatch):
+        # A present-but-NaN verdict (None surfaced by MLflow as NaN) is likewise
+        # "not applicable" and must count as a pass, not a falsey failure.
+        _OUTPUTS["proc-nan"] = "APPROVE: strong credit history"
+        _stub_common(
+            monkeypatch,
+            "yes",
+            "Well reasoned.",
+            deterministic_overrides={"no_tool_errors/value": float("nan")},
+        )
+
+        outcome = scoring.score_process_instance(
+            "proc-nan",
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+        )
+
+        assert outcome.eval_passed is True
 
     def test_judge_value_comparison_is_case_insensitive(self, monkeypatch):
         _OUTPUTS["proc-3"] = "APPROVE"

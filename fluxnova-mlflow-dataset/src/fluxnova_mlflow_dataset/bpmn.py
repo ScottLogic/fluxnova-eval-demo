@@ -31,10 +31,10 @@ class BpmnLookup:
     """Parses a BPMN file once and exposes its static agent config.
 
     Args:
-        bpmn_path: Path to the ``.bpmn`` file (e.g. ``WorkflowConfig.bpmn_path``).
+        bpmn_path: Path to the ``.bpmn`` file (e.g. ``RunnerConfig.bpmn_path``).
         subprocess_id: BPMN element ID of the ad-hoc subprocess carrying the
                        ``agent:config``/``agent:context`` extension elements
-                       (e.g. ``WorkflowConfig.subprocess_id``).
+                       (e.g. ``RunnerConfig.subprocess_id``).
     """
 
     def __init__(self, bpmn_path: Path | str, subprocess_id: str) -> None:

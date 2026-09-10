@@ -6,7 +6,7 @@
 #
 # Every service is named `<container>-local` for consistency (postgres-local,
 # mlflow-local, otel-collector-local, fluxnova-local, eval-service-worker-local,
-# prometheus-local, grafana-local). This also keeps the load-bearing hostnames
+# eval-trace-listener-local, prometheus-local, grafana-local). This also keeps the load-bearing hostnames
 # (postgres-local, mlflow-local, fluxnova-local) matching what's already baked into
 # default.yml, otel-collector-config.yaml, prometheus.yml and the eval env vars, so
 # those configs need zero edits. The short `container_name` (postgres, fluxnova, ...) is
@@ -14,7 +14,7 @@
 #
 # Usage (from this local-dev/ directory):
 #   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel
-#   podman compose --profile eval up -d      # also start the eval worker
+#   podman compose --profile eval up -d      # also start the eval worker + trace listener
 #   podman compose --profile grafana up -d   # also start Prometheus + Grafana
 #   podman compose --profile eval --profile grafana up -d   # everything
 #   podman compose logs -f fluxnova-local    # by service name (not the fluxnova container_name)
@@ -22,7 +22,7 @@
 #   podman compose down -v                   # also delete the postgres data volume
 #
 # Note: unlike ./pods-down.sh --delete-data, `down -v` does NOT touch the mlflow
-# artifact files (they're a host bind-mount at ../harness/.mlflow/artifacts) — delete
+# artifact files (they're a host bind-mount at ./.mlflow/artifacts) — delete
 # those by hand if you need a truly clean slate.
 
 services:
@@ -78,7 +78,7 @@ services:
     ports:
       - "${MLFLOW_PORT:-5000}:5000"
     volumes:
-      - ../harness/.mlflow/artifacts:/mlflow-artifacts
+      - ./.mlflow/artifacts:/mlflow-artifacts
     healthcheck:
       # The mlflow image is python-based (no curl guaranteed), so probe with urllib.
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/version')\""]
@@ -170,6 +170,30 @@ services:
       # MLflow experiment the worker reads traces from — must match where the OTel
       # collector writes them (MLFLOW_EXPERIMENT_ID). Single source of truth is .env.
       EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+
+  # Optional eval trace listener — tails the MLflow experiment's trace store and scores
+  # newly-completed agent runs with the deterministic (trace-only) scorers. Built from
+  # source (context = repo root). Only started when the `eval` profile is active:
+  # `podman compose --profile eval up -d`. Mirrors services/eval-listener-up.sh.
+  # Unlike eval-service-worker it depends only on MLflow (it never calls the engine).
+  eval-trace-listener-local:
+    profiles: ["eval"]
+    build:
+      context: ..
+      dockerfile: eval-trace-listener/Dockerfile
+    image: ${EVAL_LISTENER_IMAGE:-eval-trace-listener:local}
+    container_name: eval-trace-listener
+    depends_on:
+      mlflow-local:
+        condition: service_healthy
+    environment:
+      EVAL_LISTENER_TRACKING_URI: ${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:5000}
+      # The experiment to tail must match where the OTel collector writes traces
+      # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single
+      # source of truth so both eval services read the same experiment.
+      EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
     extra_hosts:
       - "host.containers.internal:host-gateway"
 

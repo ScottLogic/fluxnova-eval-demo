@@ -228,6 +228,90 @@ class TestClientDeploy:
             client.deploy(Path("my.bpmn"), "My Flow")
 
 
+class TestClientDeploymentCleanup:
+    def _client(self) -> Client:
+        return Client(base_url="http://localhost:8080/engine-rest")
+
+    def test_delete_deployments_by_name_deletes_each_match(self):
+        client = self._client()
+        list_resp = MagicMock(ok=True)
+        list_resp.json.return_value = [{"id": "dep-1"}, {"id": "dep-2"}]
+        del_resp = MagicMock(ok=True, status_code=204)
+        with (
+            patch.object(client._session, "get", return_value=list_resp),
+            patch.object(client._session, "delete", return_value=del_resp) as mock_delete,
+        ):
+            deleted = client.delete_deployments_by_name("My Deployment")
+        assert deleted == ["dep-1", "dep-2"]
+        assert mock_delete.call_count == 2
+        _, kwargs = mock_delete.call_args
+        assert kwargs["params"]["cascade"] == "true"
+
+    def test_delete_deployments_by_name_returns_empty_when_none_match(self):
+        client = self._client()
+        list_resp = MagicMock(ok=True)
+        list_resp.json.return_value = []
+        with (
+            patch.object(client._session, "get", return_value=list_resp),
+            patch.object(client._session, "delete") as mock_delete,
+        ):
+            assert client.delete_deployments_by_name("Nope") == []
+        mock_delete.assert_not_called()
+
+    def test_delete_deployment_tolerates_404(self):
+        client = self._client()
+        mock_404 = MagicMock(status_code=404)
+        with patch.object(client._session, "delete", return_value=mock_404):
+            client.delete_deployment("gone")  # must not raise
+
+    def test_delete_deployment_raises_on_other_errors(self):
+        client = self._client()
+        mock_500 = MagicMock(ok=False, status_code=500, text="boom")
+        with (
+            patch.object(client._session, "delete", return_value=mock_500),
+            pytest.raises(ApiError),
+        ):
+            client.delete_deployment("dep-1")
+
+
+class TestClientExternalTaskCleanup:
+    def _client(self) -> Client:
+        return Client(base_url="http://localhost:8080/engine-rest")
+
+    def test_unlock_stale_external_tasks_unlocks_each_locked_task(self):
+        client = self._client()
+        list_resp = MagicMock(ok=True)
+        list_resp.json.return_value = [{"id": "task-1"}, {"id": "task-2"}]
+        unlock_resp = MagicMock(ok=True, status_code=204)
+        with (
+            patch.object(client._session, "get", return_value=list_resp) as mock_get,
+            patch.object(client._session, "post", return_value=unlock_resp) as mock_post,
+        ):
+            unlocked = client.unlock_stale_external_tasks()
+        assert unlocked == ["task-1", "task-2"]
+        _, get_kwargs = mock_get.call_args
+        assert get_kwargs["params"] == {"locked": "true"}
+        assert mock_post.call_count == 2
+        assert mock_post.call_args_list[0].args[0].endswith("/external-task/task-1/unlock")
+
+    def test_unlock_stale_external_tasks_returns_empty_when_none_locked(self):
+        client = self._client()
+        list_resp = MagicMock(ok=True)
+        list_resp.json.return_value = []
+        with (
+            patch.object(client._session, "get", return_value=list_resp),
+            patch.object(client._session, "post") as mock_post,
+        ):
+            assert client.unlock_stale_external_tasks() == []
+        mock_post.assert_not_called()
+
+    def test_unlock_external_task_tolerates_404(self):
+        client = self._client()
+        mock_404 = MagicMock(status_code=404)
+        with patch.object(client._session, "post", return_value=mock_404):
+            client.unlock_external_task("gone")  # must not raise
+
+
 class TestClientWaitForCompletion:
     def _client(self) -> Client:
         return Client(base_url="http://localhost:8080/engine-rest")

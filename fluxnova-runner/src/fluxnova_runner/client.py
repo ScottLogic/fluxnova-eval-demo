@@ -6,8 +6,8 @@ Provides only what the runner needs:
 - Claiming/completing user tasks (used indirectly via mock workers)
 - Polling until the instance completes
 
-(Read-back of agent-history/report data is ``mlflow-eval --collect``'s job —
-see ``fluxnova_mlflow_dataset.fluxnova_client.FluxnovaClient``.)
+(Read-back of agent-history/trace data is the eval services' job — see
+``fluxnova_mlflow_dataset.fluxnova_client.FluxnovaClient``.)
 """
 
 import time
@@ -77,6 +77,90 @@ class Client:
                 fh.close()
         self._raise_for_status(response, "deploy BPMN")
         return response.json()
+
+    # ------------------------------------------------------------------
+    # Deployment management
+    # ------------------------------------------------------------------
+
+    def list_deployments(self, name: str | None = None) -> list[dict[str, Any]]:
+        """Return all deployments, optionally filtered to an exact deployment name."""
+        params = {"name": name} if name else {}
+        response = self._session.get(f"{self._base}/deployment", params=params)
+        self._raise_for_status(response, "list deployments")
+        return response.json()
+
+    def delete_deployment(self, deployment_id: str, cascade: bool = True) -> None:
+        """Delete one deployment.
+
+        With ``cascade=True`` the engine also removes every process instance,
+        historic instance and job/external-task that belongs to the deployment,
+        so nothing is left dangling from a previous version.
+        """
+        response = self._session.delete(
+            f"{self._base}/deployment/{deployment_id}",
+            params={
+                "cascade": "true" if cascade else "false",
+                "skipCustomListeners": "true",
+                "skipIoMappings": "true",
+            },
+        )
+        if response.status_code == 404:
+            return  # already gone — nothing to do
+        self._raise_for_status(response, "delete deployment")
+
+    def delete_deployments_by_name(self, name: str, cascade: bool = True) -> list[str]:
+        """Delete every deployment (all versions) with the given name.
+
+        Returns the ids that were deleted. Used as a pre-deploy step so a
+        redeploy starts from a clean slate rather than piling up a new version
+        on top of stale instances (which ``enable-duplicate-filtering`` would
+        otherwise leave in place).
+        """
+        deleted: list[str] = []
+        for deployment in self.list_deployments(name=name):
+            self.delete_deployment(deployment["id"], cascade=cascade)
+            deleted.append(deployment["id"])
+        return deleted
+
+    # ------------------------------------------------------------------
+    # External-task cleanup
+    # ------------------------------------------------------------------
+
+    def list_external_tasks(self, locked: bool | None = None) -> list[dict[str, Any]]:
+        """Return external tasks, optionally only those currently locked.
+
+        ``locked=True`` maps to the engine's ``locked`` filter, which returns
+        only tasks that hold an *unexpired* lock (i.e. a worker claimed them and
+        the lock time has not yet passed).
+        """
+        params: dict[str, Any] = {}
+        if locked:
+            params["locked"] = "true"
+        response = self._session.get(f"{self._base}/external-task", params=params)
+        self._raise_for_status(response, "list external tasks")
+        return response.json()
+
+    def unlock_external_task(self, task_id: str) -> None:
+        """Clear the lock on one external task so any worker can fetch it again."""
+        response = self._session.post(f"{self._base}/external-task/{task_id}/unlock")
+        if response.status_code == 404:
+            return  # already gone — nothing to unlock
+        self._raise_for_status(response, "unlock external task")
+
+    def unlock_stale_external_tasks(self) -> list[str]:
+        """Unlock every currently-locked external task and return their ids.
+
+        A worker that crashes or is redeployed mid-task leaves its external task
+        locked in the engine (with a lock expiry still in the future) until that
+        lock expires — during which no other worker can pick it up, so the job
+        looks "stuck". Running this as a pre-step before a new run clears those
+        orphaned locks so a fresh worker can drain them immediately.
+        """
+        unlocked: list[str] = []
+        for task in self.list_external_tasks(locked=True):
+            self.unlock_external_task(task["id"])
+            unlocked.append(task["id"])
+        return unlocked
 
     def start_process(
             self,
