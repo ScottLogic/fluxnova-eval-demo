@@ -71,6 +71,27 @@ def test_score_trace_handles_stringified_bool(monkeypatch) -> None:
     assert outcome.passed is True
 
 
+def test_score_trace_passes_when_scorer_column_absent(monkeypatch) -> None:
+    # A scorer that returns None (not applicable — e.g.
+    # no_verify_employment_for_self_employed_applicant for an EMPLOYED applicant)
+    # leaves no `/value` column in a single-row eval. Extraction must not KeyError
+    # (which previously crashed the poll loop) and the missing verdict must pass.
+    scorers = [
+        _FakeScorer("required_tools_called"),
+        _FakeScorer("no_verify_employment_for_self_employed_applicant"),
+    ]
+    _patch_evaluate(
+        monkeypatch,
+        {"required_tools_called/value": True, "required_tools_called/rationale": "ok"},
+    )
+    outcome = score_trace(make_trace("tr-na"), scorers)
+    assert outcome.passed is True
+    assert (
+        outcome.scorer_results["no_verify_employment_for_self_employed_applicant"]["value"]
+        is None
+    )
+
+
 def test_score_trace_passes_trace_to_evaluate(monkeypatch) -> None:
     scorers = [_FakeScorer("required_tools_called")]
     captured = _patch_evaluate(

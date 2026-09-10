@@ -21,6 +21,7 @@ call per scorer) so that:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -49,7 +50,16 @@ def _scorer_passed(name: str, value: Any) -> bool:
 
     ``decision_quality`` (the Guidelines judge) reports a categorical
     ``"yes"``/``"no"`` string; the deterministic scorers report plain booleans.
+
+    A scorer may also report *no verdict* — ``None`` (surfaced as ``NaN`` in the
+    result table, or as a missing column when it's the only value) — meaning the
+    check was **not applicable** to this run (e.g.
+    ``no_verify_employment_for_self_employed_applicant`` skips EMPLOYED
+    applicants). A not-applicable verdict must never fail the eval, so it counts
+    as a pass.
     """
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return True
     if name == _DECISION_QUALITY_NAME:
         return str(value).strip().lower() == _PASS_VALUE
     return bool(value)
@@ -130,7 +140,7 @@ def score_process_instance(
     row = result.tables["eval_results"].iloc[0]
 
     scorer_results = {
-        s.name: {"value": row[f"{s.name}/value"], "rationale": row.get(f"{s.name}/rationale")}
+        s.name: {"value": row.get(f"{s.name}/value"), "rationale": row.get(f"{s.name}/rationale")}
         for s in scorers
     }
 

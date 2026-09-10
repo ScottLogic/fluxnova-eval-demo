@@ -111,7 +111,7 @@ def score_trace(trace: Any, scorers: list[Any] | None = None) -> TraceEvalOutcom
     row = table.iloc[0]
 
     scorer_results = {
-        s.name: {"value": row[f"{s.name}/value"], "rationale": row.get(f"{s.name}/rationale")}
+        s.name: {"value": row.get(f"{s.name}/value"), "rationale": row.get(f"{s.name}/rationale")}
         for s in scorers
     }
     passed = all(_passed(res["value"]) for res in scorer_results.values())

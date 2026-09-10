@@ -14,9 +14,10 @@ configured experiment and, for each one:
 1. reads the run's agent name off its `invoke_agent` span (`gen_ai.agent.name`);
 2. skips it unless that agent is one of the configured `agent_names` (the
    trace-only "which BPMN agents we care about" filter);
-3. skips it unless the run is **complete** — a run's `invoke_agent` (root) span is
-   only exported once the subprocess has ended, so its presence *is* the completion
-   signal (the same one `MlflowTraceReader.find_completed_runs` uses);
+3. skips it unless the run is **complete** — MLflow surfaces a *live* trace (its
+   root `invoke_agent` span present) while the subprocess is still running, so
+   completion is read off the trace's own terminal state: it's scored only once
+   `trace.info.state` is `OK` (a failed `ERROR` run has no valid output to score);
 4. skips it if we've **already scored** it (in-memory set for this process, plus a
    check for our own scorer assessments already on the trace so a restart doesn't
    re-score history);

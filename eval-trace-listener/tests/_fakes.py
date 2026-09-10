@@ -33,6 +33,7 @@ class FakeSpanData:
 class FakeTraceInfo:
     trace_id: str
     assessments: list[FakeAssessment] = field(default_factory=list)
+    state: str = "OK"
 
 
 @dataclass
@@ -46,9 +47,11 @@ def make_trace(
     *,
     agent_name: str | None = "AdHocSubProcess_LoanAssessmentAgent",
     assessments: list[str] | None = None,
+    state: str = "OK",
 ) -> FakeTrace:
     """Build a fake trace. ``agent_name=None`` produces a trace with no
-    invoke_agent span (an incomplete/non-agent run).
+    invoke_agent span (a non-agent run). ``state`` is the trace's terminal
+    state — ``"IN_PROGRESS"`` models a run that hasn't finished yet.
     """
     spans: list[FakeSpan] = []
     if agent_name is not None:
@@ -64,6 +67,7 @@ def make_trace(
         info=FakeTraceInfo(
             trace_id=trace_id,
             assessments=[FakeAssessment(n) for n in (assessments or [])],
+            state=state,
         ),
         data=FakeSpanData(spans=spans),
     )

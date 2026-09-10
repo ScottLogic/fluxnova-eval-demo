@@ -9,24 +9,26 @@ shared Postgres store — breaking ``evaluate()``'s dataset logging with
 ``Run not found``.
 
 Selecting the store + experiment here, in ``pytest_configure`` (which runs
-before any test call), ensures the plugin opens the run directly in the shared
-Postgres backend store under the dedicated regression experiment. ``setdefault``
-leaves any externally-provided override (e.g. a CI-provided
-``MLFLOW_TRACKING_URI``) intact, and only sets env — it does not touch the store
-— so an unreachable store still skips cleanly inside the test rather than
-erroring during collection.
+before any test call), ensures the plugin opens the run directly against the
+shared MLflow tracking *server* (HTTP, ``default_server_tracking_uri()``) under
+the dedicated regression experiment. Going through the server rather than
+connecting to Postgres directly means the server owns the DB schema, so the
+client never runs MLflow's strict SqlAlchemyStore schema-version check — which
+otherwise makes the suite skip with "Detected out-of-date database schema"
+whenever the server image and the client ``mlflow`` version drift apart (their
+Alembic heads differ). ``setdefault`` leaves any externally-provided override
+(e.g. a CI-provided ``MLFLOW_TRACKING_URI``) intact, and only sets env — it does
+not touch the store — so an unreachable server still skips cleanly inside the
+test rather than erroring during collection.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 
 import pytest
-from fluxnova_mlflow_dataset import default_tracking_uri, experiment_name_for
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+from fluxnova_mlflow_dataset import default_server_tracking_uri, experiment_name_for
 
 # Third-party loggers that emit chatty INFO/DEBUG output on their own named
 # loggers. With live logging enabled (log_cli in pyproject.toml) these would
@@ -85,7 +87,7 @@ def pytest_configure(config: pytest.Config) -> None:
     logging.getLogger().addFilter(_DropCamundaNoise())
     logging.getLogger("mlflow.types.type_hints").addFilter(_DropMlflowTypeHintNoise())
 
-    os.environ.setdefault("MLFLOW_TRACKING_URI", default_tracking_uri(_REPO_ROOT))
+    os.environ.setdefault("MLFLOW_TRACKING_URI", default_server_tracking_uri())
     os.environ.setdefault(
         "MLFLOW_EXPERIMENT_NAME",
         experiment_name_for("loanAssessmentProcess-regression"),

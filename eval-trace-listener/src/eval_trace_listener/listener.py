@@ -10,14 +10,17 @@ deliberately removed) and reassembling spans by hand, this service simply
 
     every poll_interval_s seconds:
         for each recent trace in the configured experiment:
-            if its invoke_agent span's agent name is one we care about,
-               the run is complete, and we haven't already scored it:
+            if the trace has finished (state OK), its invoke_agent span's agent
+               name is one we care about, and we haven't already scored it:
                    score it with the deterministic scorers
 
-A run's ``invoke_agent`` (root) span is only exported once the subprocess has
-ended (spans export on span-end, root last), so its presence *is* the
-"completed" signal — the same one ``MlflowTraceReader.find_completed_runs``
-relies on. Dedup is belt-and-braces: an in-memory set of scored trace ids
+Completion is the trace's own terminal state. MLflow assembles a *live* trace
+as its subprocess runs: the root ``invoke_agent`` span is created up front and
+``search_traces`` returns the trace (root span already present) while it's still
+``IN_PROGRESS``. So the span's mere presence is NOT a "completed" signal — a
+partial trace would be scored on incomplete data. Instead we gate on
+``trace.info.state == OK`` (the root span has ended and the run succeeded), and
+only then read the agent name off it. Dedup is belt-and-braces: an in-memory set of scored trace ids
 (fast path) plus a check for our own scorer assessments already on the trace
 (survives restarts, since assessments are persisted on the trace itself).
 """
@@ -29,6 +32,8 @@ import time
 from typing import Any
 
 import mlflow
+from fluxnova_mlflow_dataset import DETERMINISTIC_SCORERS
+from mlflow.entities.trace_state import TraceState
 
 from eval_trace_listener.config import ListenerConfig
 from eval_trace_listener.scoring import (
@@ -44,6 +49,18 @@ _OP_NAME_ATTR = "gen_ai.operation.name"
 _AGENT_NAME_ATTR = "gen_ai.agent.name"
 _INVOKE_AGENT_OP = "invoke_agent"
 
+# Scorers the *online* eval-service-worker also writes onto these same traces
+# (decision_quality + the deterministic bundle — see eval-service-worker's
+# README). Because the worker scores each eval-BPMN run synchronously, its
+# assessments usually land on the trace before this listener polls it. So the
+# mere presence of these assessment names does NOT mean *we* scored the trace —
+# they're excluded from our dedup signature below, otherwise the listener would
+# skip every trace the worker already touched and never add its own scorers
+# (e.g. evidence_citation).
+_WORKER_ONLINE_SCORER_NAMES = frozenset(
+    {s.name for s in DETERMINISTIC_SCORERS} | {"decision_quality"}
+)
+
 # A trace whose span data can't be fetched (e.g. an async-write race for one that
 # just landed) may fail to score; retry it a few cycles before giving up so one
 # poison trace can't block every older unscored trace behind it forever.
@@ -57,6 +74,15 @@ class TraceListener:
         self._config = config
         self._scorers = LISTENER_SCORERS if scorers is None else scorers
         self._scorer_names = {s.name for s in self._scorers}
+        # Dedup signature: the scorer names that identify *this listener's* prior
+        # scoring specifically. We drop the scorers the online worker also writes
+        # (see _WORKER_ONLINE_SCORER_NAMES) so a trace the worker already scored
+        # isn't mistaken for one we scored. Fall back to the full set if that
+        # leaves nothing unique (e.g. a listener configured with only shared
+        # scorers) so dedup can never silently disable and re-score every poll.
+        self._signature_names = (
+            self._scorer_names - _WORKER_ONLINE_SCORER_NAMES
+        ) or self._scorer_names
         self._experiment_id: str | None = None
         # trace ids scored during this process's lifetime (fast-path dedup).
         self._scored: set[str] = set()
@@ -115,6 +141,11 @@ class TraceListener:
                 # One un-scoreable trace must not abort the cycle and starve every
                 # older unscored trace behind it. Retry a few cycles, then give up.
                 self._handle_scoring_failure(trace.info.trace_id, exc)
+            except Exception as exc:  # noqa: BLE001 - a poison trace must not wedge the loop
+                # Any *unexpected* per-trace error (e.g. a malformed row) is treated
+                # like a scoring failure: retried a few cycles then skipped, so a
+                # single bad trace can never crash the cycle and reprocess forever.
+                self._handle_scoring_failure(trace.info.trace_id, exc)
         return scored
 
     # ------------------------------------------------------------------
@@ -130,9 +161,16 @@ class TraceListener:
         if trace_id in self._scored:
             return False
 
+        if not self._is_complete(trace):
+            # Trace is still IN_PROGRESS (or errored): its live root span is
+            # already visible but the subprocess hasn't finished, so scoring now
+            # would run on a partial trace. Skip — a later poll re-checks it once
+            # it reaches a terminal OK state.
+            return False
+
         agent_name = self._agent_name(trace)
         if agent_name is None:
-            # No invoke_agent span yet => run not complete (or not an agent trace).
+            # No invoke_agent span => not an agent trace.
             return False
         if self._config.agent_names and agent_name not in self._config.agent_names:
             return False
@@ -153,7 +191,7 @@ class TraceListener:
         )
         return True
 
-    def _handle_scoring_failure(self, trace_id: str, exc: ScoringError) -> None:
+    def _handle_scoring_failure(self, trace_id: str, exc: Exception) -> None:
         """Record a failed scoring attempt; give up (skip) after the retry budget."""
         attempts = self._failures.get(trace_id, 0) + 1
         self._failures[trace_id] = attempts
@@ -196,9 +234,21 @@ class TraceListener:
             return_type="list",
         )
 
+    def _is_complete(self, trace: Any) -> bool:
+        """True once ``trace`` has reached a terminal OK state.
+
+        MLflow exposes a trace (root span included) while it's still
+        ``IN_PROGRESS``, so completion must be read off the trace's own state
+        rather than inferred from span presence. ``ERROR`` traces are treated as
+        not-complete: the run failed, so there's no valid final output to score.
+        """
+        state = getattr(trace.info, "state", None)
+        state_value = getattr(state, "value", state)
+        return state_value == TraceState.OK.value
+
     def _agent_name(self, trace: Any) -> str | None:
         """Return the run's agent name off its invoke_agent span, or None if the
-        trace has no invoke_agent span (i.e. it isn't a completed agent run).
+        trace has no invoke_agent span (i.e. it isn't an agent run).
         """
         for span in trace.data.spans:
             if span.get_attribute(_OP_NAME_ATTR) == _INVOKE_AGENT_OP:
@@ -206,8 +256,11 @@ class TraceListener:
         return None
 
     def _already_scored(self, trace: Any) -> bool:
-        """True if this trace already carries one of our scorer assessments —
-        so a restarted listener (empty in-memory set) doesn't re-score history.
+        """True if this trace already carries one of *our own* scorer assessments
+        (see :attr:`_signature_names`) — so a restarted listener (empty in-memory
+        set) doesn't re-score history. Assessments the online worker writes with
+        overlapping scorer names are excluded from the signature, so they don't
+        make us skip a trace we haven't scored ourselves yet.
         """
         assessments = getattr(trace.info, "assessments", None) or []
-        return any(getattr(a, "name", None) in self._scorer_names for a in assessments)
+        return any(getattr(a, "name", None) in self._signature_names for a in assessments)

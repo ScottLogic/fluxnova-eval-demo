@@ -46,6 +46,7 @@ from fluxnova_mlflow_dataset.scorers import (
 from fluxnova_mlflow_dataset.store import (
     build_mlflow_record,
     dataset_name_for,
+    default_server_tracking_uri,
     default_tracking_uri,
     experiment_name_for,
     get_or_create_dataset,
@@ -72,6 +73,7 @@ __all__ = [
     "match_golden",
     "build_mlflow_record",
     "dataset_name_for",
+    "default_server_tracking_uri",
     "default_tracking_uri",
     "experiment_name_for",
     "get_or_create_dataset",

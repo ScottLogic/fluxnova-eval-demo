@@ -144,15 +144,18 @@ def cfg() -> RunnerConfig:
 
 @pytest.fixture(scope="session")
 def regression_experiment() -> str:
-    """Verify the MLflow tracking store is reachable and select the experiment.
+    """Verify the MLflow tracking server is reachable and select the experiment.
 
     ``conftest.py`` already pointed ``MLFLOW_TRACKING_URI`` /
-    ``MLFLOW_EXPERIMENT_NAME`` at the shared Postgres store + regression
-    experiment *before* ``@mlflow.test`` opens this run (setting them only inside
-    the test body would be too late — the run would open in the ambient local
-    store and get orphaned). This fixture just re-asserts the experiment as a
-    reachability probe so an unreachable store skips cleanly rather than erroring
-    deep inside ``evaluate()``.
+    ``MLFLOW_EXPERIMENT_NAME`` at the shared MLflow tracking *server* (HTTP) +
+    regression experiment *before* ``@mlflow.test`` opens this run (setting them
+    only inside the test body would be too late — the run would open in the
+    ambient local store and get orphaned). Going through the server (rather than
+    Postgres directly) also sidesteps MLflow's strict client-side schema-version
+    check, so a server/client version drift no longer makes this skip. This
+    fixture just re-asserts the experiment as a reachability probe so an
+    unreachable server skips cleanly rather than erroring deep inside
+    ``evaluate()``.
     """
     try:
         mlflow.set_experiment(_REGRESSION_EXPERIMENT)

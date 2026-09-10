@@ -48,12 +48,97 @@ def test_skips_incomplete_trace_without_invoke_agent_span() -> None:
     assert calls == []
 
 
+def test_skips_in_progress_trace() -> None:
+    # MLflow surfaces a live trace (root invoke_agent span already present) while
+    # the subprocess is still running. Scoring it now would run on a partial
+    # trace — it must be skipped until it reaches a terminal OK state.
+    listener, calls = _listener()
+    trace = make_trace("tr-1", agent_name=_TARGET_AGENT, state="IN_PROGRESS")
+    assert listener._process_trace(trace) is False
+    assert calls == []
+    assert "tr-1" not in listener._scored  # not cached — a later poll re-checks it
+
+
+def test_skips_errored_trace() -> None:
+    # A failed run has no valid final output to score.
+    listener, calls = _listener()
+    trace = make_trace("tr-1", agent_name=_TARGET_AGENT, state="ERROR")
+    assert listener._process_trace(trace) is False
+    assert calls == []
+
+
+def test_scores_in_progress_trace_once_it_completes() -> None:
+    # Same trace id: skipped while IN_PROGRESS, scored once it turns OK.
+    listener, calls = _listener()
+    assert (
+        listener._process_trace(
+            make_trace("tr-1", agent_name=_TARGET_AGENT, state="IN_PROGRESS")
+        )
+        is False
+    )
+    assert (
+        listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT, state="OK"))
+        is True
+    )
+    assert calls == ["tr-1"]
+
+
 def test_skips_and_remembers_already_scored_trace() -> None:
     listener, calls = _listener()
     trace = make_trace("tr-1", agent_name=_TARGET_AGENT, assessments=["required_tools_called"])
     assert listener._process_trace(trace) is False
     assert calls == []
     assert "tr-1" in listener._scored  # cached so it isn't re-inspected next poll
+
+
+def test_does_not_skip_trace_carrying_only_worker_assessments() -> None:
+    # The online eval-service-worker scores the same traces first, writing
+    # decision_quality + the deterministic scorers onto them. Those shared names
+    # must NOT make the listener think it already scored the trace — it still owes
+    # its listener-only scorers (e.g. evidence_citation).
+    config = ListenerConfig(agent_names=[_TARGET_AGENT])
+    scorers = [
+        _FakeScorer("decision_quality"),
+        _FakeScorer("evidence_citation"),
+        _FakeScorer("required_tools_called"),
+    ]
+    listener = TraceListener(config, scorers=scorers)
+    calls: list[str] = []
+    listener._score = lambda trace: (  # type: ignore[method-assign]
+        calls.append(trace.info.trace_id)
+        or TraceEvalOutcome(trace_id=trace.info.trace_id, passed=True, scorer_results={})
+    )
+    worker_scored = make_trace(
+        "tr-1",
+        agent_name=_TARGET_AGENT,
+        assessments=["decision_quality", "required_tools_called"],
+    )
+    assert listener._process_trace(worker_scored) is True
+    assert calls == ["tr-1"]
+
+
+def test_skips_trace_carrying_its_own_signature_assessment() -> None:
+    # Once the listener has added its unique scorer (evidence_citation), a later
+    # poll (or a restart) must recognise its own work and skip.
+    config = ListenerConfig(agent_names=[_TARGET_AGENT])
+    scorers = [
+        _FakeScorer("decision_quality"),
+        _FakeScorer("evidence_citation"),
+        _FakeScorer("required_tools_called"),
+    ]
+    listener = TraceListener(config, scorers=scorers)
+    calls: list[str] = []
+    listener._score = lambda trace: (  # type: ignore[method-assign]
+        calls.append(trace.info.trace_id)
+        or TraceEvalOutcome(trace_id=trace.info.trace_id, passed=True, scorer_results={})
+    )
+    already = make_trace(
+        "tr-1",
+        agent_name=_TARGET_AGENT,
+        assessments=["decision_quality", "evidence_citation", "required_tools_called"],
+    )
+    assert listener._process_trace(already) is False
+    assert calls == []
 
 
 def test_does_not_rescore_same_trace_twice() -> None:
