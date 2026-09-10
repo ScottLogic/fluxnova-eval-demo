@@ -5,14 +5,29 @@ A standalone BPMN external-task worker that scores a just-completed agentic subp
 trace store — no BPMN parsing, no Fluxnova REST history calls. See `EVAL-SERVICE-WORKER-PLAN.md` at the repo root for
 the full background/scope and `local-dev/README.md`'s "eval-service-worker" section for how to run it as a Podman pod.
 
-**Scorers run per task:**
-- `decision_quality` — the nondeterministic `Guidelines` LLM judge.
-- `required_tools_called`, `no_tool_errors`, `definitive_decision_stated` — deterministic, trace-only checks (see
-  `fluxnova_mlflow_dataset.scorers`).
+**Scorers run per task:** `decision_quality` (the non-deterministic `Guidelines` LLM judge) plus the full
+`DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`
+(`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`, `tool_correctness`,
+`all_tool_calls_completed`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
+`no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`).
+This is the deliberately narrow online set: `decision_quality` is the one judge cheap enough to run per-run through the
+`fluxnova-judge` gateway, and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
+`matches_golden`) are left to the offline `eval-trace-listener` / `regression` suites.
 
-All four scorers gate the BPMN outcome: `evalPassed` is `True` only when the `decision_quality` judge *and* every
-deterministic scorer pass. All four scorers' `Feedback` are logged back onto the same real trace as MLflow assessments,
-grouped under one MLflow Evaluation Run (via `mlflow.genai.evaluate(data=[{"trace": trace}], scorers=[...])`), plus a
+**How the scorer inputs are sourced.** All scorers are decoupled from tracing, so the worker builds their plain-value
+inputs *from the trace itself* and passes them in explicitly:
+
+- `trace` — the completed run's MLflow trace (resolved for the child instance, see below), so MLflow links every
+  `Feedback` back to it.
+- `inputs` — `scorer_inputs_from_trace(trace)` (from `fluxnova_mlflow_dataset`), which derives
+  `{input_variables, tool_calls, iterations}` from the `invoke_agent` span so the deterministic scorers can inspect
+  tool names/status without any BPMN parsing or REST history call.
+- `outputs` — the agent's final answer extracted from the trace's output spans.
+
+All scorers gate the BPMN outcome: `evalPassed` is `True` only when the `decision_quality` judge *and* every
+deterministic scorer pass. Every scorer's `Feedback` is logged back onto the same real trace as MLflow assessments,
+grouped under one MLflow Evaluation Run (via
+`mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}], scorers=[...])`), plus a
 lightweight MLflow evaluation-dataset record. The task completes with `evalPassed` (Boolean, driven by all scorers) /
 `evalRationale` (String) output variables, which `loan-assesment-eval.bpmn`'s `ExclusiveGateway_EvalPassed` uses to
 route the flow: on pass → `ServiceTask_GenerateReport` → `Gateway_AssessmentDecision` (approve/reject) with a human

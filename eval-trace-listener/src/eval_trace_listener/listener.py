@@ -29,10 +29,14 @@ import time
 from typing import Any
 
 import mlflow
-from fluxnova_mlflow_dataset import DETERMINISTIC_SCORERS
 
 from eval_trace_listener.config import ListenerConfig
-from eval_trace_listener.scoring import ScoringError, TraceEvalOutcome, score_trace
+from eval_trace_listener.scoring import (
+    LISTENER_SCORERS,
+    ScoringError,
+    TraceEvalOutcome,
+    score_trace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,7 @@ class TraceListener:
 
     def __init__(self, config: ListenerConfig, scorers: list[Any] | None = None) -> None:
         self._config = config
-        self._scorers = DETERMINISTIC_SCORERS if scorers is None else scorers
+        self._scorers = LISTENER_SCORERS if scorers is None else scorers
         self._scorer_names = {s.name for s in self._scorers}
         self._experiment_id: str | None = None
         # trace ids scored during this process's lifetime (fast-path dedup).

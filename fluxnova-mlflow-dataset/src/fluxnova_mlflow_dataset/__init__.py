@@ -3,9 +3,10 @@
 Provides the building blocks the eval services share:
 - read records back (single instance or the whole dataset) and score them;
 - the shared scorer/judge definitions (``scorers.py``) — the deterministic
-  trace-only scorers used by ``eval-service-worker``/``eval-trace-listener``,
-  the golden/config-driven scorers used by ``regression/`` (plus more kept
-  available for reuse), and the ``decision_quality`` judge; and
+  value-based scorers used by ``eval-service-worker``/``eval-trace-listener``
+  (and the regression suite), the golden/config-driven scorers used by
+  ``regression/`` (plus more kept available for reuse), and the
+  ``decision_quality`` judge; and
 - the ``mlflow-judges`` online-evaluation toggle CLI (``judges.py``).
 
 Keeping this logic in one standalone, installable package guarantees what
@@ -16,11 +17,13 @@ from fluxnova_mlflow_dataset.bpmn import BpmnLookup, BpmnLookupError
 from fluxnova_mlflow_dataset.fluxnova_client import ApiError, FluxnovaClient
 from fluxnova_mlflow_dataset.goldens import load_goldens, match_golden
 from fluxnova_mlflow_dataset.scorers import (
+    ALL_DETERMINISTIC_SCORERS,
     DECISION_QUALITY_GUIDELINES,
     DECISION_QUALITY_NAME,
     DETERMINISTIC_SCORERS,
     GATEWAY_JUDGE_MODEL,
     GOLDEN_MATCH_THRESHOLD,
+    TOOL_ARGUMENT_SCORERS,
     affordability_called_after_income_confirmed,
     all_tool_calls_completed,
     automatic_judges,
@@ -58,6 +61,8 @@ from fluxnova_mlflow_dataset.traces import (
     MlflowTraceReader,
     ToolCallSpan,
     TraceStoreError,
+    final_output_from_spans,
+    scorer_inputs_from_trace,
 )
 
 __all__ = [
@@ -83,10 +88,14 @@ __all__ = [
     "InvokeAgentMetrics",
     "ToolCallSpan",
     "ChatMessages",
+    "final_output_from_spans",
+    "scorer_inputs_from_trace",
     "DECISION_QUALITY_NAME",
     "DECISION_QUALITY_GUIDELINES",
     "decision_quality_judge",
     "DETERMINISTIC_SCORERS",
+    "TOOL_ARGUMENT_SCORERS",
+    "ALL_DETERMINISTIC_SCORERS",
     "required_tools_called",
     "no_tool_errors",
     "definitive_decision_stated",

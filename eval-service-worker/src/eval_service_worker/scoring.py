@@ -1,16 +1,19 @@
 """Scores one just-completed agentic subprocess run against a set of scorers —
-the nondeterministic ``decision_quality`` LLM judge plus trace-only
-deterministic checks (required tool calls, no tool errors, a definitive
-decision keyword) — reading trace data only (no BPMN parsing, no Fluxnova REST
-API calls). See EVAL-SERVICE-WORKER-PLAN.md.
+the nondeterministic ``decision_quality`` LLM judge plus deterministic checks
+(required tool calls, no tool errors, a definitive decision keyword). It reads
+the run's MLflow trace and extracts the plain values the scorers need (via
+``fluxnova_mlflow_dataset.scorer_inputs_from_trace`` — the scorers themselves
+know nothing about tracing); no BPMN parsing, no Fluxnova REST API calls. See
+EVAL-SERVICE-WORKER-PLAN.md.
 
-Uses ``mlflow.genai.evaluate(data=[{"trace": trace}], scorers=[...])`` (rather
-than a bare ``mlflow.log_feedback`` call per scorer) so that:
+Uses ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
+"outputs": ...}], scorers=[...])`` (rather than a bare ``mlflow.log_feedback``
+call per scorer) so that:
 
 - every scorer's ``Feedback`` is logged back onto the *same* real agentic
-  subprocess trace (confirmed empirically — passing an existing ``Trace``
-  object via the ``trace`` column attaches assessments to it directly, not to
-  a newly-synthesized one), and
+  subprocess trace (confirmed empirically — including the ``trace`` column
+  attaches assessments to it directly, not to a newly-synthesized one,
+  regardless of which columns the scorers actually read), and
 - MLflow registers a proper "Evaluation Run" grouping all of them together
   (visible under MLflow's Evaluations UI) — not just isolated per-trace
   assessments with no run to group them.
@@ -27,6 +30,7 @@ from fluxnova_mlflow_dataset import (
     MlflowTraceReader,
     decision_quality_judge,
     experiment_name_for,
+    scorer_inputs_from_trace,
     stringify_output,
     write_to_mlflow_dataset,
 )
@@ -117,7 +121,12 @@ def score_process_instance(
         )
 
     scorers = [decision_quality_judge(judge_model), *DETERMINISTIC_SCORERS]
-    result = mlflow.genai.evaluate(data=[{"trace": trace}], scorers=scorers)
+    row = {
+        "trace": trace,
+        "inputs": scorer_inputs_from_trace(trace),
+        "outputs": final_output,
+    }
+    result = mlflow.genai.evaluate(data=[row], scorers=scorers)
     row = result.tables["eval_results"].iloc[0]
 
     scorer_results = {

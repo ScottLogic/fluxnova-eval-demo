@@ -1,8 +1,9 @@
 # eval-trace-listener
 
 A slim, independently-deployable service that **tails an MLflow experiment's trace
-store** and scores each newly-completed agent run once with the shared
-**deterministic (trace-only) scorers**. It's an always-on, event-adjacent
+store** and scores each newly-completed agent run once with the shared trace-only
+scorers — the deterministic code checks plus the `decision_quality` and
+`evidence_citation` LLM judges. It's an always-on, event-adjacent
 way to score runs as they land, with no code needing to run on demand.
 
 ## What it does
@@ -19,14 +20,38 @@ configured experiment and, for each one:
 4. skips it if we've **already scored** it (in-memory set for this process, plus a
    check for our own scorer assessments already on the trace so a restart doesn't
    re-score history);
-5. otherwise runs `fluxnova_mlflow_dataset.DETERMINISTIC_SCORERS` against the trace
-   via `mlflow.genai.evaluate(data=[{"trace": trace}], ...)`, which logs each
+5. otherwise runs the `LISTENER_SCORERS` bundle against the run's extracted
+   values (`scorer_inputs_from_trace(trace)`) via
+   `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}], ...)`, which logs each
    scorer's `Feedback` back onto that same real trace as an assessment and groups
    them under one MLflow **Evaluation Run**.
 
-Currently just the deterministic scorers run (`required_tools_called`,
-`no_tool_errors`, `definitive_decision_stated`) — the non-deterministic
-`decision_quality` LLM judge is intentionally out of scope for now.
+## Scorers and how the data is retrieved
+
+The listener runs `LISTENER_SCORERS` (defined in `eval_trace_listener.scoring`) — the full
+`fluxnova_mlflow_dataset.DETERMINISTIC_SCORERS` bundle **plus** two LLM judges:
+
+- `decision_quality` — the `Guidelines` judge (definitive, evidence-backed APPROVE/REJECT).
+- `evidence_citation` — grades how well the output grounds its reasoning in the applicant/tool evidence (0.0–1.0).
+- all 10 deterministic code scorers (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`,
+  `tool_correctness`, `all_tool_calls_completed`, the collateral/employment guards, `step_efficiency`,
+  `affordability_called_after_income_confirmed`).
+
+**`matches_golden` is deliberately excluded** — it needs a golden `expected_output`, which a bare trace doesn't carry.
+That judge stays in the `regression` suite, which has the golden dataset. `agent_goal` (a Fluxnova-only field, not on
+the trace) is likewise unavailable here, so `evidence_citation` treats it as optional context.
+
+**How the scorer inputs are sourced.** Every scorer is decoupled from tracing; the listener builds their plain-value
+inputs entirely *from the trace it just read*:
+
+- `trace` — the completed run's MLflow trace, so MLflow links every `Feedback` back to it.
+- `inputs` — `scorer_inputs_from_trace(trace)` → `{input_variables, tool_calls, iterations}` off the `invoke_agent`
+  span (no BPMN parsing, no Fluxnova REST call).
+- `outputs` — the agent's final answer extracted from the trace's output spans.
+
+> **Operational note:** because the listener now runs the two LLM judges, its container must be able to reach the
+> Ollama judge model directly (unlike the deterministic-only checks, which need nothing external). Ensure Ollama is
+> reachable from wherever the listener runs.
 
 ## Why poll MLflow instead of receiving OTLP?
 

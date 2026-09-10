@@ -13,6 +13,9 @@ from fluxnova_mlflow_dataset.traces import (
     ToolCallSpan,
     TraceStoreError,
     _status_str,
+    inference_calls_from_spans,
+    scorer_inputs_from_trace,
+    tool_calls_from_spans,
 )
 
 _NS_PER_MS = 1_000_000
@@ -185,6 +188,108 @@ class TestGetToolCallSpans:
         traces = [_trace(_span("invoke_agent", {"gen_ai.conversation.id": "proc-123"}))]
         reader = _reader(monkeypatch, traces)
         assert reader.get_tool_call_spans("proc-123") == []
+
+
+class TestToolCallsFromSpans:
+    def test_parses_tool_arguments_from_json_string(self):
+        spans = [
+            _span(
+                "execute_tool",
+                {
+                    "gen_ai.tool.name": "Assess Affordability",
+                    "gen_ai.tool.call.arguments": '{"customerId": "C1", "requestedAmount": 5000}',
+                },
+            ),
+        ]
+        [call] = tool_calls_from_spans(spans)
+        assert call.tool_input == {"customerId": "C1", "requestedAmount": 5000}
+
+    def test_parses_tool_arguments_from_dict(self):
+        spans = [
+            _span(
+                "execute_tool",
+                {"gen_ai.tool.name": "Check Credit Score", "gen_ai.tool.call.arguments": {"customerId": "C1"}},
+            ),
+        ]
+        [call] = tool_calls_from_spans(spans)
+        assert call.tool_input == {"customerId": "C1"}
+
+    def test_tool_input_is_none_when_arguments_absent(self):
+        spans = [_span("execute_tool", {"gen_ai.tool.name": "Check Credit Score"})]
+        [call] = tool_calls_from_spans(spans)
+        assert call.tool_input is None
+
+    def test_tool_input_is_none_on_unparseable_arguments(self):
+        spans = [
+            _span(
+                "execute_tool",
+                {"gen_ai.tool.name": "Check Credit Score", "gen_ai.tool.call.arguments": "not json"},
+            ),
+        ]
+        [call] = tool_calls_from_spans(spans)
+        assert call.tool_input is None
+
+    def test_orders_tool_calls_by_start_time(self):
+        spans = [
+            _span("execute_tool", {"gen_ai.tool.name": "Second"}, start_time_ns=2_000 * _NS_PER_MS),
+            _span("execute_tool", {"gen_ai.tool.name": "First"}, start_time_ns=1_000 * _NS_PER_MS),
+        ]
+        assert [c.tool_name for c in tool_calls_from_spans(spans)] == ["First", "Second"]
+
+
+class TestInferenceCallsFromSpans:
+    def test_returns_inference_calls_off_invoke_agent_span(self):
+        spans = [_span("invoke_agent", {"gen_ai.invoke_agent.inference_calls": 4})]
+        assert inference_calls_from_spans(spans) == 4
+
+    def test_returns_none_when_no_invoke_agent_span(self):
+        spans = [_span("chat", {})]
+        assert inference_calls_from_spans(spans) is None
+
+    def test_returns_none_when_attribute_absent(self):
+        spans = [_span("invoke_agent", {})]
+        assert inference_calls_from_spans(spans) is None
+
+
+class TestScorerInputsFromTrace:
+    def test_builds_canonical_inputs_shape(self):
+        trace = _trace(
+            _span(
+                "invoke_agent",
+                {
+                    "gen_ai.conversation.id": "proc-1",
+                    "mlflow.spanInputs": {"applicantType": "EMPLOYED", "hasCollateral": False},
+                    "gen_ai.invoke_agent.inference_calls": 3,
+                },
+            ),
+            _span(
+                "execute_tool",
+                {
+                    "gen_ai.tool.name": "Check Credit Score",
+                    "gen_ai.tool.call.arguments": {"customerId": "C1"},
+                },
+                start_time_ns=1_000 * _NS_PER_MS,
+            ),
+            _span(
+                "execute_tool",
+                {"gen_ai.tool.name": "Assess Affordability"},
+                start_time_ns=2_000 * _NS_PER_MS,
+            ),
+        )
+        inputs = scorer_inputs_from_trace(trace)
+        assert inputs == {
+            "input_variables": {"applicantType": "EMPLOYED", "hasCollateral": False},
+            "tool_calls": [
+                {"name": "Check Credit Score", "status": "OK", "arguments": {"customerId": "C1"}},
+                {"name": "Assess Affordability", "status": "OK", "arguments": None},
+            ],
+            "iterations": 3,
+        }
+
+    def test_defaults_when_no_invoke_agent_span(self):
+        trace = _trace(_span("chat", {}))
+        inputs = scorer_inputs_from_trace(trace)
+        assert inputs == {"input_variables": {}, "tool_calls": [], "iterations": None}
 
 
 class TestStatusStr:

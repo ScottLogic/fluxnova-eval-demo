@@ -263,7 +263,8 @@ into MLflow. There are three complementary paths, all using the **shared scorers
   scorers **plus** the `decision_quality` LLM judge (via the `fluxnova-judge` MLflow AI Gateway endpoint). Best for
   synchronous, in-process scoring wired into the workflow. See [`eval-service-worker/README.md`](eval-service-worker/README.md).
 - **`regression/`** (pytest gating suite) — drives the live agent per golden scenario and asserts its real output
-  satisfies the shared `decision_quality` and `matches_golden` judges. Best as a CI gate against behavioural
+  satisfies the shared `decision_quality` and `matches_golden` judges plus the deterministic
+  `definitive_decision_stated` scorer. Best as a CI gate against behavioural
   regressions. See [`regression/README.md`](regression/README.md).
 
 All three write their results to the same PostgreSQL-backed MLflow tracking store (`postgres-local` pod's `mlflow`
@@ -387,24 +388,56 @@ Examples:
 
 ## Evaluation scorers (MLflow)
 
-`fluxnova_mlflow_dataset.scorers` defines these checks over the agent-history/trace data, added
-after reviewing the BPMN's agent prompt and tool wiring:
+`fluxnova_mlflow_dataset.scorers` is the single source of truth for every scorer.
+Each one is **decoupled from tracing** — it takes plain `inputs` / `outputs` /
+`expectations` values and never reads a span itself, so each consumer is free to
+source that data wherever suits it (live agent output, a trace, process
+variables). The scorers split into two families:
 
-| Scorer                                                | Type       | Description                                                                     |
-|-------------------------------------------------------|------------|---------------------------------------------------------------------------------|
-| `tool_correctness`                                    | Code       | Agent calls all expected tools and no inappropriate ones                        |
-| `tool_argument_correctness`                           | Code       | Each expected tool receives the arguments the BPMN wires up for it              |
-| `decision_quality`                                    | LLM judge  | Final output contains a clear, justified APPROVE/REJECT recommendation          |
-| `evidence_citation`                                   | LLM judge  | Output cites fraud/affordability/income evidence (branches on `applicantType`)  |
-| `matches_golden`                                      | LLM judge  | Output reaches the same decision as the matching golden scenario                |
-| `no_collateral_check_when_no_collateral`              | Code       | Value Collateral is not called when `hasCollateral=false`                       |
-| `collateral_valuation_called_correctly_when_required` | Code (new) | Value Collateral **is** called, with the correct `applicationId`, when required |
-| `no_bank_statement_for_employed_applicant`            | Code       | Bank statements are not analysed for EMPLOYED applicants                        |
-| `no_verify_employment_for_self_employed_applicant`    | Code (new) | Employment is not verified for non-EMPLOYED applicants                          |
-| `all_tool_calls_completed`                            | Code       | Every initiated tool call reached COMPLETED status                              |
-| `step_efficiency`                                     | Code       | Agent completes within a budget of loop iterations (+1 if collateral required)  |
-| `requested_amount_passed_to_affordability`            | Code       | Affordability tool receives the correct `customerId` and `requestedAmount`      |
-| `affordability_called_after_income_confirmed`         | Code (new) | Affordability is assessed only after income has been confirmed                  |
+- **Code** (deterministic) — pure Python checks over tool calls / output text.
+- **LLM judge** (non-deterministic) — grade the output with a judge model.
+
+They are grouped into reusable bundles:
+
+- `DETERMINISTIC_SCORERS` — the 10 code scorers below that need only tool
+  *names* / status / input-variables / output text (no captured arguments).
+- `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call
+  *arguments*; only meaningful when content capture is on (they self-skip with
+  `Feedback(None)` otherwise). Not run by any consumer by default.
+- `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
+
+**Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
+(online, per-run) · **L** = `eval-trace-listener` (offline, per-trace). See each
+service's README for exactly how it sources the scorer inputs.
+
+| Scorer                                                | Type      | Bundle              | What it checks                                                              | Consumers |
+|-------------------------------------------------------|-----------|---------------------|----------------------------------------------------------------------------|-----------|
+| `required_tools_called`                               | Code      | DETERMINISTIC       | Every tool the scenario requires was called                                | W · L     |
+| `no_tool_errors`                                      | Code      | DETERMINISTIC       | No tool call ended in an error/failed status                               | W · L     |
+| `definitive_decision_stated`                          | Code      | DETERMINISTIC       | Output literally states an APPROVE/REJECT decision                         | R · W · L |
+| `tool_correctness`                                    | Code      | DETERMINISTIC       | Agent calls all expected tools and no inappropriate ones                   | W · L     |
+| `all_tool_calls_completed`                            | Code      | DETERMINISTIC       | Every initiated tool call reached a completed status                      | W · L     |
+| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC       | Value Collateral is not called when `hasCollateral=false`                  | W · L     |
+| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC       | Bank statements are not analysed for EMPLOYED applicants                   | W · L     |
+| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC       | Employment is not verified for non-EMPLOYED applicants                     | W · L     |
+| `step_efficiency`                                     | Code      | DETERMINISTIC       | Agent completes within a budget of loop iterations (+1 if collateral)      | W · L     |
+| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC       | Affordability is assessed only after income has been confirmed             | W · L     |
+| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT       | Each expected tool receives the arguments the BPMN wires up for it         | —         |
+| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT       | Value Collateral **is** called, with the correct `applicationId`, when required | —    |
+| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT       | Affordability tool receives the correct `customerId` and `requestedAmount` | —         |
+| `decision_quality`                                    | LLM judge | —                   | Final output is a clear, justified APPROVE/REJECT recommendation           | R · W · L |
+| `evidence_citation`                                   | LLM judge | —                   | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)   | R · L     |
+| `matches_golden`                                      | LLM judge | —                   | Output reaches the same decision as the matching golden (needs `expected_output`) | R |
+
+Notes:
+- `matches_golden` requires a golden `expected_output` (an `expectations`
+  value), so only the **regression** suite runs it — a bare trace doesn't carry
+  it, so `W`/`L` cannot.
+- `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
+  context (it isn't on the MLflow trace), so it can run trace-side in `L`.
+- The three LLM judges use an Ollama judge model; `eval-service-worker` reaches
+  it via the `fluxnova-judge` gateway endpoint, while `regression` and
+  `eval-trace-listener` call Ollama directly.
 
 ## Tech stack
 

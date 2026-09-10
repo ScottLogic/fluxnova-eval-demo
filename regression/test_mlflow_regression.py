@@ -7,11 +7,14 @@ scores across every *recorded* run), this is a
 gating check that actually runs the live agent: for every scenario in the
 golden dataset (``datasets/loan-assessment/goldens.json``) it drives the agent
 end-to-end via ``fluxnova-runner`` and asserts the agent's *actual* output
-still satisfies the shared ``decision_quality`` guideline judge *and* still
-matches the golden's ``expected_output`` via the shared ``matches_golden`` judge
-(see ``fluxnova_mlflow_dataset.scorers``). This matches MLflow's canonical
-regression-testing pattern — a ``predict_fn`` that invokes the real agent per
-row — rather than merely re-scoring the golden's own reference answer.
+still satisfies the shared ``decision_quality`` guideline judge, still matches
+the golden's ``expected_output`` via the shared ``matches_golden`` judge, still
+cites the evidence it gathered via the shared ``evidence_citation`` judge, and
+still states a definitive APPROVE/REJECT decision via the shared deterministic
+``definitive_decision_stated`` scorer (see ``fluxnova_mlflow_dataset.scorers``).
+This matches MLflow's canonical regression-testing pattern — a ``predict_fn``
+that invokes the real agent per row — rather than merely re-scoring the golden's
+own reference answer.
 
 Each golden is turned into a set of process variables (see
 :func:`_golden_to_variables`): the applicant-facing ``input_variables`` the BPMN
@@ -49,6 +52,8 @@ import requests
 from fluxnova_mlflow_dataset import (
     GOLDEN_MATCH_THRESHOLD,
     decision_quality,
+    definitive_decision_stated,
+    evidence_citation,
     experiment_name_for,
     matches_golden,
 )
@@ -72,6 +77,13 @@ _ACTIVITY_TIMEOUT = float(os.environ.get("REGRESSION_ACTIVITY_TIMEOUT", "600"))
 # Matches fluxnova_runner.mock_workers._MOCK_VAR_PREFIX — the namespace under
 # which each golden's tool_responses are fed to the shared mock-worker pool.
 _MOCK_PREFIX = "_mock_output_"
+
+# Minimum `evidence_citation` judge score (0.0–1.0) counted as a pass for the
+# gating test. Overridable via env so CI can tune the bar without a code change,
+# mirroring REGRESSION_GOLDEN_MATCH_THRESHOLD.
+_EVIDENCE_CITATION_THRESHOLD = float(
+    os.environ.get("REGRESSION_EVIDENCE_CITATION_THRESHOLD", "0.7")
+)
 
 _log = logging.getLogger("fluxnova.regression")
 
@@ -208,7 +220,7 @@ def evaluation_data(cfg: RunnerConfig, loan_agent: Client) -> list[dict]:
         )
         data.append(
             {
-                "inputs": {"variables": variables},
+                "inputs": {"input_variables": variables},
                 "outputs": output,
                 "expectations": {"expected_output": golden["expected_output"]},
             }
@@ -288,4 +300,75 @@ def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
     assert failed.empty, (
         f"matches_golden scored below the {GOLDEN_MATCH_THRESHOLD} threshold for "
         f"{len(failed)} golden(s): {failed.tolist()}"
+    )
+
+
+@mlflow.test
+def test_agent_states_definitive_decision(evaluation_data: list[dict]) -> None:
+    """Assert every golden's *actual* agent output literally states a definitive
+    APPROVE/REJECT decision, via the shared deterministic ``definitive_decision_stated``
+    scorer (see ``fluxnova_mlflow_dataset.scorers``).
+
+    This is the same deterministic scorer ``eval-service-worker`` and
+    ``eval-trace-listener`` run — it knows nothing about tracing and grades the
+    plain ``outputs`` text, so the regression suite feeds it directly from the
+    live agent output collected in ``evaluation_data`` (its process-variable
+    source), no trace needed. A hard syntactic complement to the
+    ``decision_quality`` judge's opinion on whether the decision is well-reasoned.
+    ``@mlflow.test`` tags this as a regression test run and records its pass/fail
+    status.
+    """
+    _log.info(
+        "Phase 2: scoring %d golden(s) with definitive_decision_stated...", len(evaluation_data)
+    )
+    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[definitive_decision_stated])
+
+    verdicts = result.tables["eval_results"]["definitive_decision_stated/value"]
+    _log.info("definitive_decision_stated verdicts: %s", verdicts.tolist())
+    assert verdicts.notna().all(), (
+        "definitive_decision_stated did not produce a verdict for every golden — "
+        f"scoring errored. Verdicts: {verdicts.tolist()}"
+    )
+    # The scorer reports a plain boolean, which MLflow may surface as a real bool
+    # or its string form depending on the store — normalise before gating.
+    passed = verdicts.apply(lambda v: str(v).strip().lower() in {"true", "yes", "1"})
+    failed = verdicts[~passed]
+    assert failed.empty, (
+        f"definitive_decision_stated failed for {len(failed)} golden(s) — the agent "
+        f"output stated no APPROVE/REJECT keyword: {failed.tolist()}"
+    )
+
+
+@mlflow.test
+def test_agent_cites_gathered_evidence(evaluation_data: list[dict]) -> None:
+    """Assert every golden's *actual* agent output cites the evidence it gathered,
+    via the shared ``evidence_citation`` LLM judge (see
+    ``fluxnova_mlflow_dataset.scorers``).
+
+    Where ``decision_quality`` grades the *shape* of the recommendation and
+    ``matches_golden`` compares it to the reference answer, ``evidence_citation``
+    grades how well the final answer grounds its reasoning in the specific
+    applicant/tool evidence — reading the agent's ``outputs`` plus the
+    ``input_variables`` supplied per row (it needs no trace and treats the
+    Fluxnova-only ``agent_goal`` as optional context). It returns a graded
+    0.0-1.0 score, so this gate requires every row to meet
+    ``_EVIDENCE_CITATION_THRESHOLD`` (env ``REGRESSION_EVIDENCE_CITATION_THRESHOLD``,
+    default 0.7). ``@mlflow.test`` tags this as a regression test run and records
+    its pass/fail status.
+    """
+    _log.info(
+        "Phase 2: scoring %d golden(s) with evidence_citation...", len(evaluation_data)
+    )
+    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[evidence_citation])
+
+    scores = result.tables["eval_results"]["evidence_citation/value"]
+    _log.info("evidence_citation scores: %s", scores.tolist())
+    assert scores.notna().all(), (
+        "evidence_citation did not produce a score for every golden — scoring "
+        f"errored. Scores: {scores.tolist()}"
+    )
+    failed = scores[scores < _EVIDENCE_CITATION_THRESHOLD]
+    assert failed.empty, (
+        f"evidence_citation scored below the {_EVIDENCE_CITATION_THRESHOLD} "
+        f"threshold for {len(failed)} golden(s): {failed.tolist()}"
     )

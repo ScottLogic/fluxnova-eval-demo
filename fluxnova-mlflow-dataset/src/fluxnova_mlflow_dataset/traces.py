@@ -49,6 +49,14 @@ class ToolCallSpan:
     status: str
     error_type: str | None
     duration_ms: float | None
+    # Parsed ``gen_ai.tool.call.arguments`` — the arguments the tool was invoked
+    # with. ``None`` (not ``{}``) when the attribute is absent, which is the
+    # default: content capture (arguments/results/messages) is off unless
+    # explicitly enabled (see local-dev/default.yml). Scorers that need argument
+    # values must treat ``None`` as "unavailable" and degrade gracefully.
+    tool_input: dict[str, Any] | None = None
+    # Span start time (ns); used to order tool calls chronologically.
+    start_time_ns: int = 0
 
 
 @dataclass
@@ -345,8 +353,36 @@ def input_variables_from_spans(spans: list[Any]) -> dict[str, Any]:
     return dict(raw)
 
 
+def _tool_arguments(span: Any) -> dict[str, Any] | None:
+    """Parse an ``execute_tool`` span's ``gen_ai.tool.call.arguments`` attribute.
+
+    Returns ``None`` when the attribute is absent (content capture disabled) so
+    callers can distinguish "no arguments captured" from "captured, but empty".
+    The attribute may arrive as a JSON string or an already-decoded dict.
+    """
+    raw = span.get_attribute("gen_ai.tool.call.arguments")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    if isinstance(raw, dict):
+        return dict(raw)
+    return None
+
+
 def tool_calls_from_spans(spans: list[Any]) -> list[ToolCallSpan]:
-    """Return one ``ToolCallSpan`` per ``execute_tool`` span, given a run's spans."""
+    """Return one ``ToolCallSpan`` per ``execute_tool`` span, ordered chronologically.
+
+    Sorted by span start time so scorers that reason about call *order* (e.g.
+    "affordability assessed only after income confirmed") see calls in the
+    sequence the agent actually made them, regardless of span iteration order.
+    """
+    tool_spans = [s for s in spans if s.get_attribute(_OP_NAME_ATTR) == _EXECUTE_TOOL_OP]
+    tool_spans.sort(key=lambda s: getattr(s, "start_time_ns", 0) or 0)
     return [
         ToolCallSpan(
             tool_name=span.get_attribute("gen_ai.tool.name"),
@@ -355,7 +391,56 @@ def tool_calls_from_spans(spans: list[Any]) -> list[ToolCallSpan]:
             status=_status_str(span),
             error_type=span.get_attribute("error.type"),
             duration_ms=_duration_ms(span),
+            tool_input=_tool_arguments(span),
+            start_time_ns=getattr(span, "start_time_ns", 0) or 0,
         )
-        for span in spans
-        if span.get_attribute(_OP_NAME_ATTR) == _EXECUTE_TOOL_OP
+        for span in tool_spans
     ]
+
+
+def inference_calls_from_spans(spans: list[Any]) -> int | None:
+    """Return the agent's LLM inference-call count for a run, given its spans.
+
+    Read off the ``invoke_agent`` span's ``gen_ai.invoke_agent.inference_calls``
+    attribute (the number of agent-loop iterations). ``None`` when unavailable.
+    A free function so callers need no ``MlflowTraceReader`` instance.
+    """
+    invoke_agent_span = _find_span(spans, operation_name=_INVOKE_AGENT_OP)
+    if invoke_agent_span is None:
+        return None
+    return invoke_agent_span.get_attribute("gen_ai.invoke_agent.inference_calls")
+
+
+def scorer_inputs_from_trace(trace: Any) -> dict[str, Any]:
+    """Build the deterministic scorers' ``inputs`` payload from a run's trace.
+
+    This is the trace-consumer side of the scorer/trace decoupling: the
+    deterministic scorers in :mod:`fluxnova_mlflow_dataset.scorers` know nothing
+    about tracing and just read plain values from this dict; callers that *do*
+    have an MLflow ``Trace`` (the eval-service-worker and eval-trace-listener)
+    use this to extract those values, then pass them via
+    ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
+    "outputs": ...}], scorers=[...])``.
+
+    Returns the canonical shape the scorers expect::
+
+        {
+            "input_variables": {...},   # applicant/process variables
+            "tool_calls": [             # chronological
+                {"name": str, "status": "OK"|"ERROR", "arguments": dict | None},
+            ],
+            "iterations": int | None,   # LLM inference-call count
+        }
+
+    A tool call's ``arguments`` is ``None`` (not ``{}``) when content capture is
+    disabled. Use :func:`final_output_from_spans` for the matching ``outputs``.
+    """
+    spans = trace.data.spans
+    return {
+        "input_variables": input_variables_from_spans(spans),
+        "tool_calls": [
+            {"name": c.tool_name, "status": c.status, "arguments": c.tool_input}
+            for c in tool_calls_from_spans(spans)
+        ],
+        "iterations": inference_calls_from_spans(spans),
+    }

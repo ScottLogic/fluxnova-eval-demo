@@ -93,6 +93,7 @@ def _stub_common(
         lambda name: (calls.setdefault("experiment_name", name), _FakeExperiment())[1],
     )
     monkeypatch.setattr(scoring, "MlflowTraceReader", _FakeTraceReader)
+    monkeypatch.setattr(scoring, "scorer_inputs_from_trace", lambda trace: {"trace_ref": trace})
     monkeypatch.setattr(
         scoring, "decision_quality_judge", lambda model: _FakeScorer(name="decision_quality")
     )
@@ -151,8 +152,15 @@ class TestScoreProcessInstance:
         assert outcome.scorer_results["no_tool_errors"]["value"] is True
         assert outcome.scorer_results["definitive_decision_stated"]["value"] is True
 
-        # Scores against the real trace object, not a synthesized one.
-        assert calls["evaluate_data"] == [{"trace": "trace-for-proc-1"}]
+        # Scores against the real trace object, not a synthesized one, and passes
+        # the extracted plain values as inputs plus the final output.
+        assert calls["evaluate_data"] == [
+            {
+                "trace": "trace-for-proc-1",
+                "inputs": {"trace_ref": "trace-for-proc-1"},
+                "outputs": "APPROVE: strong credit history",
+            }
+        ]
         assert [s.name for s in calls["evaluate_scorers"]] == [
             "decision_quality",
             "required_tools_called",

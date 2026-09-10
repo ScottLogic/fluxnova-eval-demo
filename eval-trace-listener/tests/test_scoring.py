@@ -80,7 +80,10 @@ def test_score_trace_passes_trace_to_evaluate(monkeypatch) -> None:
     trace = make_trace("tr-4")
     score_trace(trace, scorers)
     (data, used_scorers), = captured
-    assert data == [{"trace": trace}]
+    [row] = data
+    assert row["trace"] is trace
+    assert row["inputs"] == {"input_variables": {}, "tool_calls": [], "iterations": None}
+    assert "outputs" in row
     assert used_scorers is scorers
 
 
@@ -93,6 +96,28 @@ def test_score_trace_raises_scoring_error_when_no_eval_results(monkeypatch) -> N
     monkeypatch.setattr(scoring.mlflow.genai, "evaluate", fake_evaluate)
     with pytest.raises(ScoringError):
         score_trace(make_trace("tr-missing"), [_FakeScorer("required_tools_called")])
+
+
+def test_listener_scorers_bundle_includes_llm_judges() -> None:
+    # The default bundle score_trace/TraceListener use must be the deterministic
+    # checks plus the two trace-derivable LLM judges — and must NOT include
+    # matches_golden (which needs a golden expected_output a bare trace lacks).
+    names = {s.name for s in scoring.LISTENER_SCORERS}
+    assert {"decision_quality", "evidence_citation"} <= names
+    assert "required_tools_called" in names
+    assert "matches_golden" not in names
+
+
+def test_score_trace_defaults_to_listener_scorers(monkeypatch) -> None:
+    # Called with no explicit scorers, score_trace runs the full LISTENER_SCORERS bundle.
+    captured = _patch_evaluate(
+        monkeypatch,
+        {s.name + "/value": True for s in scoring.LISTENER_SCORERS}
+        | {s.name + "/rationale": "ok" for s in scoring.LISTENER_SCORERS},
+    )
+    score_trace(make_trace("tr-default"))
+    (_data, used_scorers), = captured
+    assert used_scorers is scoring.LISTENER_SCORERS
 
 
 def test_score_trace_raises_scoring_error_on_empty_eval_results(monkeypatch) -> None:
