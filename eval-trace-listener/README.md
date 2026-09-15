@@ -58,10 +58,10 @@ inputs entirely *from the trace it just read*:
 
 The OTel Collector already exports every agent trace straight to MLflow's native
 trace store, and `mlflow.search_traces` reads them back **fully assembled** — as the
-exact `Trace` object the scorers already consume. Standing up our own OTLP receiver
-(the `fluxnova_listener` layer this repo deliberately removed) would mean
-reassembling spans by trace-id by hand, translating OTLP's span shape into MLflow's,
-**and** still reading the trace back from MLflow to attach assessments to it. Push
+exact `Trace` object the scorers already consume. Standing up our own OTLP receiver (the `fluxnova_listener` layer this
+repo deliberately removed) would mean
+reassembling spans by trace-id by hand, translating OTLP's span shape into MLflow's, **and** still reading the trace
+back from MLflow to attach assessments to it. Push
 would only change the *trigger*, not the scoring source or sink — at the cost of an
 extra receiver + reassembly + a collector-config change. Polling gives the same
 scoring path with far less machinery, at the price of a few seconds' latency.
@@ -82,13 +82,13 @@ Static settings live in a **YAML config file** (`config.yaml` — the one baked 
 the image is a worked example). Every key is optional and falls back to a built-in
 default; unknown keys are ignored so the file can carry forward-looking settings.
 
-| Key                   | Default                                | Purpose                                                            |
-|-----------------------|----------------------------------------|--------------------------------------------------------------------|
-| `tracking_uri`        | `http://localhost:5000`                | MLflow tracking server (HTTP, not `postgresql://`)                 |
-| `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`   | Experiment to tail (must match the collector's `MLFLOW_EXPERIMENT_ID`) |
-| `agent_names`         | `[AdHocSubProcess_LoanAssessmentAgent]`| Agents to score; empty ⇒ score every agent                         |
-| `poll_interval_s`     | `10`                                   | Seconds between polls                                              |
-| `max_traces_per_poll` | `200`                                  | Upper bound on recent traces pulled per poll                       |
+| Key                   | Default                                 | Purpose                                                                |
+|-----------------------|-----------------------------------------|------------------------------------------------------------------------|
+| `tracking_uri`        | `http://localhost:5000`                 | MLflow tracking server (HTTP, not `postgresql://`)                     |
+| `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`    | Experiment to tail (must match the collector's `MLFLOW_EXPERIMENT_ID`) |
+| `agent_names`         | `[AdHocSubProcess_LoanAssessmentAgent]` | Agents to score; empty ⇒ score every agent                             |
+| `poll_interval_s`     | `10`                                    | Seconds between polls                                                  |
+| `max_traces_per_poll` | `200`                                   | Upper bound on recent traces pulled per poll                           |
 
 Any setting can be overridden per-environment by an `EVAL_LISTENER_<NAME>` env var or
 a CLI flag (flag > env > file > default). See `eval_trace_listener/config.py` and

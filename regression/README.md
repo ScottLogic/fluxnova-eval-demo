@@ -7,13 +7,13 @@ judges/scorers).
 
 ## What it does
 
-`test_mlflow_regression.py` follows MLflow's
-[regression-testing pattern](https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/): for every golden
-scenario in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json) it drives the live
-loan-assessment agent end-to-end via `fluxnova-runner`, then scores the agent's *actual* output. Four gating tests:
+`test_mlflow_regression.py` follows
+MLflow's [regression-testing pattern](https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/): for every
+golden scenario in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json) it drives the
+live loan-assessment agent end-to-end via `fluxnova-runner`, then scores the agent's *actual* output. Four gating tests:
 
-- `test_agent_reaches_evidence_backed_decision` — the output satisfies the shared `decision_quality` guideline judge
-  (a definitive APPROVE/REJECT backed by cited evidence).
+- `test_agent_reaches_evidence_backed_decision` — the output satisfies the shared `decision_quality` guideline judge (a
+  definitive APPROVE/REJECT backed by cited evidence).
 - `test_agent_matches_golden_decisions` — the output matches the golden's `expected_output` via the shared
   `matches_golden` judge (thresholded at `GOLDEN_MATCH_THRESHOLD`).
 - `test_agent_states_definitive_decision` — the output literally states an APPROVE/REJECT keyword, via the shared
@@ -27,12 +27,12 @@ loan-assessment agent end-to-end via `fluxnova-runner`, then scores the agent's 
 The regression suite is the only consumer that runs the **LLM judges that need a reference answer or input variables**,
 because it has the golden dataset on hand. Each gating test runs exactly one scorer via `mlflow.genai.evaluate`:
 
-| Scorer                       | Type      | Gating test                              |
-|------------------------------|-----------|------------------------------------------|
+| Scorer                       | Type      | Gating test                                   |
+|------------------------------|-----------|-----------------------------------------------|
 | `decision_quality`           | LLM judge | `test_agent_reaches_evidence_backed_decision` |
-| `matches_golden`             | LLM judge | `test_agent_matches_golden_decisions`    |
-| `definitive_decision_stated` | Code      | `test_agent_states_definitive_decision`  |
-| `evidence_citation`          | LLM judge | `test_agent_cites_gathered_evidence`     |
+| `matches_golden`             | LLM judge | `test_agent_matches_golden_decisions`         |
+| `definitive_decision_stated` | Code      | `test_agent_states_definitive_decision`       |
+| `evidence_citation`          | LLM judge | `test_agent_cites_gathered_evidence`          |
 
 **How the scorer inputs are sourced.** Every scorer is decoupled from tracing, so the suite feeds it plain values built
 per golden in the `evaluation_data` fixture:
@@ -78,15 +78,15 @@ reachable rather than failing.
 All are optional — each has a working default. `setdefault` semantics mean an externally-provided value (e.g. from CI)
 is always respected.
 
-| Variable                            | Default                                            | Set in                                        | Purpose                                                                 |
-|-------------------------------------|----------------------------------------------------|-----------------------------------------------|------------------------------------------------------------------------|
-| `REGRESSION_ACTIVITY_TIMEOUT`       | `600` (seconds)                                    | `test_mlflow_regression.py`                   | Max time to wait for one golden's agentic subprocess run to finish     |
-| `REGRESSION_GOLDEN_MATCH_THRESHOLD` | `0.7`                                              | `fluxnova_mlflow_dataset.scorers`             | Min `matches_golden` judge score (0.0–1.0) counted as a "yes" verdict  |
-| `REGRESSION_EVIDENCE_CITATION_THRESHOLD` | `0.7`                                         | `test_mlflow_regression.py`                   | Min `evidence_citation` judge score (0.0–1.0) counted as a pass        |
-| `MLFLOW_GENAI_EVAL_MAX_WORKERS`     | `1` (this suite; MLflow's own default is `10`)     | `conftest.py`                                 | Judge-call concurrency; capped to 1 so the local CPU Ollama judge copes |
-| `MLFLOW_TRACKING_URI`               | shared Postgres store (`default_tracking_uri`)     | `conftest.py`                                 | Where runs/assessments are recorded                                    |
-| `MLFLOW_EXPERIMENT_NAME`            | `fluxnova-loanAssessmentProcess-regression`        | `conftest.py`                                 | Experiment the regression runs land in                                |
-| `FLUXNOVA_USERNAME` / `FLUXNOVA_PASSWORD` | none                                         | read by `test_mlflow_regression.py`           | Credentials for the Fluxnova engine / mock workers                    |
+| Variable                                  | Default                                        | Set in                              | Purpose                                                                 |
+|-------------------------------------------|------------------------------------------------|-------------------------------------|-------------------------------------------------------------------------|
+| `REGRESSION_ACTIVITY_TIMEOUT`             | `600` (seconds)                                | `test_mlflow_regression.py`         | Max time to wait for one golden's agentic subprocess run to finish      |
+| `REGRESSION_GOLDEN_MATCH_THRESHOLD`       | `0.7`                                          | `fluxnova_mlflow_dataset.scorers`   | Min `matches_golden` judge score (0.0–1.0) counted as a "yes" verdict   |
+| `REGRESSION_EVIDENCE_CITATION_THRESHOLD`  | `0.7`                                          | `test_mlflow_regression.py`         | Min `evidence_citation` judge score (0.0–1.0) counted as a pass         |
+| `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` (this suite; MLflow's own default is `10`) | `conftest.py`                       | Judge-call concurrency; capped to 1 so the local CPU Ollama judge copes |
+| `MLFLOW_TRACKING_URI`                     | shared Postgres store (`default_tracking_uri`) | `conftest.py`                       | Where runs/assessments are recorded                                     |
+| `MLFLOW_EXPERIMENT_NAME`                  | `fluxnova-loanAssessmentProcess-regression`    | `conftest.py`                       | Experiment the regression runs land in                                  |
+| `FLUXNOVA_USERNAME` / `FLUXNOVA_PASSWORD` | none                                           | read by `test_mlflow_regression.py` | Credentials for the Fluxnova engine / mock workers                      |
 
 > **Note:** `REGRESSION_GOLDEN_MATCH_THRESHOLD` is read inside the shared `fluxnova-mlflow-dataset` package (the
 > `matches_golden` scorer), not in this directory — it keeps the `REGRESSION_` prefix so all knobs for a regression run

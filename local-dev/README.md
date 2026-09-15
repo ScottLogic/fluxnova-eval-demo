@@ -32,15 +32,17 @@ cd local-dev
 ```
 
 Run `./pods-up.sh --help` / `./pods-down.sh --help` for full usage. The pod names are `postgres`, `mlflow`,
-`fluxnova`, `eval-service`, and `observability`. The sections below describe each underlying per-service script in the `services/`
+`fluxnova`, `eval-service`, and `observability`. The sections below describe each underlying per-service script in the
+`services/`
 subfolder (`services/postgres-up.sh`/`services/postgres-down.sh` etc.) in more detail, including their own
-`--delete-data` flags (`fluxnova-down.sh`/`eval-service-down.sh`/`observability-down.sh` accept the flag too, for a consistent interface, but
+`--delete-data` flags (`fluxnova-down.sh`/`eval-service-down.sh`/`observability-down.sh` accept the flag too, for a
+consistent interface, but
 are no-ops since they have no local data).
 
 ## Alternative: a single `podman compose` file
 
-`compose.yaml` is a self-contained alternative to the `pods-up.sh`/`pods-down.sh` scripts above — it brings the
-**same** stack up from one file, reusing the identical `.env`, `postgres/init.sh`, `default.yml`,
+`compose.yaml` is a self-contained alternative to the `pods-up.sh`/`pods-down.sh` scripts above — it brings the **same**
+stack up from one file, reusing the identical `.env`, `postgres/init.sh`, `default.yml`,
 `otel-collector-config.yaml`, `prometheus.yml`, and `grafana/` provisioning. Both approaches share the
 `postgres-local-data` volume and the `fluxnova-dev` network, so you can use whichever you prefer (they are not meant to
 run simultaneously — pick one). Requires a compose provider (`podman compose`, backed by `podman-compose` or
@@ -121,10 +123,10 @@ On first startup (against an empty PGDATA volume), `postgres/init.sh` is mounted
 `/docker-entrypoint-initdb.d/` and automatically creates two databases/roles, using credentials passed through
 as env vars (never hardcoded in the script — see "Credentials" below):
 
-| Database   | Role      | Used by                                               |
-|------------|-----------|--------------------------------------------------------|
-| `mlflow`   | `mlflow`  | MLflow tracking server backend store (`mlflow-up.sh`)   |
-| `fluxnova` | `fluxnova`| Fluxnova process-engine datasource (`default.yml`)      |
+| Database   | Role       | Used by                                               |
+|------------|------------|-------------------------------------------------------|
+| `mlflow`   | `mlflow`   | MLflow tracking server backend store (`mlflow-up.sh`) |
+| `fluxnova` | `fluxnova` | Fluxnova process-engine datasource (`default.yml`)    |
 
 ### Credentials
 
@@ -198,14 +200,16 @@ Then bump `FLUXNOVA_IMAGE` in `.env` (and this README's example tag above, if it
 everyone picks it up.
 
 Once Fluxnova responds, `fluxnova-up.sh` opens the Fluxnova web UI (`/fluxnova-welcome/index.html`) in your default
-browser automatically — same behaviour as `mlflow-up.sh` below, including the `localhost`-unreachable fallback
-(see "Troubleshooting"). Set `FLUXNOVA_OPEN_BROWSER=false` to skip the auto-open.
+browser automatically — same behaviour as `mlflow-up.sh` below, including the `localhost`-unreachable fallback (see
+"Troubleshooting"). Set `FLUXNOVA_OPEN_BROWSER=false` to skip the auto-open.
 
 ### Troubleshooting: fluxnova-up does not start the fluxnova container
 
-Make sure that you have not manually created the container from the fluxnova-edd-platform image, but instead rely on the script to create this for you. 
+Make sure that you have not manually created the container from the fluxnova-edd-platform image, but instead rely on the
+script to create this for you.
 
-If you manually create the container the script will sometimes skip over this step. Remove the container entirely and re-run the fluxnova-up script.
+If you manually create the container the script will sometimes skip over this step. Remove the container entirely and
+re-run the fluxnova-up script.
 
 ## Optional: run the MLflow tracking server in its own Podman pod
 
@@ -293,23 +297,23 @@ directly. Here's how to reproduce a working local `fluxnova-judge` endpoint back
    this means the automatic-evaluation judge model may differ from the `ollama/gemma4:e2b` model the existing
    hand-rolled `_llm_judge()` offline scorers use, unless reconciled later.
 6. Create a new connection for it:
-   - **Base URL**: try `http://host.containers.internal:11434/v1` first — it works out of the box for most setups.
-     On some Windows/Podman-machine/WSL2 setups it doesn't, though: if the Podman machine uses rootless `pasta`
-     networking, the `host.containers.internal` alias resolves to the WSL VM's *own* loopback rather than the
-     Windows host, so the connection fails no matter how Ollama/the firewall are configured (see "Troubleshooting"
-     below for how to tell the difference from an Ollama/firewall problem). If you hit that, fall back to the
-     Podman machine's actual default-gateway IP instead, found with:
-     ```bash
-     wsl.exe -d podman-machine-default -- ip route show default   # note the "via <ip>" address
-     ```
-     e.g. `http://172.17.112.1:11434/v1`. The `/v1` suffix is required either way — MLflow's `OllamaProvider`
-     appends `/chat/completions` directly onto whatever base URL is configured, with no separate `/v1` insertion, so
-     omitting it causes every request to 404 (you'll see Ollama's own literal
-     `{"detail":{"message":"404 page not found"}}` body passed through — this looks like an MLflow failure at first
-     glance but is actually Ollama's router rejecting the wrong path). That gateway IP can change across reboots or
-     Podman machine resets — re-run the `wsl.exe` command above and update the endpoint if it stops connecting.
-   - **API key name/value**: any placeholder (e.g. `OLLAMA_API_KEY` / `unused`) — local Ollama needs no real
-     authentication, but the UI form requires something be entered.
+    - **Base URL**: try `http://host.containers.internal:11434/v1` first — it works out of the box for most setups.
+      On some Windows/Podman-machine/WSL2 setups it doesn't, though: if the Podman machine uses rootless `pasta`
+      networking, the `host.containers.internal` alias resolves to the WSL VM's *own* loopback rather than the
+      Windows host, so the connection fails no matter how Ollama/the firewall are configured (see "Troubleshooting"
+      below for how to tell the difference from an Ollama/firewall problem). If you hit that, fall back to the
+      Podman machine's actual default-gateway IP instead, found with:
+      ```bash
+      wsl.exe -d podman-machine-default -- ip route show default   # note the "via <ip>" address
+      ```
+      e.g. `http://172.17.112.1:11434/v1`. The `/v1` suffix is required either way — MLflow's `OllamaProvider`
+      appends `/chat/completions` directly onto whatever base URL is configured, with no separate `/v1` insertion, so
+      omitting it causes every request to 404 (you'll see Ollama's own literal
+      `{"detail":{"message":"404 page not found"}}` body passed through — this looks like an MLflow failure at first
+      glance but is actually Ollama's router rejecting the wrong path). That gateway IP can change across reboots or
+      Podman machine resets — re-run the `wsl.exe` command above and update the endpoint if it stops connecting.
+    - **API key name/value**: any placeholder (e.g. `OLLAMA_API_KEY` / `unused`) — local Ollama needs no real
+      authentication, but the UI form requires something be entered.
 7. Save. There's no in-place "edit the base URL" option once an endpoint/connection is created in this MLflow
    version — to fix a mistake, delete and recreate rather than editing.
 8. Verify with the OpenAI-compatible unified endpoint (works with `curl` or the OpenAI Python SDK):
@@ -391,7 +395,7 @@ mlflow-judges --experiment fluxnova-loanAssessmentProcess status
 ```
 
 `--tracking-uri` defaults to `http://localhost:5000` (the running `mlflow-local` server) — this **must** be an
-HTTP(S) address, not a direct `postgresql://...` path, because gateway-backed judges route through the server process
+HTTP (S) address, not a direct `postgresql://...` path, because gateway-backed judges route through the server process
 itself. Add `--filter-string` to `start` to restrict which traces get scored (e.g. to exclude EDD regression runs).
 
 ## Targeting a different MLflow experiment
@@ -437,12 +441,14 @@ scorers are recorded for visibility/audit only, not yet wired into the gate).
 **BPMN wiring:** `bpmn/loan-assesment-eval.bpmn` (a separate process definition, `loanAssessmentEvalProcess`, from the
 original `loan-assesment.bpmn`) invokes the loan-assessment agent as a **Call Activity**
 (`CallActivity_LoanAssessmentAgent` → `loanAssessmentProcess`, defined in `loan-assesment.bpmn`), then runs
-`ServiceTask_EvaluateAgentOutput` on this worker's topic (`agent-output-eval`), followed by `ExclusiveGateway_EvalPassed`
+`ServiceTask_EvaluateAgentOutput` on this worker's topic (`agent-output-eval`), followed by
+`ExclusiveGateway_EvalPassed`
 routing on `evalPassed`: on pass → generate-report → approve/reject decision (with a human review task); on fail → a
 `UserTask_ReviewFailedEval` human step. Because the agent runs in the Call Activity's *child* instance, the worker
 resolves that child from the parent instance it's handed before reading its trace (see `eval-service-worker/README.md`).
 
-Use `fluxnova-runner/config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN — it lists `loan-assesment.bpmn` under
+Use `fluxnova-runner/config/loan-assesment-eval.yml` (not `loan-assesment.yml`) to run this BPMN — it lists
+`loan-assesment.bpmn` under
 `additional_bpmn_paths` so both process definitions deploy together, and sets `wait_for_activity:
 CallActivity_LoanAssessmentAgent` so `fluxnova-run` returns once the agent finishes instead of hanging on the downstream
 human tasks.
@@ -450,7 +456,8 @@ human tasks.
 **Experiment alignment:** the OTel collector routes **every** trace (from the parent eval process and the called agent
 child process alike) to the single MLflow experiment named by `MLFLOW_EXPERIMENT_ID` — a static collector header, not
 per-process-key. The worker reads agent traces from `EVAL_SERVICE_EXPERIMENT_NAME`, so that name **must** resolve to the
-same experiment `MLFLOW_EXPERIMENT_ID` points at (currently `fluxnova-loanAssessmentEvalProcess`, experiment id `3`). Both
+same experiment `MLFLOW_EXPERIMENT_ID` points at (currently `fluxnova-loanAssessmentEvalProcess`, experiment id `3`).
+Both
 are kept in `local-dev/.env` (the single source of truth, also consumed by `compose.yaml`) so they stay in sync;
 `eval-service-up.sh` passes `EVAL_SERVICE_EXPERIMENT_NAME` through to the container. You can also trigger a one-off
 scoring run manually — see
@@ -466,7 +473,8 @@ REBUILD=1 ./services/eval-service-up.sh  # force a rebuild after changing worker
 
 Or start it as part of the whole stack with `./pods-up.sh` (it's the last pod started, after fluxnova/mlflow, which
 it depends on). It builds `eval-service-worker/Dockerfile` from the repo root (so it can install the local
-`fluxnova-mlflow-dataset` path dependency too) **only when the image is missing** — repeated up-runs skip the pip-install
+`fluxnova-mlflow-dataset` path dependency too) **only when the image is missing** — repeated up-runs skip the
+pip-install
 cost, so pass `REBUILD=1` to force a rebuild after changing `eval-service-worker/` or `fluxnova-mlflow-dataset/`. It
 passes `EVAL_SERVICE_FLUXNOVA_URL`/`EVAL_SERVICE_TRACKING_URI`/`EVAL_SERVICE_EXPERIMENT_NAME`
 env vars (sourced from `local-dev/.env`) pointed at the sibling `fluxnova-local`/`mlflow-local` pod names (rather than
@@ -521,19 +529,19 @@ to skip).
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `pods-up.sh` / `pods-down.sh` | Start/stop postgres, mlflow, fluxnova, eval-service, and observability together (in dependency order), or any subset — idempotent |
-| `compose.yaml` | Single-file `podman compose` alternative to the pod scripts (same `.env`/configs); `eval-service-worker` and `observability` behind the `eval`/`grafana` profiles — see "Alternative: a single `podman compose` file" |
-| `services/postgres-up.sh` / `services/postgres-down.sh` | Start/stop the `postgres-local` pod (shared PostgreSQL database) |
-| `postgres/init.sh` | Creates the `mlflow`/`fluxnova` databases and roles on first startup |
-| `services/fluxnova-up.sh` / `services/fluxnova-down.sh` | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector) |
-| `services/mlflow-up.sh` / `services/mlflow-down.sh` | Start/stop the `mlflow-local` pod |
-| `services/eval-service-up.sh` / `services/eval-service-down.sh` | Build/start/stop the `eval-service-local` pod (see above) |
-| `services/observability-up.sh` / `services/observability-down.sh` | Start/stop the `observability-local` pod (Prometheus + Grafana GenAI dashboard) |
-| `default.yml` | Fluxnova config mounted by `services/fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace; datasource → PostgreSQL) |
-| `otel-collector-config.yaml` | OTel Collector pipelines: `otlp` receiver → `otlp_http` exporter to MLflow (traces) + `prometheus` exporter on `:8889` (metrics) |
-| `prometheus.yml` | Prometheus scrape config (mounted by `services/observability-up.sh`) — scrapes `fluxnova-local:8889` |
-| `grafana/` | Grafana provisioning (Prometheus datasource + dashboard provider) and the `gen-ai.json` dashboard |
-| `.env` | Environment values (image names/ports/paths) — adjust as needed |
+| File                                                              | Purpose                                                                                                                                                                                                               |
+|-------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `pods-up.sh` / `pods-down.sh`                                     | Start/stop postgres, mlflow, fluxnova, eval-service, and observability together (in dependency order), or any subset — idempotent                                                                                     |
+| `compose.yaml`                                                    | Single-file `podman compose` alternative to the pod scripts (same `.env`/configs); `eval-service-worker` and `observability` behind the `eval`/`grafana` profiles — see "Alternative: a single `podman compose` file" |
+| `services/postgres-up.sh` / `services/postgres-down.sh`           | Start/stop the `postgres-local` pod (shared PostgreSQL database)                                                                                                                                                      |
+| `postgres/init.sh`                                                | Creates the `mlflow`/`fluxnova` databases and roles on first startup                                                                                                                                                  |
+| `services/fluxnova-up.sh` / `services/fluxnova-down.sh`           | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector)                                                                                                                                                       |
+| `services/mlflow-up.sh` / `services/mlflow-down.sh`               | Start/stop the `mlflow-local` pod                                                                                                                                                                                     |
+| `services/eval-service-up.sh` / `services/eval-service-down.sh`   | Build/start/stop the `eval-service-local` pod (see above)                                                                                                                                                             |
+| `services/observability-up.sh` / `services/observability-down.sh` | Start/stop the `observability-local` pod (Prometheus + Grafana GenAI dashboard)                                                                                                                                       |
+| `default.yml`                                                     | Fluxnova config mounted by `services/fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace; datasource → PostgreSQL)                                                                          |
+| `otel-collector-config.yaml`                                      | OTel Collector pipelines: `otlp` receiver → `otlp_http` exporter to MLflow (traces) + `prometheus` exporter on `:8889` (metrics)                                                                                      |
+| `prometheus.yml`                                                  | Prometheus scrape config (mounted by `services/observability-up.sh`) — scrapes `fluxnova-local:8889`                                                                                                                  |
+| `grafana/`                                                        | Grafana provisioning (Prometheus datasource + dashboard provider) and the `gen-ai.json` dashboard                                                                                                                     |
+| `.env`                                                            | Environment values (image names/ports/paths) — adjust as needed                                                                                                                                                       |
 
