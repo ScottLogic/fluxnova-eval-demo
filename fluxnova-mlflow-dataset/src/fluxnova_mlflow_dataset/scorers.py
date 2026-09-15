@@ -48,14 +48,31 @@ def decision_quality_judge(model: str) -> Guidelines:
 # separate from the deterministic trace-based scorers further below.
 # ---------------------------------------------------------------------------
 
-# Bespoke litellm-backed judge model, used by `_llm_judge` (predates the
-# MLflow-native `Guidelines` judge used by `decision_quality_judge` above).
-_JUDGE_MODEL = "ollama/gemma4:e2b"
+# Offline judge provider for the bespoke `_llm_judge()` helper and the native
+# `decision_quality_judge()` used by the regression suite (see
+# `regression/test_mlflow_regression.py`). Defaults to OpenAI; set
+# LLM_JUDGE_PROVIDER=ollama to fall back to a fully local judge (e.g. when no
+# OPENAI_API_KEY is available). This is independent of the BPMN agent's own
+# provider toggle (`local-dev/default.yml`'s `spring.ai.model.chat`).
+LLM_JUDGE_PROVIDER = os.environ.get("LLM_JUDGE_PROVIDER", "openai").lower()
+
+# The judge intentionally uses a *different* model than the agent it's
+# grading (the BPMN agent runs `gpt-4o` — see `bpmn/loan-assesment.bpmn` and
+# local-dev/README.md's provider-toggle section) to avoid self-preference
+# bias, while still being fast/cheap enough for many-judge-call regression
+# runs. `gpt-4o-mini` is a good fit: strong instruction-following for
+# guideline/JSON-scoring judge prompts, at a fraction of gpt-4o's cost.
+_OPENAI_JUDGE_MODEL = "openai/gpt-4o-mini"
+_OLLAMA_JUDGE_MODEL = "ollama/gemma4:e2b"
+
+# Bespoke litellm-backed judge model, used by `_llm_judge`. Litellm-style
+# "<provider>/<model>" URI.
+_JUDGE_MODEL = _OPENAI_JUDGE_MODEL if LLM_JUDGE_PROVIDER == "openai" else _OLLAMA_JUDGE_MODEL
 
 # MLflow-native judges (e.g. Guidelines) use MLflow's own "<provider>:/<model>"
 # URI scheme, which differs from the litellm-style "<provider>/<model>" used by
-# the bespoke `_llm_judge()` helper below. Same underlying local Ollama model.
-_NATIVE_JUDGE_MODEL = "ollama:/gemma4:e2b"
+# the bespoke `_llm_judge()` helper above.
+_NATIVE_JUDGE_MODEL = "openai:/gpt-4o-mini" if LLM_JUDGE_PROVIDER == "openai" else "ollama:/gemma4:e2b"
 
 # Automatic (online) evaluation -- Scorer.register()/.start() -- requires a
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly
@@ -84,7 +101,8 @@ _EXPECTED_TOOL_INPUTS: dict[str, list[str]] = {
 
 
 def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL) -> Feedback:
-    """Ask a local Ollama model to judge ``context`` against ``criteria``.
+    """Ask an LLM (OpenAI by default, Ollama as a local fallback — see
+    ``LLM_JUDGE_PROVIDER``) to judge ``context`` against ``criteria``.
 
     An LLM-as-judge returning a 0.0-1.0 score plus a short rationale, parsed
     from a JSON response.

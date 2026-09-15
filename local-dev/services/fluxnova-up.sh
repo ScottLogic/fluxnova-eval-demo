@@ -2,9 +2,15 @@
 # Local development stack: Fluxnova + OTel Collector, run in a single Podman pod.
 # Works from Git Bash on Windows too.
 #
-# All containers in a pod share one network namespace, so they talk to each other via
-# `localhost` rather than by service name — that's why default.yml points
-# exporterEndpoint at http://localhost:4317 instead of http://otel-collector:4317.
+# The pod uses --network host (see OTEL-EXPORT-INVESTIGATION.md at the repo root): running
+# Fluxnova in any isolated Podman network namespace — including this pod's own
+# previously-bridge-networked namespace — silently breaks the OpenTelemetry Java SDK's OTLP
+# exporter (traces/metrics never leave the JVM, no errors anywhere). Only the real host
+# network namespace works. This means every address below is a plain "localhost" one (no
+# port mapping happens or is needed — the pod's containers bind host ports directly), and
+# sibling pods (mlflow-local, postgres-local) are reached via their own published host ports
+# rather than by container/pod name, since a host-networked pod isn't attached to the
+# fluxnova-dev bridge network aardvark-dns resolves those names on.
 #
 # default.yml's spring.datasource now points at PostgreSQL (postgres-local pod's
 # "fluxnova" database) instead of the old H2 file default — run ./postgres-up.sh before
@@ -35,9 +41,11 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
 fi
 
 FLUXNOVA_IMAGE="${FLUXNOVA_IMAGE:-fluxnova:local}"
+# With --network host there's no port *mapping* — the container binds this port on the
+# host directly, so it's passed through as SERVER_PORT for Spring Boot to actually bind
+# rather than just labelling a `-p` mapping like before.
 FLUXNOVA_PORT="${FLUXNOVA_PORT:-8080}"
 OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:0.160.0}"
-DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
 # Fluxnova's PostgreSQL datasource credentials — read from .env (never hardcoded) and
 # passed through as env vars for default.yml's ${VAR:default} placeholders to resolve
 # (Spring Boot exposes container env vars directly to its property placeholder
@@ -45,21 +53,18 @@ DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
 FLUXNOVA_POSTGRES_USER="${FLUXNOVA_POSTGRES_USER:-fluxnova}"
 FLUXNOVA_POSTGRES_PASSWORD="${FLUXNOVA_POSTGRES_PASSWORD:-fluxnova}"
 FLUXNOVA_POSTGRES_DB="${FLUXNOVA_POSTGRES_DB:-fluxnova}"
+# BPMN agent's OpenAI API key (only used while default.yml's spring.ai.model.chat is
+# set to "openai") — read from .env, never hardcoded.
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 # The numeric MLflow experiment ID traces get sent to — MLflow's OTLP endpoint requires
 # this on every request (see otel-collector-config.yaml). Must already exist; see
 # local-dev/README.md for how to look it up. Left empty by default so this is opt-in.
 MLFLOW_EXPERIMENT_ID="${MLFLOW_EXPERIMENT_ID:-}"
-# Where the collector sends traces — defaults to the mlflow-local pod (mlflow-up.sh)
-# on the shared fluxnova-dev network; override in .env if running MLflow as a host
-# process instead (http://host.containers.internal:5000).
-MLFLOW_OTLP_ENDPOINT="${MLFLOW_OTLP_ENDPOINT:-http://mlflow-local:5000}"
-
-# Shared user-defined network so this pod can reach the mlflow-local pod (see
-# mlflow-up.sh) by container name — sibling pods don't share a network namespace,
-# and routing through host.containers.internal doesn't work for pod-to-pod traffic on
-# this machine (it resolves to the gateway *out* of the Podman VM, not back into it).
-podman network create --ignore "$DEV_NETWORK"
-
+# Where the collector sends traces. This pod runs on --network host (see above), so
+# mlflow-local's container-name DNS isn't reachable — address it via its published host
+# port instead (mlflow-up.sh publishes ${MLFLOW_PORT:-5000}:5000). Override in .env if
+# MLflow is on a different host port, or running as a separate host process.
+MLFLOW_OTLP_ENDPOINT="${MLFLOW_OTLP_ENDPOINT:-http://localhost:${MLFLOW_PORT:-5000}}"
 
 # Idempotent: if the pod already exists (e.g. this script was run before), just make
 # sure it's started rather than failing on `podman pod create`/`podman run` name clashes.
@@ -67,14 +72,13 @@ if podman pod exists "$POD_NAME"; then
   echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
   podman pod start "$POD_NAME" >/dev/null
 else
-  echo "Creating pod '$POD_NAME' (fluxnova:${FLUXNOVA_PORT}->8080, otel-collector:4317/4318, otel-metrics:8889)..."
-  # --add-host must be set at pod level (not per-container) since networking is shared.
+  echo "Creating pod '$POD_NAME' on --network host (fluxnova:${FLUXNOVA_PORT}, otel-collector:4317/4318, otel-metrics:8889 — all bound directly, no port mapping)..."
+  # --network host means no -p port publishing (podman rejects combining the two) — the
+  # containers bind these ports directly on the host. --add-host is harmless but no longer
+  # load-bearing here (host.containers.internal is only needed by default.yml's Ollama
+  # base-url; with host networking, localhost already reaches the host directly).
   podman pod create --name "$POD_NAME" \
-    -p "${FLUXNOVA_PORT}:8080" \
-    -p 4317:4317 \
-    -p 4318:4318 \
-    -p 8889:8889 \
-    --network "$DEV_NETWORK" \
+    --network host \
     --add-host host.containers.internal:host-gateway
 
   echo "Starting otel-collector..."
@@ -86,11 +90,13 @@ else
 
   echo "Starting fluxnova..."
   podman run -d --pod "$POD_NAME" --name fluxnova \
+    -e SERVER_PORT="$FLUXNOVA_PORT" \
     -e OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
     -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
     -e FLUXNOVA_POSTGRES_USER="$FLUXNOVA_POSTGRES_USER" \
     -e FLUXNOVA_POSTGRES_PASSWORD="$FLUXNOVA_POSTGRES_PASSWORD" \
     -e FLUXNOVA_POSTGRES_DB="$FLUXNOVA_POSTGRES_DB" \
+    -e OPENAI_API_KEY="$OPENAI_API_KEY" \
     -v "${LOCAL_DEV_DIR}/default.yml:/fluxnova/configuration/default.yml:ro" \
     "$FLUXNOVA_IMAGE"
 fi

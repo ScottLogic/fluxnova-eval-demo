@@ -5,3 +5,4 @@ __pycache__/
 .fluxnova/
 *.db
 local-dev/.mlflow/
+local-dev/.env
