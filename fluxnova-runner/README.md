@@ -20,19 +20,19 @@ Installs two console-script entry points: `fluxnova-run` and `fluxnova-run-mock-
 
 ## Config
 
-Reads a workflow YAML config file from [`config/`](config/) (e.g. `fluxnova-runner/config/loan-assesment.yml`) — see
+Reads a workflow YAML config file from [`config/`](config) (e.g. `fluxnova-runner/config/loan-assesment.yml`) — see
 the repo root README's "Config file" section for the full field reference. `RunnerConfig.from_file` only reads the
 fields it needs and silently ignores the rest (`subprocess_id`, `available_tools`, `mlflow_dataset`, etc. — used by
 the eval services), so the same file works unchanged for both:
 
-| Field | Required | Description |
-|-------|----------|--------------|
-| `fluxnova_url` | Yes | Fluxnova engine REST base URL |
-| `bpmn_path` | Yes | Path to the `.bpmn` file — resolved relative to the repo root if not absolute |
-| `process_key` | Yes | The `id` attribute on `<process>` in the BPMN |
-| `deployment_name` | Yes | Human-readable deployment name shown in Cockpit |
-| `variables` | No | Initial process variables (plain `key: value` pairs) |
-| `mock_workers` | No | `{topic: {output variables}}` — see "Mock workers" below |
+| Field             | Required | Description                                                                   |
+|-------------------|----------|-------------------------------------------------------------------------------|
+| `fluxnova_url`    | Yes      | Fluxnova engine REST base URL                                                 |
+| `bpmn_path`       | Yes      | Path to the `.bpmn` file — resolved relative to the repo root if not absolute |
+| `process_key`     | Yes      | The `id` attribute on `<process>` in the BPMN                                 |
+| `deployment_name` | Yes      | Human-readable deployment name shown in Cockpit                               |
+| `variables`       | No       | Initial process variables (plain `key: value` pairs)                          |
+| `mock_workers`    | No       | `{topic: {output variables}}` — see "Mock workers" below                      |
 
 ## Usage
 
