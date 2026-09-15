@@ -293,10 +293,14 @@ treated as escape characters and silently mangle paths, e.g. `fluxnova-runner\co
       ([Podman Desktop](https://podman-desktop.io) is recommended, though not required, for a GUI to view/manage pods,
       containers, and logs)
     - Python 3.11+
-    - [Ollama](https://ollama.com) with `gemma4:e2b` (agent + eval judge) and
-      `qwen2.5:1.5b` (online `eval-service-worker` judge) pulled (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`)
+    - An **OpenAI API key**, set as `OPENAI_API_KEY` in `local-dev/.env` — the BPMN agent
+      uses OpenAI by default (see [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative)
+      to switch it to Ollama instead and skip this)
+    - [Ollama](https://ollama.com) with `gemma4:e2b` (always used for the regression/eval
+      judge) and `qwen2.5:1.5b` (online `eval-service-worker` judge) pulled
+      (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`)
     - The **Fluxnova** engine image — pull the public one from GHCR:
-      `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0` (no login needed)
+      `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.1.0` (no login needed)
 
 2. **Create the shared virtual environment** — run the setup script from the repo root. It creates one venv under
    `.venv` at the repo root and installs both packages editable into it, so changes to any package take effect
@@ -319,7 +323,8 @@ treated as escape characters and silently mangle paths, e.g. `fluxnova-runner\co
 3. **Start the backing services as Podman pods**, from Git Bash at the repo root:
    ```bash
    cd local-dev
-   # .env's FLUXNOVA_IMAGE already points at the public GHCR image pulled above
+   cp .env.example .env   # first time only — .env is gitignored since it holds OPENAI_API_KEY
+   # set OPENAI_API_KEY in .env; FLUXNOVA_IMAGE already points at the public GHCR image pulled above
 
    ./pods-up.sh   # start postgres, mlflow, fluxnova, eval-service (in dependency order)
    ```
@@ -545,6 +550,6 @@ Examples:
 | Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/services/postgres-up.sh`) |
 | Python runtime       | Python 3.11, requests, PyYAML                                                                                                                         |
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
-| LLM agent            | Ollama / gemma4:e2b (runs inside Fluxnova)                                                                                                            |
+| LLM agent            | OpenAI / gpt-4o (default, runs inside Fluxnova) — see [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative) for using Ollama / gemma4:e2b instead |
 | Evaluation framework | [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/)                                                                         |
 | Judge model          | Ollama / gemma4:e2b (regression + eval services) · Ollama / qwen2.5:1.5b (online `eval-service-worker`, via the `fluxnova-judge` gateway endpoint)    |

@@ -68,15 +68,17 @@ Tomcat startup.
 Notes and differences from the pod scripts:
 
 - **Every service is named `<container>-local`** (`postgres-local`, `mlflow-local`, `otel-collector-local`,
-  `fluxnova-local`, `eval-service-worker-local`, `prometheus-local`, `grafana-local`) for consistency, and so the
-  load-bearing hostnames (`postgres-local`, `mlflow-local`, `fluxnova-local`) already match what's baked into
-  `default.yml`, `otel-collector-config.yaml`, `prometheus.yml`, and the eval env vars — no config edits needed. The
-  short `container_name` (`postgres`, `fluxnova`, …) is what plain `podman logs <name>` / `podman exec <name>` use.
-- **fluxnova shares the otel-collector-local container's network namespace**
-  (`network_mode: "service:otel-collector-local"`), reproducing the single-pod setup so `default.yml`'s
-  `exporterEndpoint: http://localhost:4317` keeps working. As a result fluxnova has no network identity of its own —
-  it's published (`8080`) and reachable (as `fluxnova-local`, via a network alias) *through* the `otel-collector-local`
-  service. **Grafana** does the same with `prometheus-local` (so its provisioned `localhost:9090` datasource works).
+  `fluxnova-local`, `eval-service-worker-local`, `prometheus-local`, `grafana-local`) for consistency. The short
+  `container_name` (`postgres`, `fluxnova`, …) is what plain `podman logs <name>` / `podman exec <name>` use.
+- **`otel-collector-local`/`fluxnova-local` run on `network_mode: host`** — see
+  [`OTEL-EXPORT-INVESTIGATION.md`](../OTEL-EXPORT-INVESTIGATION.md) at the repo root: running Fluxnova in any isolated
+  Podman network namespace (including this pair's own previous bridge-networked setup) silently breaks the
+  OpenTelemetry Java SDK's OTLP export, with no errors anywhere — only the real host namespace works. `fluxnova-local`
+  shares `otel-collector-local`'s namespace (`network_mode: "service:otel-collector-local"`, the pod analog), so it
+  inherits host networking too and is no longer resolvable by service name from sibling containers — reach it via
+  `localhost` from the host, or `host.containers.internal` from other containers (e.g. `eval-service-worker-local`).
+  **Grafana** still shares `prometheus-local`'s namespace as before (bridge-networked, so its provisioned
+  `localhost:9090` datasource keeps working unchanged).
 - **`eval-service-worker-local` is opt-in** behind the `eval` compose profile (it has a build step and needs the
   MLflow AI Gateway judge endpoint configured — see "eval-service-worker" below); **Prometheus + Grafana** are opt-in
   behind the `grafana` profile. Core services carry no profile, so a bare `podman compose up -d` brings up only the
@@ -92,6 +94,8 @@ Notes and differences from the pod scripts:
 
 ## Prerequisites
 
+- **A local `.env`** — copy `.env.example` to `.env` (`cp .env.example .env` from `local-dev/`) and fill in
+  `OPENAI_API_KEY`. `.env` is gitignored since it holds that secret; `.env.example` is the tracked template.
 - **[Podman](https://podman.io/docs/installation)** installed, with a running machine/VM on Windows and macOS
   (`podman machine init && podman machine start`) — not needed on Linux. [Podman Desktop](https://podman-desktop.io)
   is recommended, though not required, for a GUI to view/manage pods, containers, and logs.
@@ -155,7 +159,7 @@ MLflow); from the host it's `localhost:5432` (or your configured `POSTGRES_PORT`
 
 `fluxnova-up.sh` starts both containers grouped in a single **Podman pod**. Run it from **Git Bash** on Windows (see
 the main README's "A note on shells (Windows)"). Requires `postgres-up.sh` to already be running, since
-`default.yml`'s `spring.datasource` now points at PostgreSQL (`postgres-local:5432/fluxnova`) instead of the old H2
+`default.yml`'s `spring.datasource` now points at PostgreSQL (`localhost:5432/fluxnova`) instead of the old H2
 file default.
 
 ```bash
@@ -166,16 +170,21 @@ cd local-dev
 ./services/fluxnova-down.sh    # stop and remove it
 ```
 
-This creates a `fluxnova-local` pod publishing ports `8080` (Fluxnova), `4317`/`4318` (OTel Collector gRPC/HTTP).
-Both containers share one network namespace, so they reach each other via `localhost` rather than by container name
-— that's why `default.yml` (mounted by the pod script) points `exporterEndpoint` at `http://localhost:4317`.
+This creates a `fluxnova-local` pod on `--network host` (see
+[`OTEL-EXPORT-INVESTIGATION.md`](../OTEL-EXPORT-INVESTIGATION.md) at the repo root — running Fluxnova in any isolated
+Podman network namespace silently breaks the OpenTelemetry Java SDK's OTLP export, with no errors anywhere; only the
+real host namespace works). Both containers still share one network namespace, so they reach each other via
+`localhost` — that's why `default.yml` (mounted by the pod script) points `exporterEndpoint` at
+`http://localhost:4317` — but with host networking that's also true for the *host* and for reaching sibling pods, no
+port mapping needed or possible (`podman pod create --network host` rejects `-p`).
 
-- **`fluxnova`** — the Fluxnova engine, published on `http://localhost:8080` (matching `fluxnova_url` in the runner's
+- **`fluxnova`** — the Fluxnova engine, on `http://localhost:8080` (matching `fluxnova_url` in the runner's
   workflow config files), with `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at the collector container.
-- **`otel-collector`** — an `otlp` receiver (gRPC `4317` / HTTP `4318`, also published to the host) piped through an
-  `otlphttp` exporter to the MLflow tracking server (`http://host.containers.internal:5000` or the shared
-  `fluxnova-dev` network's `mlflow-local` pod, auto-suffixed with `/v1/traces`). Make sure the MLflow tracking server
-  is already running before starting the pod.
+- **`otel-collector`** — an `otlp` receiver (gRPC `4317` / HTTP `4318`, bound directly on the host) piped through an
+  `otlphttp` exporter to the MLflow tracking server (`http://localhost:5000`, reaching `mlflow-local`'s own published
+  host port since it isn't resolvable by pod name from this host-networked pod — override
+  `MLFLOW_OTLP_ENDPOINT` in `.env` for a different port/host-run MLflow), auto-suffixed with `/v1/traces`. Make sure
+  the MLflow tracking server is already running before starting the pod.
 
 See `default.yml` and `otel-collector-config.yaml` for details and adjust image names, ports, or the collector
 pipeline as your actual Fluxnova image requires.
@@ -198,6 +207,39 @@ podman push ghcr.io/dogle-scottlogic/fluxnova-edd-platform:<new-tag>
 
 Then bump `FLUXNOVA_IMAGE` in `.env` (and this README's example tag above, if it's a new default) to the new tag so
 everyone picks it up.
+
+### BPMN agent LLM provider (OpenAI default, Ollama alternative)
+
+The BPMN agent (the `AdHocSubProcess_LoanAssessmentAgent` element in `bpmn/loan-assesment.bpmn`) uses **OpenAI by
+default**. The Fluxnova image bundles Spring AI support for both OpenAI and Ollama, and two things together decide
+which one actually runs:
+
+1. **`default.yml`'s `spring.ai.model.chat`** — `openai` (the default) or `ollama`. Only one can be active at a time;
+   this is what makes the corresponding Spring AI `ChatModel` bean available in the engine.
+2. **The BPMN's own `provider` attribute** — the `agent:config` element in `bpmn/loan-assesment.bpmn` (around line 10)
+   hardcodes `provider="openai" model="gpt-4o"`. The agentic-subprocess plugin validates this against whichever
+   provider is currently active, so the two settings must always agree.
+
+**To switch the agent to Ollama:**
+
+1. In `default.yml`, change `spring.ai.model.chat: openai` to `spring.ai.model.chat: ollama`.
+2. In `bpmn/loan-assesment.bpmn`, change `provider="openai" model="gpt-4o"` to `provider="ollama" model="gemma4:e2b"`
+   (or another Ollama model you've pulled — confirm tool-calling support with `ollama show <model>`, looking for
+   `tools` under Capabilities).
+3. Restart Fluxnova so it picks up the new `default.yml` (`podman restart fluxnova`, or re-run `fluxnova-up.sh`) —
+   `fluxnova-run` redeploys the BPMN automatically on its next run, no rebuild needed.
+4. `OPENAI_API_KEY` in `.env` is no longer needed; make sure `spring.ai.ollama.base-url` in `default.yml` reaches
+   your Ollama instance (`http://host.containers.internal:11434` if it's running on the host).
+
+**Gotcha — switching providers with an existing deployment:** if the BPMN was already deployed under the *other*
+provider (e.g. you're switching from OpenAI to Ollama after already having run the OpenAI version), `fluxnova-run`'s
+pre-deploy cleanup step tries to delete that old deployment — and deleting requires the engine to re-parse it, which
+fails with `Invalid provider reference(s) ... references unavailable provider 'openai'` once only `ollama` is active.
+To clear it: temporarily set `spring.ai.model.chat` back to match the **old** deployment's provider, restart
+Fluxnova, delete the stale deployment (either re-run `fluxnova-run` so its cleanup step succeeds, or call
+`DELETE /engine-rest/deployment/<id>?cascade=true` directly — find `<id>` via
+`GET /engine-rest/deployment?name=<deployment_name>`), then flip `spring.ai.model.chat` back to the provider you
+actually want and restart Fluxnova again before redeploying for real.
 
 Once Fluxnova responds, `fluxnova-up.sh` opens the Fluxnova web UI (`/fluxnova-welcome/index.html`) in your default
 browser automatically — same behaviour as `mlflow-up.sh` below, including the `localhost`-unreachable fallback (see
@@ -477,9 +519,10 @@ it depends on). It builds `eval-service-worker/Dockerfile` from the repo root (s
 pip-install
 cost, so pass `REBUILD=1` to force a rebuild after changing `eval-service-worker/` or `fluxnova-mlflow-dataset/`. It
 passes `EVAL_SERVICE_FLUXNOVA_URL`/`EVAL_SERVICE_TRACKING_URI`/`EVAL_SERVICE_EXPERIMENT_NAME`
-env vars (sourced from `local-dev/.env`) pointed at the sibling `fluxnova-local`/`mlflow-local` pod names (rather than
-`localhost`, which only resolves for host-run tools) on the shared `fluxnova-dev` network. Both those pods must already
-be running. Because Podman bakes env vars at `podman run`, run `./services/eval-service-down.sh` then
+env vars (sourced from `local-dev/.env`) pointed at `mlflow-local` by pod name on the shared `fluxnova-dev` network,
+and at `fluxnova-local` via `host.containers.internal` (that pod runs on `--network host` — see
+[`OTEL-EXPORT-INVESTIGATION.md`](../OTEL-EXPORT-INVESTIGATION.md) — so it isn't resolvable by pod name). Both must
+already be running. Because Podman bakes env vars at `podman run`, run `./services/eval-service-down.sh` then
 `./services/eval-service-up.sh` to pick up any `.env` change (an existing pod is only *started*, not recreated).
 
 The worker has **no config file of its own** — every setting (`fluxnova_url`, `experiment_name`, `process_key`,
@@ -497,18 +540,23 @@ traces-to-MLflow flow:
 
 ```
 Fluxnova ──OTLP──> OTel Collector ─┬─ traces  ──> MLflow          (unchanged)
- (fluxnova-local)  (fluxnova-local) └─ metrics ──> Prometheus exporter :8889
-                                                        ▲ scrape
-                                    Prometheus :9090 ───┘   (observability-local)
+ (fluxnova-local,  (fluxnova-local, └─ metrics ──> Prometheus exporter :8889
+  --network host)   --network host)                   ▲ scrape (via localhost)
+                        Prometheus :9090 ───────────────┘   (observability-local, --network host)
                                         ▲ query
                                     Grafana :3000            (observability-local)
 ```
 
 The OTel Collector now has a **metrics pipeline** (`otel-collector-config.yaml`) exposing a Prometheus scrape endpoint
-on `:8889` (published on the `fluxnova-local` pod). Prometheus (`prometheus.yml`) scrapes `fluxnova-local:8889` by pod
-name over the shared `fluxnova-dev` network; Grafana auto-provisions the Prometheus datasource and the **Fluxnova
-GenAI Metrics** dashboard (`grafana/`), with panels for token usage/throughput, chat/agent/tool latency percentiles,
-inference & tool-call counts per agent run, operation rate and tool error rate.
+on `:8889`, bound directly on the host since `fluxnova-local` runs on `--network host` (see
+[`OTEL-EXPORT-INVESTIGATION.md`](../OTEL-EXPORT-INVESTIGATION.md)). `observability-local` runs on `--network host`
+too — Prometheus scraping a `--network host` pod's port from a *different* namespace hit a second, separate problem
+on Podman Desktop/machine (Windows): `host.containers.internal` routes out to the actual Windows host, not back into
+the podman-machine VM where the port actually lives, so it times out. Only a fellow `--network host` container can
+reach it, via plain `localhost` — confirmed empirically. Prometheus (`prometheus.yml`) scrapes `localhost:8889`;
+Grafana auto-provisions the Prometheus datasource and the **Fluxnova GenAI Metrics** dashboard (`grafana/`), with
+panels for token usage/throughput, chat/agent/tool latency percentiles, inference & tool-call counts per agent run,
+operation rate and tool error rate.
 
 ```bash
 cd local-dev
@@ -518,7 +566,7 @@ cd local-dev
 
 - **Grafana** → http://localhost:3000 (dashboard: *Fluxnova → Fluxnova GenAI Metrics*). Anonymous viewing is enabled;
   log in as `admin`/`admin` to edit. Set `GRAFANA_PORT`/`GRAFANA_IMAGE` in `.env` to change.
-- **Prometheus** → http://localhost:9090 (check `…/targets` — `fluxnova-local:8889` should be **UP**). Set
+- **Prometheus** → http://localhost:9090 (check `…/targets` — `localhost:8889` should be **UP**). Set
   `PROMETHEUS_PORT`/`PROMETHEUS_IMAGE` in `.env` to change.
 
 Start `fluxnova-up.sh` **before** this pod (and run an agentic subprocess) so there are metrics to scrape — until then
@@ -539,9 +587,9 @@ to skip).
 | `services/mlflow-up.sh` / `services/mlflow-down.sh`               | Start/stop the `mlflow-local` pod                                                                                                                                                                                     |
 | `services/eval-service-up.sh` / `services/eval-service-down.sh`   | Build/start/stop the `eval-service-local` pod (see above)                                                                                                                                                             |
 | `services/observability-up.sh` / `services/observability-down.sh` | Start/stop the `observability-local` pod (Prometheus + Grafana GenAI dashboard)                                                                                                                                       |
-| `default.yml`                                                     | Fluxnova config mounted by `services/fluxnova-up.sh` (OTel plugin → `localhost:4317`, shared pod network namespace; datasource → PostgreSQL)                                                                          |
+| `default.yml`                                                     | Fluxnova config mounted by `services/fluxnova-up.sh` (OTel plugin → `localhost:4317`, `--network host` pod; datasource → PostgreSQL via `localhost:5432`)                                                             |
 | `otel-collector-config.yaml`                                      | OTel Collector pipelines: `otlp` receiver → `otlp_http` exporter to MLflow (traces) + `prometheus` exporter on `:8889` (metrics)                                                                                      |
-| `prometheus.yml`                                                  | Prometheus scrape config (mounted by `services/observability-up.sh`) — scrapes `fluxnova-local:8889`                                                                                                                  |
+| `prometheus.yml`                                                  | Prometheus scrape config (mounted by `services/observability-up.sh`) — scrapes `localhost:8889` (`--network host`)                                                                                                    |
 | `grafana/`                                                        | Grafana provisioning (Prometheus datasource + dashboard provider) and the `gen-ai.json` dashboard                                                                                                                     |
 | `.env`                                                            | Environment values (image names/ports/paths) — adjust as needed                                                                                                                                                       |
 

@@ -1,9 +1,13 @@
 # Fluxnova config mounted by fluxnova-up.sh (a single Podman pod running Fluxnova +
 # the OTel Collector).
 #
-# All containers in the pod share one network namespace, so they reach each other via
-# `localhost` rather than by container name — hence `exporterEndpoint` here is
-# `http://localhost:4317`.
+# The pod runs on --network host (see OTEL-EXPORT-INVESTIGATION.md at the repo root —
+# running Fluxnova in any isolated Podman network namespace silently breaks the
+# OpenTelemetry Java SDK's OTLP export, with no errors anywhere; only the real host
+# namespace works). That's why every address below is a plain `localhost`/host-port one,
+# including sibling pods like postgres-local — a host-networked pod isn't attached to the
+# fluxnova-dev bridge network their container-name DNS resolves on, so they're reached via
+# their own published host ports instead.
 #
 # Find more available configuration properties on the following pages of the documentation.
 # https://docs.camunda.org/manual/latest/user-guide/camunda-bpm-run/#configure-camunda-bpm-run
@@ -35,13 +39,23 @@ fluxnova.bpm:
           serviceName: fluxnova-agentic-subprocess-local
           metricExportIntervalMillis: 5000
 
-# The image bakes in spring.ai.ollama.base-url=http://localhost:11434, which only works
-# when Fluxnova runs directly on the host. In a pod, localhost is the pod's shared
-# network namespace (i.e. the container itself), so Ollama (running on the host/Windows)
-# is unreachable there — override it to reach the host via host.containers.internal
-# (added via --add-host at pod-create time in fluxnova-up.sh).
+# The BPMN agent supports both Ollama and OpenAI (both starters are bundled in the
+# Fluxnova image) — spring.ai.model.chat picks which one is actually active. Set it to
+# "ollama" to switch back.
+spring.ai.model.chat: openai
+
+# The image bakes in spring.ai.ollama.base-url=http://localhost:11434, matching the value
+# below — with --network host, localhost already reaches Ollama running on the host/Windows
+# directly (kept explicit here for visibility/symmetry with the openai block, not because an
+# override is strictly needed). Only used when spring.ai.model.chat is set to "ollama" above.
 spring.ai.ollama:
-  base-url: http://host.containers.internal:11434
+  base-url: http://localhost:11434
+
+# Used when spring.ai.model.chat is set to "openai" above. The API key is never
+# hardcoded here — it's resolved from the OPENAI_API_KEY env var fluxnova-up.sh /
+# compose.yaml pass into the container (sourced from .env).
+spring.ai.openai:
+  api-key: ${OPENAI_API_KEY}
 
 # datasource configuration is required — PostgreSQL (postgres-local pod's Fluxnova
 # database, created by postgres-up.sh's postgres/init.sh), replacing the previous
@@ -50,8 +64,11 @@ spring.ai.ollama:
 # Camunda/Fluxnova distributions). Credentials are never hardcoded here — the
 # ${VAR:default} placeholders are resolved from env vars fluxnova-up.sh passes into
 # the container (sourced from .env), falling back to the matching .env defaults.
+# Addressed via localhost (postgres-local's own published host port, default 5432 — see
+# .env's POSTGRES_PORT) rather than by pod name, since this pod runs on --network host and
+# isn't attached to the fluxnova-dev network postgres-local's container-name DNS resolves on.
 spring.datasource:
-  url: jdbc:postgresql://postgres-local:5432/${FLUXNOVA_POSTGRES_DB:fluxnova}
+  url: jdbc:postgresql://localhost:5432/${FLUXNOVA_POSTGRES_DB:fluxnova}
   driver-class-name: org.postgresql.Driver
   username: ${FLUXNOVA_POSTGRES_USER:fluxnova}
   password: ${FLUXNOVA_POSTGRES_PASSWORD:fluxnova}

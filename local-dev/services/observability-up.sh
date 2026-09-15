@@ -7,13 +7,23 @@
 #   Fluxnova --OTLP--> OTel Collector (fluxnova-local :8889 Prometheus exporter)
 #            --scrape--> Prometheus (this pod :9090) --query--> Grafana (this pod :3000)
 #
-# Both containers here share one network namespace, so Grafana reaches Prometheus via
-# localhost:9090 (see grafana/provisioning/datasources/prometheus.yml). Prometheus in
-# turn reaches the OTel Collector by *pod* name (fluxnova-local:8889) over the shared
-# fluxnova-dev user-defined network — sibling pods don't share a namespace and
-# host.containers.internal doesn't work for pod-to-pod traffic on this machine (see
-# fluxnova-up.sh / local-dev/README.md). Requires fluxnova-up.sh already running for
-# metrics to appear (Prometheus will just report the target down until then).
+# This pod runs on --network host, same as fluxnova-local — see
+# OTEL-EXPORT-INVESTIGATION.md at the repo root. That doc's fix was originally just for
+# Fluxnova (running it in any isolated Podman network namespace silently breaks the
+# OpenTelemetry Java SDK's OTLP export), but Prometheus scraping fluxnova-local's :8889
+# from a *different* namespace turned out to hit a second, separate problem: on Podman
+# Desktop/machine (Windows), host.containers.internal routes out to the actual Windows
+# host, not back into the podman-machine VM where a --network host pod's ports actually
+# live — so it times out (and the bridge network's own gateway IP gets connection
+# refused). Confirmed empirically: a throwaway --network host container CAN reach
+# another --network host container via plain localhost; a bridge-networked one cannot,
+# by either address. Hence this pod is host-networked too, and reaches the OTel
+# Collector via localhost:8889 like Fluxnova does (see prometheus.yml) — no `-p`
+# publishing happens or is needed (`podman pod create --network host` rejects `-p`).
+# Both containers here still share one network namespace, so Grafana reaches Prometheus
+# via localhost:9090 (see grafana/provisioning/datasources/prometheus.yml).
+# Requires fluxnova-up.sh already running for metrics to appear (Prometheus will just
+# report the target down until then).
 #
 # Grafana starts with the Prometheus datasource and the "Fluxnova GenAI Metrics"
 # dashboard already provisioned (grafana/dashboards/gen-ai.json), and anonymous access
@@ -45,13 +55,10 @@ fi
 
 PROMETHEUS_IMAGE="${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:v3.14.0}"
 GRAFANA_IMAGE="${GRAFANA_IMAGE:-docker.io/grafana/grafana:13.2.1}"
+# With --network host there's no port *mapping* — these bind directly on the host, so
+# they're passed through as listen-address/port config rather than just labelling a `-p`.
 PROMETHEUS_PORT="${PROMETHEUS_PORT:-9090}"
 GRAFANA_PORT="${GRAFANA_PORT:-3000}"
-DEV_NETWORK="${DEV_NETWORK:-fluxnova-dev}"
-
-# Same shared network as fluxnova-up.sh's fluxnova-local pod so Prometheus can scrape the
-# OTel Collector's Prometheus exporter (fluxnova-local:8889) by pod name.
-podman network create --ignore "$DEV_NETWORK"
 
 # Idempotent: if the pod already exists, just make sure it's started rather than failing
 # on `podman pod create`/`podman run` name clashes.
@@ -59,12 +66,8 @@ if podman pod exists "$POD_NAME"; then
   echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
   podman pod start "$POD_NAME" >/dev/null
 else
-  echo "Creating pod '$POD_NAME' (prometheus:${PROMETHEUS_PORT}->9090, grafana:${GRAFANA_PORT}->3000)..."
-  podman pod create --name "$POD_NAME" \
-    -p "${PROMETHEUS_PORT}:9090" \
-    -p "${GRAFANA_PORT}:3000" \
-    --network "$DEV_NETWORK" \
-    --add-host host.containers.internal:host-gateway
+  echo "Creating pod '$POD_NAME' on --network host (prometheus:${PROMETHEUS_PORT}, grafana:${GRAFANA_PORT} — bound directly, no port mapping)..."
+  podman pod create --name "$POD_NAME" --network host
 
   echo "Starting prometheus..."
   podman run -d --pod "$POD_NAME" --name prometheus \
@@ -72,10 +75,12 @@ else
     "$PROMETHEUS_IMAGE" \
     --config.file=/etc/prometheus/prometheus.yml \
     --storage.tsdb.path=/prometheus \
-    --web.enable-lifecycle
+    --web.enable-lifecycle \
+    --web.listen-address=":${PROMETHEUS_PORT}"
 
   echo "Starting grafana..."
   podman run -d --pod "$POD_NAME" --name grafana \
+    -e GF_SERVER_HTTP_PORT="$GRAFANA_PORT" \
     -e GF_SECURITY_ADMIN_USER=admin \
     -e GF_SECURITY_ADMIN_PASSWORD=admin \
     -e GF_AUTH_ANONYMOUS_ENABLED=true \
@@ -123,7 +128,7 @@ fi
 
 echo
 echo "Grafana UI:    ${GRAFANA_URL}   (dashboard: Fluxnova > Fluxnova GenAI Metrics; login admin/admin to edit)"
-echo "Prometheus:    ${PROMETHEUS_URL}   (targets: ${PROMETHEUS_URL}/targets — fluxnova-local:8889 should be UP)"
+echo "Prometheus:    ${PROMETHEUS_URL}   (targets: ${PROMETHEUS_URL}/targets — localhost:8889 should be UP)"
 echo "Logs:          podman pod logs -f $POD_NAME   (or: podman logs -f grafana / prometheus)"
 echo "Stop/remove:   ./observability-down.sh"
 

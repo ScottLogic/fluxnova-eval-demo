@@ -63,9 +63,11 @@ pytest regression -v
 pytest regression/test_mlflow_regression.py -v
 ```
 
-**Prerequisites:** the full live stack must be up (Fluxnova engine, Postgres, OTel Collector, MLflow, Ollama — see
+**Prerequisites:** the full live stack must be up (Fluxnova engine, Postgres, OTel Collector, MLflow — see
 [`local-dev/README.md`](../local-dev/README.md)). The suite **skips cleanly** if the engine or tracking store isn't
-reachable rather than failing.
+reachable rather than failing. The LLM-as-judge scorers (`decision_quality`, `matches_golden`, `evidence_citation`)
+default to OpenAI, so `OPENAI_API_KEY` must be set in the shell running pytest; set `LLM_JUDGE_PROVIDER=ollama`
+instead to judge fully locally (Ollama must then be running with `gemma4:e2b` pulled).
 
 ## Configuration
 
@@ -83,7 +85,9 @@ is always respected.
 | `REGRESSION_ACTIVITY_TIMEOUT`             | `600` (seconds)                                | `test_mlflow_regression.py`         | Max time to wait for one golden's agentic subprocess run to finish      |
 | `REGRESSION_GOLDEN_MATCH_THRESHOLD`       | `0.7`                                          | `fluxnova_mlflow_dataset.scorers`   | Min `matches_golden` judge score (0.0–1.0) counted as a "yes" verdict   |
 | `REGRESSION_EVIDENCE_CITATION_THRESHOLD`  | `0.7`                                          | `test_mlflow_regression.py`         | Min `evidence_citation` judge score (0.0–1.0) counted as a pass         |
-| `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` (this suite; MLflow's own default is `10`) | `conftest.py`                       | Judge-call concurrency; capped to 1 so the local CPU Ollama judge copes |
+| `LLM_JUDGE_PROVIDER`                      | `openai` (model `gpt-4o-mini`)                 | `fluxnova_mlflow_dataset.scorers`   | Judge provider for `decision_quality`/`matches_golden`/`evidence_citation`; set to `ollama` (model `gemma4:e2b`) for a fully local fallback |
+| `OPENAI_API_KEY`                          | none                                           | read by `litellm`/MLflow            | Required while `LLM_JUDGE_PROVIDER=openai` (the default) — same key as the BPMN agent's, but a separate model (`gpt-4o-mini` vs. the agent's `gpt-4o`) so the judge never grades a model judging itself |
+| `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` with `LLM_JUDGE_PROVIDER=ollama`, else `10`| `conftest.py`                       | Judge-call concurrency; capped to 1 only for the single-instance local Ollama judge |
 | `MLFLOW_TRACKING_URI`                     | shared Postgres store (`default_tracking_uri`) | `conftest.py`                       | Where runs/assessments are recorded                                     |
 | `MLFLOW_EXPERIMENT_NAME`                  | `fluxnova-loanAssessmentProcess-regression`    | `conftest.py`                       | Experiment the regression runs land in                                  |
 | `FLUXNOVA_USERNAME` / `FLUXNOVA_PASSWORD` | none                                           | read by `test_mlflow_regression.py` | Credentials for the Fluxnova engine / mock workers                      |

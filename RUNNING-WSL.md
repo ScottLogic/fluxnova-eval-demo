@@ -17,7 +17,12 @@
   regression/eval judge) and `qwen2.5:1.5b` for the online judge**
   (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`) — see [Models](#models) for where to point each. (The upstream
   defaults are `llama3.1` agent / `llama3.2` judge.)
-- The Fluxnova engine image — pull the public one: `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0`
+  The BPMN agent defaults to **OpenAI** in this repo, so following this Ollama-based walkthrough means switching it
+  back first — see
+  [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative) for the exact
+  `default.yml` + `bpmn/loan-assesment.bpmn` changes (and a fix for the "unavailable provider" error if a deployment
+  already exists under the other provider).
+- The Fluxnova engine image — pull the public one: `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.1.0`
   and make sure `local-dev/.env`'s `FLUXNOVA_IMAGE` points at it.
 
 ## Models
@@ -25,12 +30,14 @@
 This setup runs **`gemma4:e2b`** for the agent and the offline judge, and **`qwen2.5:1.5b`** for the online judge
 (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`). There are three places to point them:
 
-- **Agent** (the tool-calling loop) — in the BPMN `agent:config` near line 10 of
-  [bpmn/loan-assesment.bpmn](bpmn/loan-assesment.bpmn) (and
-  [bpmn/loan-assesment-eval.bpmn](bpmn/loan-assesment-eval.bpmn)):
-  `<agent:config provider="ollama" model="gemma4:e2b" ...>`. `fluxnova-run` re-deploys the BPMN, so no
-  rebuild is needed. The agent model must support Ollama tool calling — confirm with
-  `ollama show gemma4:e2b` (look for `tools` under Capabilities).
+- **Agent** (the tool-calling loop) — the tracked default in the BPMN `agent:config` near line 10 of
+  [bpmn/loan-assesment.bpmn](bpmn/loan-assesment.bpmn) is
+  `<agent:config provider="openai" model="gpt-4o" ...>`; change it to
+  `<agent:config provider="ollama" model="gemma4:e2b" ...>` for this walkthrough (and set `default.yml`'s
+  `spring.ai.model.chat` to `ollama` to match — see
+  [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative)).
+  `fluxnova-run` re-deploys the BPMN, so no rebuild is needed. The agent model must support Ollama tool calling —
+  confirm with `ollama show gemma4:e2b` (look for `tools` under Capabilities).
 - **Judge, offline (regression + eval services)** — set `_NATIVE_JUDGE_MODEL` / `_JUDGE_MODEL` in
   [fluxnova-mlflow-dataset/src/fluxnova_mlflow_dataset/scorers.py](fluxnova-mlflow-dataset/src/fluxnova_mlflow_dataset/scorers.py)
   to `ollama:/gemma4:e2b`.

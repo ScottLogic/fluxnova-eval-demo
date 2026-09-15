@@ -5,9 +5,12 @@
 # EVAL-SERVICE-WORKER-PLAN.md at the repo root for background/scope.
 #
 # Requires fluxnova-local and mlflow-local (fluxnova-up.sh / mlflow-up.sh) already
-# running on the shared fluxnova-dev network — this worker reaches both by pod name,
-# overriding the image's localhost-based defaults via EVAL_SERVICE_* env vars below
-# (see src/eval_service_worker/config.py for the full list of settings/defaults).
+# running — mlflow-local is reached by pod name on the shared fluxnova-dev network, but
+# fluxnova-local runs on --network host (see OTEL-EXPORT-INVESTIGATION.md at the repo
+# root: running Fluxnova in any isolated Podman network namespace silently breaks the
+# OpenTelemetry Java SDK's OTLP export) so it's reached via host.containers.internal
+# instead, overriding the image's localhost-based defaults via EVAL_SERVICE_* env vars
+# below (see src/eval_service_worker/config.py for the full list of settings/defaults).
 #
 # Usage (from this directory):
 #   ./eval-service-up.sh
@@ -39,8 +42,9 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set +a
 fi
 
-# Reach the sibling pods by container/pod name on the shared network, not localhost.
-EVAL_SERVICE_FLUXNOVA_URL="${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}"
+# mlflow-local is reached by pod name on the shared network; fluxnova-local runs on
+# --network host, so it's reached via host.containers.internal instead (see header).
+EVAL_SERVICE_FLUXNOVA_URL="${EVAL_SERVICE_FLUXNOVA_URL:-http://host.containers.internal:8080/engine-rest}"
 EVAL_SERVICE_TRACKING_URI="${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}"
 # EVAL_SERVICE_EXPERIMENT_NAME (the MLflow experiment the worker reads traces from) is
 # sourced from .env above — it must match where the OTel collector writes traces
