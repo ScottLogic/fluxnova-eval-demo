@@ -26,10 +26,21 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 import pytest
-from fluxnova_mlflow_dataset import default_server_tracking_uri, experiment_name_for
-from fluxnova_mlflow_dataset.scorers import LLM_JUDGE_PROVIDER
+from dotenv import load_dotenv
+
+# litellm (a fluxnova-mlflow-dataset dependency) calls `load_dotenv()` on import, but with no
+# path that only finds a ".env" in/above the current working directory — not this repo's actual
+# single source of truth, `local-dev/.env` (the file podman-compose reads OPENAI_API_KEY etc.
+# from). Load it explicitly here, before anything reads OPENAI_API_KEY, so the OpenAI-backed
+# judge scorers (see fluxnova_mlflow_dataset.scorers) work from a plain `pytest regression` too.
+# `override=False` (load_dotenv's default) leaves a real shell-exported value alone.
+load_dotenv(Path(__file__).resolve().parent.parent / "local-dev" / ".env")
+
+from fluxnova_mlflow_dataset import default_server_tracking_uri, experiment_name_for  # noqa: E402
+from fluxnova_mlflow_dataset.scorers import LLM_JUDGE_PROVIDER  # noqa: E402
 
 # Third-party loggers that emit chatty INFO/DEBUG output on their own named
 # loggers. With live logging enabled (log_cli in pyproject.toml) these would
