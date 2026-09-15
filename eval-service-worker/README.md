@@ -51,21 +51,22 @@ pip install -e .
 ## Config
 
 Deliberately **no config file** — this worker is meant to be a slim, independently deployable service, so depending on
-another service's YAML (e.g. `fluxnova-runner/config/loan-assesment.yml`) would recreate the exact coupling this worker avoids
+another service's YAML (e.g. `fluxnova-runner/config/loan-assesment.yml`) would recreate the exact coupling this worker
+avoids
 everywhere else. Instead, every setting has a hardcoded default in `src/eval_service_worker/config.py`, overridable via
 either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 
-| Setting             | CLI flag             | Env var                         | Default                              |
-|---------------------|----------------------|---------------------------------|--------------------------------------|
-| Fluxnova REST URL   | `--fluxnova-url`     | `EVAL_SERVICE_FLUXNOVA_URL`     | `http://localhost:8080/engine-rest`  |
-| MLflow experiment   | `--experiment-name`  | `EVAL_SERVICE_EXPERIMENT_NAME`  | `fluxnova-loanAssessmentEvalProcess` |
-| Process key (tags)  | `--process-key`      | `EVAL_SERVICE_PROCESS_KEY`      | `loanAssessmentEvalProcess`          |
-| External-task topic | `--topic`            | `EVAL_SERVICE_TOPIC`            | `agent-output-eval`                  |
-| Judge model URI     | `--judge-model`      | `EVAL_SERVICE_JUDGE_MODEL`      | `gateway:/fluxnova-judge`            |
-| Lock duration (ms)  | `--lock-duration-ms` | `EVAL_SERVICE_LOCK_DURATION_MS` | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes) |
-| MLflow tracking URI | `--tracking-uri`     | `EVAL_SERVICE_TRACKING_URI`     | `http://localhost:5000`              |
-| Trace poll timeout (s) | `--trace-poll-timeout` | `EVAL_SERVICE_TRACE_POLL_TIMEOUT` | `30.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
-| Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0` |
+| Setting                 | CLI flag                | Env var                            | Default                                                                                     |
+|-------------------------|-------------------------|------------------------------------|---------------------------------------------------------------------------------------------|
+| Fluxnova REST URL       | `--fluxnova-url`        | `EVAL_SERVICE_FLUXNOVA_URL`        | `http://localhost:8080/engine-rest`                                                         |
+| MLflow experiment       | `--experiment-name`     | `EVAL_SERVICE_EXPERIMENT_NAME`     | `fluxnova-loanAssessmentEvalProcess`                                                        |
+| Process key (tags)      | `--process-key`         | `EVAL_SERVICE_PROCESS_KEY`         | `loanAssessmentEvalProcess`                                                                 |
+| External-task topic     | `--topic`               | `EVAL_SERVICE_TOPIC`               | `agent-output-eval`                                                                         |
+| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `gateway:/fluxnova-judge`                                                                   |
+| Lock duration (ms)      | `--lock-duration-ms`    | `EVAL_SERVICE_LOCK_DURATION_MS`    | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes)                     |
+| MLflow tracking URI     | `--tracking-uri`        | `EVAL_SERVICE_TRACKING_URI`        | `http://localhost:5000`                                                                     |
+| Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `30.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
+| Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0`                                                                                       |
 
 A CLI flag always wins over the matching env var, which always wins over the default.
 

@@ -1,85 +1,230 @@
-# Fluxnova Eval Demo
+# Fluxnova Evals Demo
 
-A set of tooling and an evaluation framework for Fluxnova workflows that include AI-driven agentic
-subprocesses.
+A set of tooling and evals to demonstrate the use of agentic evaluation with Fluxnova workflows.
 
 Goals of this project are:
 
-- Create an Eval Test framework which facilitates Evaluation Driven Design (EDD). This will allow a demo of how you can
+- Create an Eval Test framework which facilitates Evaluation Driven Design (EDD). This will demonstrate how you can
   build out an agentic workflow using EDD.
 - Add an OTel collector and gen_ai* metrics and tracing with a suitable dashboard. This will allow a demo of real time
   production monitoring.
 - Add an Eval task to production level process runs which will facilitate checks on responses and break-glass to a human
   in Production environments.
 
+## Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
+  - [bpmn](#--bpmn)
+  - [cicd](#--cicd)
+  - [datasets](#--datasets)
+  - [eval-service-worker](#--eval-service-worker)
+  - [eval-trace-listener](#--eval-trace-listener)
+  - [fluxnova-mlflow-dataset](#--fluxnova-mlflow-dataset)
+  - [fluxnova-runner](#--fluxnova-runner)
+  - [local-dev](#--local-dev)
+  - [model-benchmarks](#--model-benchmarks)
+  - [regression](#--regression)
+- [Evaluation scorers (MLflow)](#evaluation-scorers-mlflow)
+- [GenAI observability (tracing & metrics)](#genai-observability-tracing--metrics)
+    - [Metrics](#metrics)
+    - [Traces](#traces)
+    - [Content capture (opt-in)](#content-capture-opt-in)
+- [First time setup](#first-time-setup)
+- [Running `fluxnova-runner` (Windows Git Bash)](#running-fluxnova-runner-windows-git-bash)
+    - [Running the eval workflow](#running-the-eval-workflow-fluxnova-runnerconfigloan-assesment-evalyml)
+- [Evaluating agent runs](#evaluating-agent-runs)
+    - [Automatic (online) evaluation: `mlflow-judges`](#automatic-online-evaluation-mlflow-judges)
+- [Alternative: running the MLflow tracking server on the host](#alternative-running-the-mlflow-tracking-server-on-the-host)
+    - [As an IntelliJ Run/Debug Configuration](#as-an-intellij-rundebug-configuration)
+- [Local development with Podman](#local-development-with-podman-fluxnova--otel-collector--mlflow--postgresql)
+- [Config file](#config-file)
+    - [`expected_tools` rule syntax](#expected_tools-rule-syntax)
+- [Agent-history report format](#agent-history-report-format)
+- [Tech stack](#tech-stack)
+
 ## Overview
 
-This project is split into two shared Python packages plus standalone evaluation services:
+This project is split into two several Python packages which are designed to run locally in podman. There are two main
+flows which make up the standard use-cases.
 
-1. **`fluxnova-runner`** ([`fluxnova-runner/`](fluxnova-runner/README.md)) — deploys a BPMN workflow to Fluxnova,
-   starts a process instance with configurable input variables, drives mock external-task workers, and polls until
-   the sub-process completes. Owns the workflow YAML config files ([`fluxnova-runner/config/`](fluxnova-runner/config)).
-2. **`fluxnova-mlflow-dataset`** ([`fluxnova-mlflow-dataset/`](fluxnova-mlflow-dataset/README.md)) — a shared
-   library providing the pieces the eval services reuse. It provides:
-    - **trace reading** (`MlflowTraceReader`) — reads `gen_ai.*` span data (`invoke_agent`, `execute_tool`, `chat`)
-      straight out of MLflow's trace store (populated by an OTel Collector exporting directly to MLflow).
-    - **record shaping/read/write** — builds MLflow-dataset records from agent-history data and reads/writes the
-      persistent PostgreSQL-backed MLflow evaluation dataset.
-    - **shared scorer/judge definitions** (`scorers.py`) and the **`mlflow-judges`** CLI for toggling automatic
-      (online) evaluation on/off.
+1. Production demo.
+    - Deploy and initiate a bpmn via the [fluxnova-runner](fluxnova-runner).
+    - Observe the tracing in MLFlow.
+    - The [eval-trace-listener](eval-trace-listener) will automatically run evals against configured traces as they
+      arrive in MLFlow
+    - Handle real time guard-rail use-cases with a Service Worker and the [eval-service-worker](eval-service-worker)
+      service.
+2. Development Demo
+    - Run a complete regression suite using the [regression tests](regression).
+
+Together these two use-case demonstrate both development using an EDD approach of a Fluxnova processes and the live
+monitoring and evaluation of agentic workflows in Fluxnova via MLFlow.
 
 The end-to-end **MLflow agent regression suite** ([`regression/`](regression/README.md)) sits alongside these packages
 at the repo root: a gating check that drives the live agent per golden scenario and scores its real output with the
 shared judges. See its [README](regression/README.md) for details.
 
-Two standalone, independently-deployable **evaluation services** also live at the repo root, both scoring live agent
-traces via the shared scorers (see each README for how they're deployed to Podman):
-
-- **`eval-service-worker`** ([`eval-service-worker/`](eval-service-worker/README.md)) — a BPMN external-task worker that
-  scores one just-completed run on demand (driven by the `loan-assesment-eval.bpmn` gateway).
-- **`eval-trace-listener`** ([`eval-trace-listener/`](eval-trace-listener/README.md)) — an always-on service that tails
-  the MLflow trace store and scores newly-completed runs of the configured agents with the deterministic (trace-only)
-  scorers.
-
 ## Architecture
 
-```
-┌───────────────────────────┐        ┌──────────────────────────────────────┐
-│  fluxnova-runner CLI      │        │  Agent's OTel instrumentation        │
-│  (fluxnova-run)           │        │                                      │
-│                           │        │  Emits gen_ai.* spans (invoke_agent, │
-│  1. Deploy BPMN           │        │  execute_tool, chat) via OTLP        │
-│     → Fluxnova engine     │        └───────────────────┬──────────────────┘
-│  2. Start process         │                            │ OTLP
-│     instance with input   │                            ▼
-│     variables             │                 ┌────────────────────┐
-│  3. Run mock external-    │                 │   OTel Collector   │
-│     task workers          │                 └──────────┬─────────┘
-│  4. Poll until process    │                            │ otlphttp exporter
-│     completes             │                            ▼
-│                           │              ┌────────────────────────────┐
-└───────────────────────────┘              │  MLflow  /v1/traces        │
-│  (trace store)             │
-└──────────────┬─────────────┘
-               │ mlflow.search_traces()
-               ▼
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│  eval-trace-listener  (always-on service)                                           │
-│                                                                                     │
-│  1. Tail the trace store for newly-completed invoke_agent traces of configured      │
-│     agents                                                                          │
-│  2. Score each once with the shared deterministic (trace-only) scorers              │
-│     (mlflow.genai.evaluate over the trace), logging Feedback back onto the trace    │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+See [architecture diagram](Fluxnova%20EDD.png).
 
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  eval-service-worker  (BPMN external-task worker)                                       │
-│                                                                                         │
-│  Triggered by the loan-assesment-eval.bpmn eval service task once the agent finishes    │
-│  Scores that one run with the deterministic scorers + decision_quality judge            │
-│  (Ollama / gemma4:e2b via the fluxnova-judge gateway); browse in the MLflow UI          │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+## Repository Structure
+
+This repository consists of the following:
+
+### -| [bpmn](bpmn)
+
+This directory contains the BPMN diagrams used by the project. Agentic subprocesses are defined in their own BPMN files
+and invoked by broader business workflows through Call Activities. This keeps the agentic functionality isolated, so it
+can be developed, tested, and evaluated independently while remaining reusable within end-to-end processes. The loan
+assessment workflow is an example of this pattern.
+
+### -| [cicd](cicd)
+
+Unused. This is a placeholder for building out CICD pipelines (GitLab for example)
+
+### -| [datasets](datasets)
+
+Contains JSON golden datasets: A list of representative agent scenarios, each with an `input`, reference
+`expected_output`, human-readable `context`, and `additional_metadata` for identifying the scenario. For end-to-end
+regression testing, each golden is extended with `input_variables` (the process variables used to start the workflow)
+and `tool_responses` (the deterministic responses replayed by mock external-task workers). This lets the regression
+suite execute the live agent for the same scenario and compare its actual output with the reference output using
+Fluxnova.
+
+### -| [eval-service-worker](eval-service-worker)
+
+A BPMN external-task worker that synchronously scores a just-completed agentic subprocess run on demand. It reads the
+run's MLflow trace, evaluates the final output with the `decision_quality` LLM judge and deterministic trace-based
+scorers, and stores each scorer's feedback in MLflow. The evaluation passes only when every scorer passes. It returns
+`evalPassed` and `evalRationale` workflow variables, which subsequent BPMN steps can use to continue automatically or
+route the work for human review.
+
+More detail available in the [README](eval-service-worker/README.md).
+
+### -| [eval-trace-listener](eval-trace-listener)
+
+An always-on, asynchronous service that polls a configured MLflow experiment for completed runs of configured agents.
+It extracts the scorer inputs and final output directly from each trace, runs deterministic trace-based scorers plus the
+`decision_quality` and `evidence_citation` LLM judges, and records the resulting feedback on the same trace in MLflow.
+It avoids rescoring traces, including after a restart. This is an observational, non-blocking service: it does not
+return workflow variables or alter the flow of the underlying process.
+
+More detail available in the [README](eval-trace-listener/README.md).
+
+### -| [fluxnova-mlflow-dataset](fluxnova-mlflow-dataset)
+
+An installable library providing MLflow-specific functionality for reuse across the evaluation services and regression
+suite. It provides:
+
+- **Trace reading**: Reads `gen_ai.*` span data (`invoke_agent`, `execute_tool`, `chat`) straight out of MLflow's trace
+  store (populated by an OTel Collector exporting directly to MLflow).
+- **Record shaping/read/write**: Builds MLflow-dataset records from agent-history data and reads/writes the
+  persistent PostgreSQL-backed MLflow evaluation dataset.
+- **Shared scorer and judge definitions** (`scorers.py`) and the **`mlflow-judges`** CLI for managing automatic online
+  evaluation.
+
+Keeping this logic in one package ensures every consumer evaluates agent runs using the same data shape and criteria.
+
+More detail available in the [README](fluxnova-mlflow-dataset/README.md).
+
+### -| [fluxnova-runner](fluxnova-runner)
+
+A Python service for deploying and executing Fluxnova workflows. It reads
+a [workflow YAML configuration](fluxnova-runner/config), deploys the
+primary BPMN and any additional BPMN resources required by Call Activities, then starts a process instance with the
+configured input variables. It can optionally run mock external-task workers, allowing workflows to be exercised
+locally without their real downstream service backends.
+
+The runner can wait for either the complete process or a named BPMN activity, which supports workflows that continue
+into human or asynchronous stages. It is responsible only for deployment and execution; evaluation is performed
+afterwards by the `eval-trace-listener` or `eval-service-worker`.
+
+More detail available in the [README](fluxnova-runner/README.md).
+
+### -| [local-dev](local-dev)
+
+Local Podman configuration and scripts for running the complete development environment: PostgreSQL, Fluxnova with an
+OTel Collector, MLflow, the evaluation services, and optional Prometheus and Grafana observability tooling. The
+`pods-up.sh` and `pods-down.sh` scripts start and stop these services in dependency order, while `compose.yaml` provides
+an equivalent Podman Compose setup. This directory also contains the shared environment, engine, collector, database,
+and dashboard configuration used by the local stack.
+
+More detail available in the [README](local-dev/README.md).
+
+### -| [model-benchmarks](model-benchmarks)
+
+Benchmark data and reporting for comparing locally hosted models on agentic tool-calling behaviour. The capture script
+records OpenTelemetry `gen_ai.*` metrics before and after a workflow run; the raw JSON snapshots, machine-readable
+summary, and results report preserve the resulting tool-call, inference-call, token-usage, error, and approximate
+duration measurements. The current benchmark uses the loan-assessment workflow as an example and measures behavioural
+tool-calling metrics only; it does not include LLM-judge quality scores.
+
+### -| [regression](regression)
+
+An end-to-end pytest regression suite that acts as a quality gate for agentic workflows. For each golden scenario, it
+uses the runner to execute the live agent with the scenario's input variables and deterministic mock tool responses,
+then evaluates its actual final output using the shared MLflow scorers and judges. The suite checks for a clear,
+evidence-backed decision, agreement with the golden reference output, and required decision content, helping detect
+behavioural regressions before a workflow change is released.
+
+More detail available in the [README](regression/README.md).
+
+## Evaluation scorers (MLflow)
+
+`fluxnova_mlflow_dataset.scorers` is the single source of truth for every scorer.
+Each one is **decoupled from tracing** — it takes plain `inputs` / `outputs` /
+`expectations` values and never reads a span itself, so each consumer is free to
+source that data wherever suits it (live agent output, a trace, process
+variables). The scorers split into two families:
+
+- **Code** (deterministic) — pure Python checks over tool calls / output text.
+- **LLM judge** (non-deterministic) — grade the output with a judge model.
+
+They are grouped into reusable bundles:
+
+- `DETERMINISTIC_SCORERS` — the 10 code scorers below that need only tool *names* / status / input-variables / output
+  text (no captured arguments).
+- `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
+  capture is on (they self-skip with
+  `Feedback(None)` otherwise). Not run by any consumer by default.
+- `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
+
+**Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
+(online, per-run) · **L** = `eval-trace-listener` (offline, per-trace). See each
+service's README for exactly how it sources the scorer inputs.
+
+| Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
+|-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
+| `required_tools_called`                               | Code      | DETERMINISTIC | Every tool the scenario requires was called                                       | W · L     |
+| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | W · L     |
+| `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
+| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | W · L     |
+| `all_tool_calls_completed`                            | Code      | DETERMINISTIC | Every initiated tool call reached a completed status                              | W · L     |
+| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | W · L     |
+| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | W · L     |
+| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | W · L     |
+| `step_efficiency`                                     | Code      | DETERMINISTIC | Agent completes within a budget of loop iterations (+1 if collateral)             | W · L     |
+| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | W · L     |
+| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | —         |
+| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | —         |
+| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | —         |
+| `decision_quality`                                    | LLM judge | —             | Final output is a clear, justified APPROVE/REJECT recommendation                  | R · W · L |
+| `evidence_citation`                                   | LLM judge | —             | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)          | R · L     |
+| `matches_golden`                                      | LLM judge | —             | Output reaches the same decision as the matching golden (needs `expected_output`) | R         |
+
+Notes:
+
+- `matches_golden` requires a golden `expected_output` (an `expectations`
+  value), so only the **regression** suite runs it — a bare trace doesn't carry
+  it, so `W`/`L` cannot.
+- `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
+  context (it isn't on the MLflow trace), so it can run trace-side in `L`.
+- The three LLM judges use an Ollama judge model; `eval-service-worker` reaches
+  it via the `fluxnova-judge` gateway endpoint, while `regression` and
+  `eval-trace-listener` call Ollama directly.
 
 ## GenAI observability (tracing & metrics)
 
@@ -139,7 +284,8 @@ data). Enable it via the Spring Boot property
 This project assumes you're on **Windows**, using **[Podman](https://podman.io)** for all backing services (Fluxnova
 engine, OTel Collector, MLflow), and **Git Bash** as your terminal — every command in this README uses forward-slash
 (`/`) paths for that reason. (Backslashes work fine in native PowerShell/`cmd.exe`, but in Git Bash/MINGW64 they're
-treated as escape characters and silently mangle paths, e.g. `fluxnova-runner\config\loan-assesment.yml` → `fluxnova-runnerconfigloan-assesment.yml`
+treated as escape characters and silently mangle paths, e.g. `fluxnova-runner\config\loan-assesment.yml` →
+`fluxnova-runnerconfigloan-assesment.yml`
 — so forward slashes are used consistently here, since they work in both shells.)
 
 1. **Install prerequisites:**
@@ -148,8 +294,7 @@ treated as escape characters and silently mangle paths, e.g. `fluxnova-runner\co
       containers, and logs)
     - Python 3.11+
     - [Ollama](https://ollama.com) with `gemma4:e2b` (agent + eval judge) and
-      `qwen2.5:1.5b` (online `eval-service-worker` judge) pulled
-      (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`)
+      `qwen2.5:1.5b` (online `eval-service-worker` judge) pulled (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`)
     - The **Fluxnova** engine image — pull the public one from GHCR:
       `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.0.0` (no login needed)
 
@@ -192,7 +337,8 @@ You're now ready to run a workflow — see "Running `fluxnova-runner`" below.
 
 ## Running `fluxnova-runner` (Windows Git Bash)
 
-From a Git Bash terminal, with the repo-root `.venv` activated (`source .venv/Scripts/activate` — see Installation above)
+From a Git Bash terminal, with the repo-root `.venv` activated (`source .venv/Scripts/activate` — see Installation
+above)
 and your working directory at the repo root:
 
 ```bash
@@ -251,17 +397,19 @@ handled asynchronously by the **eval-service-worker** (see `local-dev/README.md`
 
 ## Evaluating agent runs
 
-Evaluation is no longer a manual batch step — it happens automatically off the agent traces the OTel Collector exports
-into MLflow. There are three complementary paths, all using the **shared scorers/judges** in
+Evaluation happens automatically off the agent traces the OTel Collector exports into MLflow. There are three
+complementary paths, all using the **shared scorers/judges** in
 `fluxnova_mlflow_dataset.scorers` so they never disagree on what "good" means:
 
 - **`eval-trace-listener`** (always-on service) — tails MLflow's trace store and scores each newly-completed run of the
   configured agents once with the deterministic (trace-only) scorers, logging `Feedback` back onto the trace. Best for
-  passive, continuous scoring of every run as it lands. See [`eval-trace-listener/README.md`](eval-trace-listener/README.md).
+  passive, continuous scoring of every run as it lands. See [
+  `eval-trace-listener/README.md`](eval-trace-listener/README.md).
 - **`eval-service-worker`** (BPMN external-task worker) — triggered by the eval service task in
   `loan-assesment-eval.bpmn` once the agent Call Activity finishes, it scores that one run with the deterministic
   scorers **plus** the `decision_quality` LLM judge (via the `fluxnova-judge` MLflow AI Gateway endpoint). Best for
-  synchronous, in-process scoring wired into the workflow. See [`eval-service-worker/README.md`](eval-service-worker/README.md).
+  synchronous, in-process scoring wired into the workflow. See [
+  `eval-service-worker/README.md`](eval-service-worker/README.md).
 - **`regression/`** (pytest gating suite) — drives the live agent per golden scenario and asserts its real output
   satisfies the shared `decision_quality` and `matches_golden` judges plus the deterministic
   `definitive_decision_stated` scorer. Best as a CI gate against behavioural
@@ -274,7 +422,8 @@ database — see `local-dev/services/postgres-up.sh`).
 
 For **online** evaluation — where the MLflow server itself scores a sampled fraction of new traces with no code running
 continuously — use the `mlflow-judges` CLI (from `fluxnova-mlflow-dataset`) to register/start/stop the automatic judges.
-See [`fluxnova-mlflow-dataset/README.md`](fluxnova-mlflow-dataset/README.md#mlflow-judges-toggling-automatic-online-evaluation)
+See [
+`fluxnova-mlflow-dataset/README.md`](fluxnova-mlflow-dataset/README.md#mlflow-judges-toggling-automatic-online-evaluation)
 and `local-dev/README.md`'s AI-Gateway section for the one-off endpoint setup this depends on.
 
 To view the results in the browser, use the same MLflow tracking server described in "Running the MLflow tracking
@@ -288,14 +437,16 @@ more rows to the same experiment for side-by-side comparison.
 ## Alternative: running the MLflow tracking server on the host
 
 First-time setup above uses `local-dev/services/mlflow-up.sh` (a Podman pod) to run the MLflow tracking server. If you'd
-rather run it as a host process instead (e.g. for IDE debugging), an MLflow client can *read* the PostgreSQL store directly
-(`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/services/postgres-up.sh` is running), but for
+rather run it as a host process instead (e.g. for IDE debugging), an MLflow client can *read* the PostgreSQL store
+directly (`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-dev/services/postgres-up.sh` is running),
+but for
 the OTel Collector to *write* traces into it, an actual MLflow tracking **server** (an HTTP process, not just the
 library) must be running and listening on the URL the Collector's `otlphttp` exporter targets
 (`http://localhost:5000/v1/traces` by default). `mlflow ui` alone does **not** accept incoming trace writes — it only
 reads.
 
-Start it (from the repo root, with the repo-root `.venv` activated and `local-dev/services/postgres-up.sh` already running)
+Start it (from the repo root, with the repo-root `.venv` activated and `local-dev/services/postgres-up.sh` already
+running)
 and leave it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
@@ -380,64 +531,10 @@ Examples:
     }
   ],
   "promptMessages": [
-    ...
   ],
   "executionTime": 4200
 }
 ```
-
-## Evaluation scorers (MLflow)
-
-`fluxnova_mlflow_dataset.scorers` is the single source of truth for every scorer.
-Each one is **decoupled from tracing** — it takes plain `inputs` / `outputs` /
-`expectations` values and never reads a span itself, so each consumer is free to
-source that data wherever suits it (live agent output, a trace, process
-variables). The scorers split into two families:
-
-- **Code** (deterministic) — pure Python checks over tool calls / output text.
-- **LLM judge** (non-deterministic) — grade the output with a judge model.
-
-They are grouped into reusable bundles:
-
-- `DETERMINISTIC_SCORERS` — the 10 code scorers below that need only tool
-  *names* / status / input-variables / output text (no captured arguments).
-- `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call
-  *arguments*; only meaningful when content capture is on (they self-skip with
-  `Feedback(None)` otherwise). Not run by any consumer by default.
-- `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
-
-**Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
-(online, per-run) · **L** = `eval-trace-listener` (offline, per-trace). See each
-service's README for exactly how it sources the scorer inputs.
-
-| Scorer                                                | Type      | Bundle              | What it checks                                                              | Consumers |
-|-------------------------------------------------------|-----------|---------------------|----------------------------------------------------------------------------|-----------|
-| `required_tools_called`                               | Code      | DETERMINISTIC       | Every tool the scenario requires was called                                | W · L     |
-| `no_tool_errors`                                      | Code      | DETERMINISTIC       | No tool call ended in an error/failed status                               | W · L     |
-| `definitive_decision_stated`                          | Code      | DETERMINISTIC       | Output literally states an APPROVE/REJECT decision                         | R · W · L |
-| `tool_correctness`                                    | Code      | DETERMINISTIC       | Agent calls all expected tools and no inappropriate ones                   | W · L     |
-| `all_tool_calls_completed`                            | Code      | DETERMINISTIC       | Every initiated tool call reached a completed status                      | W · L     |
-| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC       | Value Collateral is not called when `hasCollateral=false`                  | W · L     |
-| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC       | Bank statements are not analysed for EMPLOYED applicants                   | W · L     |
-| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC       | Employment is not verified for non-EMPLOYED applicants                     | W · L     |
-| `step_efficiency`                                     | Code      | DETERMINISTIC       | Agent completes within a budget of loop iterations (+1 if collateral)      | W · L     |
-| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC       | Affordability is assessed only after income has been confirmed             | W · L     |
-| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT       | Each expected tool receives the arguments the BPMN wires up for it         | —         |
-| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT       | Value Collateral **is** called, with the correct `applicationId`, when required | —    |
-| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT       | Affordability tool receives the correct `customerId` and `requestedAmount` | —         |
-| `decision_quality`                                    | LLM judge | —                   | Final output is a clear, justified APPROVE/REJECT recommendation           | R · W · L |
-| `evidence_citation`                                   | LLM judge | —                   | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)   | R · L     |
-| `matches_golden`                                      | LLM judge | —                   | Output reaches the same decision as the matching golden (needs `expected_output`) | R |
-
-Notes:
-- `matches_golden` requires a golden `expected_output` (an `expectations`
-  value), so only the **regression** suite runs it — a bare trace doesn't carry
-  it, so `W`/`L` cannot.
-- `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
-  context (it isn't on the MLflow trace), so it can run trace-side in `L`.
-- The three LLM judges use an Ollama judge model; `eval-service-worker` reaches
-  it via the `fluxnova-judge` gateway endpoint, while `regression` and
-  `eval-trace-listener` call Ollama directly.
 
 ## Tech stack
 
@@ -448,6 +545,6 @@ Notes:
 | Database             | PostgreSQL (Fluxnova process-engine datasource + MLflow tracking-server backend store, run as a Podman pod — see `local-dev/services/postgres-up.sh`) |
 | Python runtime       | Python 3.11, requests, PyYAML                                                                                                                         |
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
-| LLM agent            | Ollama / gemma4:e2b (runs inside Fluxnova)                                                                                                              |
+| LLM agent            | Ollama / gemma4:e2b (runs inside Fluxnova)                                                                                                            |
 | Evaluation framework | [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/)                                                                         |
-| Judge model          | Ollama / gemma4:e2b (regression + eval services) · Ollama / qwen2.5:1.5b (online `eval-service-worker`, via the `fluxnova-judge` gateway endpoint)            |
+| Judge model          | Ollama / gemma4:e2b (regression + eval services) · Ollama / qwen2.5:1.5b (online `eval-service-worker`, via the `fluxnova-judge` gateway endpoint)    |
