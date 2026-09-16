@@ -1,38 +1,12 @@
-"""MLflow *agent* regression test (see
-https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/) for the
-Fluxnova loan-assessment agent.
+"""MLflow *agent* regression test for the Fluxnova loan-assessment agent.
 
-Unlike an offline batch evaluation (which measures aggregate
-scores across every *recorded* run), this is a
-gating check that actually runs the live agent: for every scenario in the
-golden dataset (``datasets/loan-assessment/goldens.json``) it drives the agent
-end-to-end via ``fluxnova-runner`` and asserts the agent's *actual* output
-still satisfies the shared ``decision_quality`` guideline judge, still matches
-the golden's ``expected_output`` via the shared ``matches_golden`` judge, still
-cites the evidence it gathered via the shared ``evidence_citation`` judge, and
-still states a definitive APPROVE/REJECT decision via the shared deterministic
-``definitive_decision_stated`` scorer (see ``fluxnova_mlflow_dataset.scorers``).
-This matches MLflow's canonical regression-testing pattern — a ``predict_fn``
-that invokes the real agent per row — rather than merely re-scoring the golden's
-own reference answer.
-
-Each golden is turned into a set of process variables (see
-:func:`_golden_to_variables`): the applicant-facing ``input_variables`` the BPMN
-is started with, plus one ``_mock_output_<key>`` variable per value in the
-golden's ``tool_responses`` so a single shared mock-worker pool replays that
-scenario's tool results (see ``fluxnova_runner.mock_workers``). The agent's
-final output is read back from the run's ``_agentConversationHistory`` process
-variable (see ``fluxnova_runner.agent_output``) — deliberately *not* from the
-MLflow trace, since a nested ``mlflow.search_traces`` inside a ``predict_fn``
-corrupts MLflow's active-trace context and breaks assessment logging.
-
-Results are recorded to the same shared PostgreSQL-backed MLflow tracking store
-used by the rest of the project (see ``local-dev/postgres-up.sh``), under a
-dedicated ``fluxnova-loanAssessmentProcess-regression`` experiment so runs
-don't mix with real recorded agent runs.
+This is a gating check that runs the live agent.
+For every scenario in the golden dataset it runs the agent end-to-end via `fluxnova-runner`
+and asserts the agent's output passes the specified tests.
+This follows MLflow's canonical regression-testing pattern.
 
 Prerequisites (the full live stack must be up): the Fluxnova engine, the shared
-Postgres store, the OTel collector, MLflow, and Ollama. The test skips cleanly
+Postgres store, the OTel collector and MLflow. The test skips cleanly
 if the engine or tracking store isn't reachable.
 
 Run with:
@@ -41,6 +15,7 @@ Run with:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -50,15 +25,17 @@ import mlflow
 import pytest
 import requests
 from fluxnova_mlflow_dataset import (
+    ALL_DETERMINISTIC_SCORERS,
     GOLDEN_MATCH_THRESHOLD,
+    BpmnLookup,
     decision_quality,
-    definitive_decision_stated,
     evidence_citation,
     experiment_name_for,
     matches_golden,
 )
 from fluxnova_mlflow_dataset.goldens import load_goldens
 from fluxnova_runner.agent_output import agent_final_output
+from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
 from fluxnova_runner.client import Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
@@ -111,21 +88,26 @@ def _engine_reachable(cfg: RunnerConfig) -> bool:
         return False
 
 
-def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> str:
-    """Drive one live agent run and return its actual final output.
+def _cache_key(variables: dict) -> str:
+    """A stable key for one scenario's process variables, for ``predict_fn``'s cache."""
+    return json.dumps(variables, sort_keys=True, default=str)
+
+
+def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str, dict]:
+    """Drive one live agent run and return its final output plus raw process variables.
 
     Starts a process instance, waits for the agentic subprocess to finish, then
-    reads the agent's final response back from the run's process variables
-    (``_agentConversationHistory``) — deliberately not from the MLflow trace, so
-    no ``mlflow.*`` call happens here (see ``fluxnova_runner.agent_output``).
+    reads the run's process variables back — deliberately not from the MLflow
+    trace, so no ``mlflow.*`` call happens here.
     """
     instance_id = client.start_process(cfg.process_key, variables)
     client.wait_for_activity_completion(
         instance_id, cfg.subprocess_id, timeout=_ACTIVITY_TIMEOUT
     )
-    final_output = agent_final_output(client.get_variables(instance_id))
+    run_variables = client.get_variables(instance_id)
+    final_output = agent_final_output(run_variables)
     assert final_output, f"No agent final output found for instance {instance_id}"
-    return final_output
+    return final_output, run_variables
 
 
 @pytest.fixture(scope="session")
@@ -190,50 +172,96 @@ def loan_agent(cfg: RunnerConfig, regression_experiment: str) -> Client:
 
 
 @pytest.fixture(scope="session")
-def evaluation_data(cfg: RunnerConfig, loan_agent: Client) -> list[dict]:
-    """Phase 1 — run the live agent on every golden and collect its real output.
+def tool_names(cfg: RunnerConfig) -> dict[str, str | None]:
+    """``{BPMN service task element id: display name}``, read once from the BPMN.
 
-    All agent runs (and therefore all live agent tracing) happen here, up-front
-    during fixture setup, *before* any scoring. The test then scores these static
-    ``outputs``, so ``evaluate`` never invokes a ``predict_fn`` — which would
-    otherwise wrap each live call in its own MLflow trace that collides with the
-    out-of-process agent's OTel trace and breaks assessment logging
-    (``'NoneType' object has no attribute 'info'``).
+    The agent's tool-call history (``_agentConversationHistory``) records each
+    call's BPMN element id (``ServiceTask_...``), but the scorers key on the
+    human-readable display name — see
+    ``fluxnova_runner.agent_tool_calls.tool_calls_from_variables``.
+    """
+    return BpmnLookup(cfg.bpmn_path, cfg.subprocess_id).tool_names()
+
+
+@pytest.fixture(scope="session")
+def _run_cache() -> dict[str, dict]:
+    """Session-wide cache: scenario key -> ``{"output", "scorer_inputs"}``.
+
+    Populated by ``predict_fn`` the first time each scenario is requested (by
+    ``evaluation_rows``, eagerly, before any ``evaluate()`` call), then just
+    replayed for every subsequent call — see ``predict_fn``'s docstring.
+    """
+    return {}
+
+
+@pytest.fixture(scope="session")
+def predict_fn(cfg: RunnerConfig, loan_agent: Client, tool_names: dict, _run_cache: dict):
+    """Build the MLflow ``predict_fn``: drives one live agent run per distinct
+    ``input_variables`` and caches its result.
+
+    ``mlflow.genai.evaluate()`` calls this once per row for *every* test's own
+    ``evaluate()`` call below. Without caching, a scenario already scored by
+    ``test_agent_reaches_evidence_backed_decision`` would be driven through the
+    live (and not fully deterministic) agent again for
+    ``test_agent_matches_golden_decisions``, risking a different actual output
+    per scorer. Caching keeps one real run per scenario, replayed for every
+    gate — and lets ``evaluation_rows`` read back the same run's tool-call
+    data to build each row's full scorer ``inputs``.
+    """
+
+    def _predict(input_variables: dict, **_scorer_only_fields: object) -> str:
+        # `mlflow.genai.evaluate()` calls `predict_fn(**row["inputs"])` — and once
+        # a row's `inputs` also carries `tool_calls`/`iterations` (for the
+        # deterministic scorers), those arrive here as extra kwargs this
+        # function has no use for (it only needs `input_variables` to start the
+        # run) — accept and ignore them rather than raising `TypeError`.
+        cache_key = _cache_key(input_variables)
+        cached = _run_cache.get(cache_key)
+        if cached is not None:
+            return cached["output"]
+        started = time.perf_counter()
+        output, run_variables = _run_agent(loan_agent, cfg, input_variables)
+        elapsed = time.perf_counter() - started
+        _log.info("Ran live agent scenario in %.1fs (%d chars of output)", elapsed, len(output))
+        _run_cache[cache_key] = {
+            "output": output,
+            "scorer_inputs": scorer_inputs_from_variables(input_variables, run_variables, tool_names),
+        }
+        return output
+
+    return _predict
+
+
+@pytest.fixture(scope="session")
+def evaluation_rows(cfg: RunnerConfig, predict_fn, _run_cache: dict) -> list[dict]:
+    """Build one ``evaluate()``-ready row per golden.
+
+    Forces ``predict_fn`` to run (and cache) each scenario up front, so every
+    row's ``inputs`` already carries the resulting ``tool_calls``/``iterations``
+    data the deterministic scorers need (see
+    ``fluxnova_runner.agent_tool_calls.scorer_inputs_from_variables``), rather
+    than just the bare ``input_variables`` the earlier, judge-only scorers
+    needed. ``expectations`` carries the golden's reference answer for
+    ``matches_golden``.
     """
     goldens = load_goldens(_GOLDENS_PATH)
     assert goldens, f"No goldens found at {_GOLDENS_PATH}"
-
-    total = len(goldens)
-    _log.info("Phase 1: running the live agent on %d golden(s)...", total)
-    data: list[dict] = []
-    for index, golden in enumerate(goldens, start=1):
-        scenario = golden.get("additional_metadata", {}).get("scenario", f"golden-{index}")
+    rows = []
+    for golden in goldens:
         variables = _golden_to_variables(cfg, golden)
-        _log.info("[%d/%d] Running scenario %r...", index, total, scenario)
-        started = time.perf_counter()
-        output = _run_agent(loan_agent, cfg, variables)
-        elapsed = time.perf_counter() - started
-        _log.info(
-            "[%d/%d] Scenario %r finished in %.1fs (%d chars of output)",
-            index,
-            total,
-            scenario,
-            elapsed,
-            len(output),
-        )
-        data.append(
+        predict_fn(variables)
+        scorer_inputs = _run_cache[_cache_key(variables)]["scorer_inputs"]
+        rows.append(
             {
-                "inputs": {"input_variables": variables},
-                "outputs": output,
+                "inputs": scorer_inputs,
                 "expectations": {"expected_output": golden["expected_output"]},
             }
         )
-    _log.info("Phase 1 complete: collected agent output for %d golden(s)", total)
-    return data
+    return rows
 
 
 @mlflow.test
-def test_agent_reaches_evidence_backed_decision(evaluation_data: list[dict]) -> None:
+def test_agent_reaches_evidence_backed_decision(evaluation_rows: list[dict], predict_fn) -> None:
     """Assert the loan-assessment agent's *actual* output on every golden still
     satisfies the shared ``decision_quality`` guideline judge.
 
@@ -243,14 +271,16 @@ def test_agent_reaches_evidence_backed_decision(evaluation_data: list[dict]) -> 
     APPROVE/REJECT recommendation backed by specific cited evidence (see
     ``fluxnova_mlflow_dataset.scorers.decision_quality``).
 
-    This is MLflow's regression-testing pattern adapted for an out-of-process
-    agent: the live agent is driven per golden (in the ``evaluation_data``
-    fixture) and its real output scored here — rather than merely re-scoring the
-    golden's own reference answer. ``@mlflow.test`` tags this as a regression
-    test run (run type ``test`` + a session id) and records its pass/fail status.
+    This is MLflow's canonical regression-testing pattern: ``evaluate()`` drives
+    the live agent per golden via ``predict_fn`` and scores its real output here
+    — rather than merely re-scoring the golden's own reference answer.
+    ``@mlflow.test`` tags this as a regression test run (run type ``test`` + a
+    session id) and records its pass/fail status.
     """
-    _log.info("Phase 2: scoring %d golden(s) with decision_quality...", len(evaluation_data))
-    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[decision_quality])
+    _log.info("Scoring %d golden(s) with decision_quality...", len(evaluation_rows))
+    result = mlflow.genai.evaluate(
+        data=evaluation_rows, predict_fn=predict_fn, scorers=[decision_quality]
+    )
 
     # Guard against every scorer silently erroring (which leaves zero recorded
     # assessments and makes result.passed default to truthy): require a real
@@ -272,7 +302,7 @@ def test_agent_reaches_evidence_backed_decision(evaluation_data: list[dict]) -> 
 
 
 @mlflow.test
-def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
+def test_agent_matches_golden_decisions(evaluation_rows: list[dict], predict_fn) -> None:
     """Assert the loan-assessment agent's *actual* output on every golden matches
     that golden's ``expected_output`` via the shared ``matches_golden`` judge.
 
@@ -285,8 +315,10 @@ def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
     ``@mlflow.test`` tags this as a regression test run and records its pass/fail
     status.
     """
-    _log.info("Phase 2: scoring %d golden(s) with matches_golden...", len(evaluation_data))
-    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[matches_golden])
+    _log.info("Scoring %d golden(s) with matches_golden...", len(evaluation_rows))
+    result = mlflow.genai.evaluate(
+        data=evaluation_rows, predict_fn=predict_fn, scorers=[matches_golden]
+    )
 
     # matches_golden returns None (recorded as NaN) when a golden lacks an
     # expected_output; every golden must have one for this gate to be meaningful.
@@ -306,44 +338,71 @@ def test_agent_matches_golden_decisions(evaluation_data: list[dict]) -> None:
     )
 
 
-@mlflow.test
-def test_agent_states_definitive_decision(evaluation_data: list[dict]) -> None:
-    """Assert every golden's *actual* agent output literally states a definitive
-    APPROVE/REJECT decision, via the shared deterministic ``definitive_decision_stated``
-    scorer (see ``fluxnova_mlflow_dataset.scorers``).
+def _assert_deterministic_scorer_passed(table, scorer_name: str) -> None:
+    """Gate one deterministic scorer's column in an ``eval_results`` table.
 
-    This is the same deterministic scorer ``eval-service-worker`` and
-    ``eval-trace-listener`` run — it knows nothing about tracing and grades the
-    plain ``outputs`` text, so the regression suite feeds it directly from the
-    live agent output collected in ``evaluation_data`` (its process-variable
-    source), no trace needed. A hard syntactic complement to the
-    ``decision_quality`` judge's opinion on whether the decision is well-reasoned.
-    ``@mlflow.test`` tags this as a regression test run and records its pass/fail
-    status.
+    Handles every value shape ``fluxnova_mlflow_dataset.scorers`` returns for
+    these scorers: plain booleans (possibly surfaced as their string form,
+    e.g. ``"true"``/``"yes"``, depending on the store), graded 0.0-1.0 scores
+    (``tool_correctness`` and friends — treated as a hard gate here, requiring
+    the full 1.0, since this is a regression *gate* not a benchmark), and
+    ``None``/``NaN`` for scorers that report "not applicable" for a given row
+    (e.g. ``no_collateral_check_when_no_collateral`` when the applicant has no
+    collateral) — never a failure.
+    """
+    column = f"{scorer_name}/value"
+    if column not in table.columns:
+        return  # scorer produced no column at all (shouldn't happen, but not this helper's job)
+    values = table[column]
+
+    def _passed(value: object) -> bool:
+        if value is None or (isinstance(value, float) and value != value):  # NaN != itself
+            return True  # not applicable for this row
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return float(value) >= 1.0
+        return str(value).strip().lower() in {"true", "yes", "1"}
+
+    failed = values[~values.apply(_passed)]
+    assert failed.empty, (
+        f"{scorer_name} failed for {len(failed)} golden(s): {failed.tolist()}"
+    )
+
+
+@mlflow.test
+def test_agent_passes_deterministic_checks(evaluation_rows: list[dict], predict_fn) -> None:
+    """Assert every golden's *actual* agent run passes the full deterministic
+    scorer bundle (see ``fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS``):
+    states a definitive APPROVE/REJECT decision, called exactly the tools its
+    applicant profile requires (and none it shouldn't), made no failed tool
+    calls, called tools in the expected order, and — since content capture is
+    enabled — passed each tool the arguments the BPMN wires up for it.
+
+    These are the same deterministic scorers ``eval-service-worker`` and
+    ``eval-trace-listener`` run, know nothing about tracing, and grade the
+    ``tool_calls``/``iterations`` data ``evaluation_rows`` already collected
+    from the live run's process variables (see
+    ``fluxnova_runner.agent_tool_calls``) — no MLflow trace needed. A hard
+    syntactic/structural complement to the ``decision_quality`` judge's opinion
+    on whether the decision is well-reasoned. ``@mlflow.test`` tags this as a
+    regression test run and records its pass/fail status.
     """
     _log.info(
-        "Phase 2: scoring %d golden(s) with definitive_decision_stated...", len(evaluation_data)
+        "Scoring %d golden(s) with the full deterministic scorer bundle...",
+        len(evaluation_rows),
     )
-    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[definitive_decision_stated])
+    result = mlflow.genai.evaluate(
+        data=evaluation_rows, predict_fn=predict_fn, scorers=ALL_DETERMINISTIC_SCORERS
+    )
 
-    verdicts = result.tables["eval_results"]["definitive_decision_stated/value"]
-    _log.info("definitive_decision_stated verdicts: %s", verdicts.tolist())
-    assert verdicts.notna().all(), (
-        "definitive_decision_stated did not produce a verdict for every golden — "
-        f"scoring errored. Verdicts: {verdicts.tolist()}"
-    )
-    # The scorer reports a plain boolean, which MLflow may surface as a real bool
-    # or its string form depending on the store — normalise before gating.
-    passed = verdicts.apply(lambda v: str(v).strip().lower() in {"true", "yes", "1"})
-    failed = verdicts[~passed]
-    assert failed.empty, (
-        f"definitive_decision_stated failed for {len(failed)} golden(s) — the agent "
-        f"output stated no APPROVE/REJECT keyword: {failed.tolist()}"
-    )
+    table = result.tables["eval_results"]
+    for scorer in ALL_DETERMINISTIC_SCORERS:
+        _assert_deterministic_scorer_passed(table, scorer.name)
 
 
 @mlflow.test
-def test_agent_cites_gathered_evidence(evaluation_data: list[dict]) -> None:
+def test_agent_cites_gathered_evidence(evaluation_rows: list[dict], predict_fn) -> None:
     """Assert every golden's *actual* agent output cites the evidence it gathered,
     via the shared ``evidence_citation`` LLM judge (see
     ``fluxnova_mlflow_dataset.scorers``).
@@ -360,9 +419,11 @@ def test_agent_cites_gathered_evidence(evaluation_data: list[dict]) -> None:
     its pass/fail status.
     """
     _log.info(
-        "Phase 2: scoring %d golden(s) with evidence_citation...", len(evaluation_data)
+        "Scoring %d golden(s) with evidence_citation...", len(evaluation_rows)
     )
-    result = mlflow.genai.evaluate(data=evaluation_data, scorers=[evidence_citation])
+    result = mlflow.genai.evaluate(
+        data=evaluation_rows, predict_fn=predict_fn, scorers=[evidence_citation]
+    )
 
     scores = result.tables["eval_results"]["evidence_citation/value"]
     _log.info("evidence_citation scores: %s", scores.tolist())

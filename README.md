@@ -415,9 +415,9 @@ complementary paths, all using the **shared scorers/judges** in
   scorers **plus** the `decision_quality` LLM judge (via the `fluxnova-judge` MLflow AI Gateway endpoint). Best for
   synchronous, in-process scoring wired into the workflow. See [
   `eval-service-worker/README.md`](eval-service-worker/README.md).
-- **`regression/`** (pytest gating suite) — drives the live agent per golden scenario and asserts its real output
-  satisfies the shared `decision_quality` and `matches_golden` judges plus the deterministic
-  `definitive_decision_stated` scorer. Best as a CI gate against behavioural
+- **`regression/`** (pytest gating suite) — drives the live agent per golden scenario via MLflow's `predict_fn`
+  pattern and asserts its real output satisfies the shared `decision_quality` and `matches_golden` judges, the
+  `evidence_citation` judge, and the full `ALL_DETERMINISTIC_SCORERS` bundle. Best as a CI gate against behavioural
   regressions. See [`regression/README.md`](regression/README.md).
 
 All three write their results to the same PostgreSQL-backed MLflow tracking store (`postgres-local` pod's `mlflow`
