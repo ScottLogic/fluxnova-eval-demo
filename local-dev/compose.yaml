@@ -17,7 +17,7 @@
 # otel-collector-config.yaml and prometheus.yml, all of which now expect that.
 #
 # Usage (from this local-dev/ directory):
-#   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel
+#   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel, frontend
 #   podman compose --profile eval up -d      # also start the eval worker + trace listener
 #   podman compose --profile grafana up -d   # also start Prometheus + Grafana
 #   podman compose --profile eval --profile grafana up -d   # everything
@@ -198,6 +198,29 @@ services:
       # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single
       # source of truth so both eval services read the same experiment.
       EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+
+  # Frontend UI — served as a static build via nginx, same pattern as the eval
+  # services (built from source, context = repo root). No profile: it's core, like
+  # postgres/mlflow/fluxnova/otel-collector above.
+  frontend-local:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    image: ${FRONTEND_IMAGE:-frontend:local}
+    container_name: frontend
+    depends_on:
+      fluxnova-local:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"
+    environment:
+      # fluxnova-local runs on --network host (see OTEL-EXPORT-INVESTIGATION.md), so
+      # it isn't resolvable by service name from this (default-network) container —
+      # reached via host.containers.internal instead (extra_hosts below), same as
+      # eval-service-worker-local.
+      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://host.containers.internal:8080/engine-rest/}
     extra_hosts:
       - "host.containers.internal:host-gateway"
 

@@ -1,11 +1,12 @@
 # Local development: PostgreSQL + Fluxnova + OTel Collector + MLflow + Grafana (Podman)
 
 This directory contains everything needed to run **PostgreSQL**, the **Fluxnova engine**, the **OTel Collector**,
-(optionally) the **MLflow tracking server**, and a **Prometheus + Grafana** GenAI-metrics dashboard as containers for
-local development, using [Podman](https://podman.io) —
+(optionally) the **MLflow tracking server**, the **frontend UI**, and a **Prometheus + Grafana** GenAI-metrics
+dashboard as containers for local development, using [Podman](https://podman.io) —
 grouped into a single Podman pod per service (`services/postgres-up.sh` / `services/postgres-down.sh` for PostgreSQL,
 `services/fluxnova-up.sh` / `services/fluxnova-down.sh` for Fluxnova + the OTel Collector, `services/mlflow-up.sh` /
-`services/mlflow-down.sh` for MLflow, `services/observability-up.sh` / `services/observability-down.sh` for
+`services/mlflow-down.sh` for MLflow, `services/frontend-up.sh` / `services/frontend-down.sh` for the frontend UI,
+`services/observability-up.sh` / `services/observability-down.sh` for
 Prometheus + Grafana — plus `services/eval-service-up.sh` / `services/eval-service-down.sh` for the
 optional eval-service worker), with no compose provider required. PostgreSQL is the shared backing database for both
 MLflow's tracking-server backend store and Fluxnova's process-engine datasource, replacing their previous SQLite-file
@@ -20,22 +21,24 @@ re-run) and accept one or more pod names to start/stop only a subset:
 ```bash
 cd local-dev
 
-./pods-up.sh                    # start postgres, mlflow, fluxnova, eval-service, observability, in that order
+./pods-up.sh                    # start postgres, mlflow, fluxnova, frontend, eval-service, observability, in that order
 ./pods-up.sh mlflow             # start (or leave alone, if already running) only mlflow
 ./pods-up.sh postgres fluxnova  # start only postgres and fluxnova (still in order)
 
-./pods-down.sh                  # stop/remove observability, eval-service, fluxnova, mlflow, postgres, in that order
+./pods-down.sh                  # stop/remove observability, eval-service, frontend, fluxnova, mlflow, postgres, in that order
 ./pods-down.sh mlflow           # stop/remove only mlflow
 ./pods-down.sh --delete-data    # stop/remove all AND delete their persistent
                                  # data (postgres' PGDATA volume, mlflow's artifact
-                                 # files) — fluxnova/eval-service/observability have none of their own
+                                 # files) — fluxnova/frontend/eval-service/observability have none of their own
 ```
 
 Run `./pods-up.sh --help` / `./pods-down.sh --help` for full usage. The pod names are `postgres`, `mlflow`,
-`fluxnova`, `eval-service`, and `observability`. The sections below describe each underlying per-service script in the
+`fluxnova`, `frontend`, `eval-service`, and `observability`. The sections below describe each underlying per-service
+script in the
 `services/`
 subfolder (`services/postgres-up.sh`/`services/postgres-down.sh` etc.) in more detail, including their own
-`--delete-data` flags (`fluxnova-down.sh`/`eval-service-down.sh`/`observability-down.sh` accept the flag too, for a
+`--delete-data` flags (`fluxnova-down.sh`/`frontend-down.sh`/`eval-service-down.sh`/`observability-down.sh` accept the
+flag too, for a
 consistent interface, but
 are no-ops since they have no local data).
 
