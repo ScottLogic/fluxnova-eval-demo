@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './App.css'
 import EvalsPage from './pages/EvalsPage'
 import RegressionPage from './pages/RegressionPage'
 import WorkflowPage from './pages/WorkflowPage'
@@ -16,15 +17,18 @@ function App() {
   const ActivePage = TABS.find((tab) => tab.id === activeTab)?.Component ?? RegressionPage
 
   return (
-    <div id="app">
-      <header id="app-header">
-        <h1>Fluxnova Eval Demo</h1>
-        <nav id="tab-nav">
+    <div className="app-shell">
+      <div className="mesh" aria-hidden="true" />
+      <header className="topbar">
+        <span className="brand">
+          <span className="brand-title">Fluxnova Eval Demo</span>
+        </span>
+        <nav className="topbar-nav" aria-label="Primary">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
-              className={tab.id === activeTab ? 'tab active' : 'tab'}
+              className={`topbar-nav-link${tab.id === activeTab ? ' is-active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -32,7 +36,7 @@ function App() {
           ))}
         </nav>
       </header>
-      <main id="app-content">
+      <main className="stage">
         <ActivePage />
       </main>
     </div>
