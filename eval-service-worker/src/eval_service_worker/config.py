@@ -36,8 +36,12 @@ DEFAULT_PROCESS_KEY = "loanAssessmentEvalProcess"
 DEFAULT_TOPIC = "agent-output-eval"
 
 # MLflow judge model URI — gateway-routed, matching the automatic decision_quality
-# judge registered via the mlflow-judges CLI (see local-dev/README.md).
-DEFAULT_JUDGE_MODEL = "gateway:/fluxnova-judge"
+# judge registered via the mlflow-judges CLI (see local-dev/README.md). Points at
+# an OpenAI-backed endpoint (fluxnova-judge-oai) rather than the original
+# Ollama-backed fluxnova-judge — the Ollama one requires a host-run Ollama process
+# reachable at host.containers.internal:11434, which isn't always up and, when
+# unreachable, hangs/500s the judge call indefinitely rather than failing fast.
+DEFAULT_JUDGE_MODEL = "gateway:/fluxnova-judge-oai"
 
 # Judge calls routed through the gateway to a local Ollama model have been
 # observed taking 90+ seconds in this environment — and much longer (several
@@ -57,7 +61,12 @@ DEFAULT_TRACKING_URI = "http://localhost:5000"
 # The OTel Collector delivers spans asynchronously, so this service task (which
 # runs immediately after the subprocess ends) can otherwise beat the trace's
 # arrival — see fluxnova_mlflow_dataset.traces.MlflowTraceReader.wait_for_trace.
-DEFAULT_TRACE_POLL_TIMEOUT_S = 30.0
+# Was 30s: observed losing this race against the collector even after worker.py's
+# one Camunda-level retry, which then permanently stalls the task (Camunda gives up
+# retrying once retries hits 0, leaving the BPMN gate stuck) — masquerading as the
+# LLM judge itself being slow, when the judge call is actually only ~25s. Widened
+# so one poll window comfortably covers realistic collector-export delays.
+DEFAULT_TRACE_POLL_TIMEOUT_S = 90.0
 DEFAULT_TRACE_POLL_INTERVAL_S = 3.0
 
 

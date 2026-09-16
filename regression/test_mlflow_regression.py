@@ -28,6 +28,8 @@ from fluxnova_mlflow_dataset import (
     ALL_DETERMINISTIC_SCORERS,
     GOLDEN_MATCH_THRESHOLD,
     BpmnLookup,
+    MlflowTraceReader,
+    TraceStoreError,
     decision_quality,
     evidence_citation,
     experiment_name_for,
@@ -44,8 +46,29 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _REPO_ROOT / "fluxnova-runner" / "config" / "loan-assesment.yml"
 _GOLDENS_PATH = _REPO_ROOT / "datasets" / "loan-assessment" / "goldens.json"
 
-# Regression runs/assessments are logged under a dedicated experiment so they don't clutter it.
-_REGRESSION_EXPERIMENT = experiment_name_for("loanAssessmentProcess-regression")
+# Regression runs/assessments now deliberately share the same experiment as
+# real/demo runs (rather than a separate "-regression" experiment) — this must
+# be the literal target name, not run through experiment_name_for() again
+# (which would double the "fluxnova-" prefix onto an already-prefixed name and
+# silently create/target a different, empty experiment instead).
+_REGRESSION_EXPERIMENT = experiment_name_for("loanAssessmentEvalProcess")
+
+# Where the *raw agent traces* actually land. The OTel Collector always routes
+# every trace (regardless of which MLflow experiment a caller's own client
+# happens to be pointed at) to one fixed experiment, matching
+# eval_trace_listener/eval-service-worker's shared default — see
+# local-dev/.env's MLFLOW_EXPERIMENT_ID. Now the same experiment as
+# _REGRESSION_EXPERIMENT above (see that constant's comment), but kept as its
+# own name here since it's conceptually a different thing (raw traces vs. this
+# suite's own Runs/dataset) — used to tag our own traces (see
+# _tag_trace_as_regression) so eval-trace-listener can tell them apart from
+# real/demo runs, which share this suite's exact same subprocess_id/agent_name.
+_TRACE_EXPERIMENT_NAME = _REGRESSION_EXPERIMENT
+
+# Tag written onto every trace this suite generates — must match
+# eval_trace_listener.listener._REGRESSION_TAG_NAME/_REGRESSION_TAG_VALUE.
+_REGRESSION_TAG_NAME = "source"
+_REGRESSION_TAG_VALUE = "regression"
 
 # How long to allow one golden's full agentic subprocess run to finish before
 # giving up. Overridable via env.
@@ -93,12 +116,45 @@ def _cache_key(variables: dict) -> str:
     return json.dumps(variables, sort_keys=True, default=str)
 
 
+def _tag_trace_as_regression(instance_id: str) -> None:
+    """Best-effort: tag this run's MLflow trace so eval-trace-listener skips it.
+
+    Regression runs share the exact same ``subprocess_id`` (and therefore the
+    same ``gen_ai.agent.name``) as real/demo runs, so the listener's
+    ``agent_names`` filter alone can't tell them apart — see
+    ``eval_trace_listener.listener``'s ``_is_regression_trace``. Tagging is
+    genuinely best-effort (the OTel Collector delivers spans asynchronously, and
+    this suite otherwise deliberately avoids MLflow calls around the live run —
+    see ``_run_agent``'s docstring): a failure here must never fail the test
+    itself, just risk the listener scoring this one run as if it were real.
+    """
+    try:
+        experiment = mlflow.get_experiment_by_name(_TRACE_EXPERIMENT_NAME)
+        if experiment is None:
+            _log.warning(
+                "Trace experiment %r not found — can't tag instance %s as regression",
+                _TRACE_EXPERIMENT_NAME,
+                instance_id,
+            )
+            return
+        reader = MlflowTraceReader(mlflow.get_tracking_uri(), experiment.experiment_id)
+        trace = reader.wait_for_trace(instance_id, timeout=30.0, poll_interval=3.0)
+        mlflow.MlflowClient().set_trace_tag(
+            trace.info.trace_id, _REGRESSION_TAG_NAME, _REGRESSION_TAG_VALUE
+        )
+    except TraceStoreError as exc:
+        _log.warning("Could not tag instance %s's trace as regression: %s", instance_id, exc)
+
+
 def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str, dict]:
     """Drive one live agent run and return its final output plus raw process variables.
 
     Starts a process instance, waits for the agentic subprocess to finish, then
     reads the run's process variables back — deliberately not from the MLflow
-    trace, so no ``mlflow.*`` call happens here.
+    trace (the agent's actual output comes from Fluxnova, not MLflow). The one
+    exception is ``_tag_trace_as_regression`` at the end: a fire-and-forget,
+    best-effort tag write that never affects — and can't fail — the returned
+    output/variables above.
     """
     instance_id = client.start_process(cfg.process_key, variables)
     client.wait_for_activity_completion(
@@ -107,6 +163,7 @@ def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str,
     run_variables = client.get_variables(instance_id)
     final_output = agent_final_output(run_variables)
     assert final_output, f"No agent final output found for instance {instance_id}"
+    _tag_trace_as_regression(instance_id)
     return final_output, run_variables
 
 

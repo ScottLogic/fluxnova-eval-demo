@@ -50,8 +50,10 @@ inputs entirely *from the trace it just read*:
   span (no BPMN parsing, no Fluxnova REST call).
 - `outputs` — the agent's final answer extracted from the trace's output spans.
 
-> **Operational note:** because the listener now runs the two LLM judges, its container must be able to reach the
-> Ollama judge model directly (unlike the deterministic-only checks, which need nothing external). Ensure Ollama is
+> **Operational note:** because the listener now runs the two LLM judges, its container must be able to reach
+> whichever provider `LLM_JUDGE_PROVIDER` resolves to (unlike the deterministic-only checks, which need nothing
+> external) — `openai` by default (needs `OPENAI_API_KEY`, both wired through by `eval-listener-up.sh`), or `ollama`
+> for a fully local judge (needs a reachable Ollama instance instead). Ensure whichever one you've selected is
 > reachable from wherever the listener runs.
 
 ## Why poll MLflow instead of receiving OTLP?

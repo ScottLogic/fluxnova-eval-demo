@@ -42,6 +42,15 @@ EVAL_LISTENER_TRACKING_URI="${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:50
 # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single source
 # of truth so both eval services read the same experiment.
 EVAL_LISTENER_EXPERIMENT_NAME="${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}"
+# Selects the LLM provider for this listener's decision_quality/evidence_citation
+# judges (see fluxnova_mlflow_dataset.scorers.LLM_JUDGE_PROVIDER) — was previously
+# left unset here, so the container silently fell back to that module's own
+# "openai" default rather than actually reading .env's value. Wired through
+# explicitly so switching .env's LLM_JUDGE_PROVIDER (e.g. to "ollama" for a fully
+# local judge) actually takes effect. OPENAI_API_KEY is only required/read when
+# this resolves to "openai".
+LLM_JUDGE_PROVIDER="${LLM_JUDGE_PROVIDER:-openai}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 
 podman network create --ignore "$DEV_NETWORK"
 
@@ -71,6 +80,8 @@ else
   podman run -d --pod "$POD_NAME" --name eval-trace-listener \
     -e EVAL_LISTENER_TRACKING_URI="$EVAL_LISTENER_TRACKING_URI" \
     -e EVAL_LISTENER_EXPERIMENT_NAME="$EVAL_LISTENER_EXPERIMENT_NAME" \
+    -e LLM_JUDGE_PROVIDER="$LLM_JUDGE_PROVIDER" \
+    -e OPENAI_API_KEY="$OPENAI_API_KEY" \
     "$IMAGE_NAME"
 fi
 

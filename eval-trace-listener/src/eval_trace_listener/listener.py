@@ -66,6 +66,13 @@ _WORKER_ONLINE_SCORER_NAMES = frozenset(
 # poison trace can't block every older unscored trace behind it forever.
 _MAX_SCORING_ATTEMPTS = 3
 
+# Tag the regression suite (regression/test_mlflow_regression.py) sets on every
+# trace it generates. Regression runs share the exact same subprocess_id (and
+# therefore the exact same gen_ai.agent.name) as real/demo runs, so agent_names
+# filtering alone can't tell them apart — this tag is the only reliable signal.
+_REGRESSION_TAG_NAME = "source"
+_REGRESSION_TAG_VALUE = "regression"
+
 
 class TraceListener:
     """Tails one MLflow experiment for completed agent runs and scores them."""
@@ -175,6 +182,13 @@ class TraceListener:
         if self._config.agent_names and agent_name not in self._config.agent_names:
             return False
 
+        if self._is_regression_trace(trace):
+            # A regression-suite run, not a real/demo one — see the module-level
+            # comment on _REGRESSION_TAG_NAME. Cache it as "scored" so we don't
+            # re-inspect it every poll, without actually scoring it.
+            self._scored.add(trace_id)
+            return False
+
         if self._already_scored(trace):
             self._scored.add(trace_id)  # cache so we don't re-inspect it every poll
             return False
@@ -254,6 +268,16 @@ class TraceListener:
             if span.get_attribute(_OP_NAME_ATTR) == _INVOKE_AGENT_OP:
                 return span.get_attribute(_AGENT_NAME_ATTR)
         return None
+
+    def _is_regression_trace(self, trace: Any) -> bool:
+        """True if this trace was tagged by the regression suite as its own run.
+
+        See the module-level comment on ``_REGRESSION_TAG_NAME`` for why this
+        tag — not ``agent_names`` — is what actually distinguishes a regression
+        run from a real/demo one.
+        """
+        tags = getattr(trace.info, "tags", None) or {}
+        return tags.get(_REGRESSION_TAG_NAME) == _REGRESSION_TAG_VALUE
 
     def _already_scored(self, trace: Any) -> bool:
         """True if this trace already carries one of *our own* scorer assessments

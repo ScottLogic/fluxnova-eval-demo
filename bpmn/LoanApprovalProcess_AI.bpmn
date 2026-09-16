@@ -143,6 +143,10 @@
     <bpmn:sequenceFlow id="Flow_1vkf6s8" sourceRef="SubProcess_ComplianceReview" targetRef="Event_Loan_Rejected_By_Compliance" />
     <bpmn:callActivity id="AgentTask_CreditRisk" name="AI Credit Risk Agent" calledElement="loanAssessmentProcess">
       <bpmn:documentation>Agentic ad-hoc subprocess call</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:in variables="all" />
+        <camunda:out variables="all" />
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1gum3id</bpmn:incoming>
       <bpmn:outgoing>Flow_043ab0n</bpmn:outgoing>
     </bpmn:callActivity>
