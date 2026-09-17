@@ -94,3 +94,17 @@ export function fetchAutoEvalConfig(): Promise<AutoEvalConfig> {
 export function updateAutoEvalConfig(enabled: boolean): Promise<AutoEvalConfig> {
   return post('/api/evals/auto-eval', { enabled })
 }
+
+export interface EvalScorer {
+  name: string
+  description: string
+}
+
+export interface EvalDefinitions {
+  listener: EvalScorer[]
+  serviceWorker: EvalScorer[]
+}
+
+export function fetchEvalDefinitions(): Promise<EvalDefinitions> {
+  return get('/api/evals/definitions')
+}
