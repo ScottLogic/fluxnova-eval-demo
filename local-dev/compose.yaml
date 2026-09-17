@@ -198,6 +198,13 @@ services:
       # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single
       # source of truth so both eval services read the same experiment.
       EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
+      EVAL_LISTENER_CONTROL_PORT: ${EVAL_LISTENER_CONTROL_PORT:-8092}
+    ports:
+      # Sample-rate control endpoint (see eval_trace_listener/control.py) —
+      # published so a --network host container (ui-api, in the frontend-local
+      # pod) can reach it via host.containers.internal, same as
+      # eval-service-worker-local reaches fluxnova-local.
+      - "${EVAL_LISTENER_CONTROL_PORT:-8092}:${EVAL_LISTENER_CONTROL_PORT:-8092}"
     extra_hosts:
       - "host.containers.internal:host-gateway"
 

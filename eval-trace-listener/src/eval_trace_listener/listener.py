@@ -28,6 +28,7 @@ only then read the agent name off it. Dedup is belt-and-braces: an in-memory set
 from __future__ import annotations
 
 import logging
+import random
 import time
 from typing import Any
 
@@ -36,6 +37,7 @@ from fluxnova_mlflow_dataset import DETERMINISTIC_SCORERS
 from mlflow.entities.trace_state import TraceState
 
 from eval_trace_listener.config import ListenerConfig
+from eval_trace_listener.control import SampleRateControl
 from eval_trace_listener.scoring import (
     LISTENER_SCORERS,
     ScoringError,
@@ -77,8 +79,18 @@ _REGRESSION_TAG_VALUE = "regression"
 class TraceListener:
     """Tails one MLflow experiment for completed agent runs and scores them."""
 
-    def __init__(self, config: ListenerConfig, scorers: list[Any] | None = None) -> None:
+    def __init__(
+        self,
+        config: ListenerConfig,
+        scorers: list[Any] | None = None,
+        sample_rate: SampleRateControl | None = None,
+    ) -> None:
         self._config = config
+        # Own control instance by default (seeded from the static config), so the
+        # listener works standalone; main.py passes in the same instance it hands
+        # to the control HTTP server so PUT /config actually changes what's used
+        # here, live.
+        self._sample_rate = sample_rate or SampleRateControl(config.sample_rate)
         self._scorers = LISTENER_SCORERS if scorers is None else scorers
         self._scorer_names = {s.name for s in self._scorers}
         # Dedup signature: the scorer names that identify *this listener's* prior
@@ -103,10 +115,12 @@ class TraceListener:
     def run_forever(self) -> None:
         """Poll until interrupted (Ctrl+C)."""
         logger.info(
-            "eval-trace-listener starting: experiment=%r agents=%s poll=%.1fs tracking_uri=%s",
+            "eval-trace-listener starting: experiment=%r agents=%s poll=%.1fs "
+            "sample_rate=%.2f tracking_uri=%s",
             self._config.experiment_name,
             self._config.agent_names or "<all>",
             self._config.poll_interval_s,
+            self._sample_rate.get(),
             self._config.tracking_uri,
         )
         try:
@@ -193,6 +207,20 @@ class TraceListener:
             self._scored.add(trace_id)  # cache so we don't re-inspect it every poll
             return False
 
+        if not self._should_sample():
+            # A sampling decision is made (and remembered) exactly once per trace,
+            # not re-rolled every poll — otherwise a trace that keeps reappearing
+            # in _recent_traces would eventually get scored no matter how low the
+            # rate, defeating the point of sampling.
+            self._scored.add(trace_id)
+            logger.info(
+                "Skipping trace %s (agent=%s) — sample_rate=%.2f",
+                trace_id,
+                agent_name,
+                self._sample_rate.get(),
+            )
+            return False
+
         outcome = self._score(trace)
         self._scored.add(trace_id)
         self._failures.pop(trace_id, None)
@@ -226,6 +254,16 @@ class TraceListener:
                 _MAX_SCORING_ATTEMPTS,
                 exc,
             )
+
+    def _should_sample(self) -> bool:
+        """One-shot dice roll against the current sample rate (own method so
+        tests can patch/seed it deterministically)."""
+        rate = self._sample_rate.get()
+        if rate >= 1.0:
+            return True
+        if rate <= 0.0:
+            return False
+        return random.random() < rate
 
     def _score(self, trace: Any) -> TraceEvalOutcome:
         """Score one trace (own method so tests can patch it)."""

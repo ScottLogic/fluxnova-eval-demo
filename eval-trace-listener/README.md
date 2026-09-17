@@ -91,10 +91,32 @@ default; unknown keys are ignored so the file can carry forward-looking settings
 | `agent_names`         | `[AdHocSubProcess_LoanAssessmentAgent]` | Agents to score; empty ⇒ score every agent                             |
 | `poll_interval_s`     | `10`                                    | Seconds between polls                                                  |
 | `max_traces_per_poll` | `200`                                   | Upper bound on recent traces pulled per poll                           |
+| `sample_rate`         | `1.0`                                   | Fraction of in-scope traces to actually score — see below              |
+| `control_host`        | `0.0.0.0`                               | Host the sample-rate control endpoint binds on                         |
+| `control_port`        | `8092`                                  | Port the sample-rate control endpoint binds on                         |
 
 Any setting can be overridden per-environment by an `EVAL_LISTENER_<NAME>` env var or
 a CLI flag (flag > env > file > default). See `eval_trace_listener/config.py` and
 `main.py`.
+
+## Live sampling control
+
+Unlike every other setting above, `sample_rate` can also be changed **while the listener is
+already running**, without restarting it — the process serves a tiny HTTP control endpoint on
+`control_host:control_port` (see `eval_trace_listener/control.py`):
+
+```bash
+curl http://localhost:8092/config                                          # {"sample_rate": 1.0}
+curl -X PUT -H 'Content-Type: application/json' \
+  -d '{"sample_rate": 0.1}' http://localhost:8092/config                   # ~1-in-10 traces scored
+```
+
+`0.0` scores none, `1.0` (the default) scores every trace. Each trace's sampling decision is made
+once (and cached alongside the normal dedup state) rather than re-rolled every poll — otherwise a
+trace that keeps reappearing in the recent-traces window would eventually get scored regardless of
+how low the rate is set, defeating the point. This is what backs the frontend's "Auto-eval
+(listener)" toggle (via `ui-api`'s `evals.py` router) — off sets the rate to `0.0`, on sets it to
+`1.0`.
 
 ## Running
 
