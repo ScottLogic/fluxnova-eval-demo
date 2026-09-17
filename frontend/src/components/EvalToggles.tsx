@@ -1,34 +1,13 @@
 import { useEvalSettings } from '../useEvalSettings'
-
-interface ToggleProps {
-  label: string
-  title: string
-  checked: boolean
-  onChange: (checked: boolean) => void
-}
-
-function Toggle({ label, title, checked, onChange }: ToggleProps) {
-  return (
-    <label className="toggle" title={title}>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span className="toggle-track" aria-hidden="true" />
-      <span className="toggle-label">{label}</span>
-    </label>
-  )
-}
+import AutoEvalToggle from './AutoEvalToggle'
+import Toggle from './Toggle'
 
 function EvalToggles() {
-  const { skipEvalServiceWorker, setSkipEvalServiceWorker, autoEvalEnabled, setAutoEvalEnabled } =
-    useEvalSettings()
+  const { skipEvalServiceWorker, setSkipEvalServiceWorker } = useEvalSettings()
 
   return (
     <div className="form-group-row">
-      <Toggle
-        label="Auto-eval (trace listener)"
-        title="When enabled will automatically run evals aginst traces (non blocking)"
-        checked={autoEvalEnabled}
-        onChange={setAutoEvalEnabled}
-      />
+      <AutoEvalToggle />
 
       <Toggle
         label="Eval service worker"

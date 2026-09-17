@@ -82,3 +82,15 @@ export function startWorkflowRun(variableOverrides: WorkflowVariables): Promise<
 export function fetchWorkflowRun(instanceId: string): Promise<WorkflowRunStatus> {
   return get(`/api/workflow/runs/${instanceId}`)
 }
+
+export interface AutoEvalConfig {
+  enabled: boolean
+}
+
+export function fetchAutoEvalConfig(): Promise<AutoEvalConfig> {
+  return get('/api/evals/auto-eval')
+}
+
+export function updateAutoEvalConfig(enabled: boolean): Promise<AutoEvalConfig> {
+  return post('/api/evals/auto-eval', { enabled })
+}

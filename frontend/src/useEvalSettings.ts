@@ -3,8 +3,6 @@ import { createContext, useContext } from 'react'
 export interface EvalSettings {
   skipEvalServiceWorker: boolean
   setSkipEvalServiceWorker: (value: boolean) => void
-  autoEvalEnabled: boolean
-  setAutoEvalEnabled: (value: boolean) => void
 }
 
 export const EvalSettingsContext = createContext<EvalSettings | null>(null)

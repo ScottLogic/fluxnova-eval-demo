@@ -14,7 +14,7 @@ import { useEvalSettings } from '../useEvalSettings'
 const POLL_MS = 2000
 
 function WorkflowPage() {
-  const { skipEvalServiceWorker, autoEvalEnabled } = useEvalSettings()
+  const { skipEvalServiceWorker } = useEvalSettings()
   const [defaults, setDefaults] = useState<WorkflowVariables | null>(null)
   const [configError, setConfigError] = useState<string | null>(null)
   const [instanceId, setInstanceId] = useState<string | null>(null)
@@ -74,7 +74,7 @@ function WorkflowPage() {
     setSubmitting(true)
     setRunError(null)
     setRun(null)
-    startWorkflowRun({ ...values, skipEvalServiceWorker, autoEvalEnabled })
+    startWorkflowRun({ ...values, skipEvalServiceWorker })
       .then((payload) => setInstanceId(payload.instanceId))
       .catch((error: unknown) => {
         setRunError(error instanceof Error ? error.message : 'Failed to start run')
@@ -93,7 +93,11 @@ function WorkflowPage() {
       </div>
 
       <div>
-        <p className="sample-preview-label">Evals for this run</p>
+        <p className="sample-preview-label">Evals</p>
+        <p className="hint">
+          Auto-eval takes effect immediately for all traces; eval service worker applies to the
+          next run started below.
+        </p>
         <EvalToggles />
       </div>
 
