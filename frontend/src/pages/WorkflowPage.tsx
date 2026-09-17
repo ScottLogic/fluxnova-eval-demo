@@ -6,12 +6,15 @@ import {
   type WorkflowRunStatus as WorkflowRunStatusData,
   type WorkflowVariables,
 } from '../api'
+import EvalToggles from '../components/EvalToggles'
 import WorkflowForm from '../components/WorkflowForm'
 import WorkflowRunStatus from '../components/WorkflowRunStatus'
+import { useEvalSettings } from '../useEvalSettings'
 
 const POLL_MS = 2000
 
 function WorkflowPage() {
+  const { skipEvalServiceWorker, autoEvalEnabled } = useEvalSettings()
   const [defaults, setDefaults] = useState<WorkflowVariables | null>(null)
   const [configError, setConfigError] = useState<string | null>(null)
   const [instanceId, setInstanceId] = useState<string | null>(null)
@@ -20,9 +23,11 @@ function WorkflowPage() {
   const [runError, setRunError] = useState<string | null>(null)
 
   const loadConfig = useCallback(() => {
-    setConfigError(null)
     fetchWorkflowConfig()
-      .then((config) => setDefaults(config.variables))
+      .then((config) => {
+        setDefaults(config.variables)
+        setConfigError(null)
+      })
       .catch((error: unknown) => {
         setConfigError(error instanceof Error ? error.message : 'Failed to load defaults')
       })
@@ -69,7 +74,7 @@ function WorkflowPage() {
     setSubmitting(true)
     setRunError(null)
     setRun(null)
-    startWorkflowRun(values)
+    startWorkflowRun({ ...values, skipEvalServiceWorker, autoEvalEnabled })
       .then((payload) => setInstanceId(payload.instanceId))
       .catch((error: unknown) => {
         setRunError(error instanceof Error ? error.message : 'Failed to start run')
@@ -85,6 +90,11 @@ function WorkflowPage() {
         <p className="panel-copy">
           Trigger a run of the BPMN workflow and follow its progress. Use the defaults, or edit them before starting a run.
         </p>
+      </div>
+
+      <div>
+        <p className="sample-preview-label">Evals for this run</p>
+        <EvalToggles />
       </div>
 
       {configError && <p className="hint danger">{configError}</p>}

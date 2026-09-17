@@ -15,9 +15,11 @@ function RegressionPage() {
   const [starting, setStarting] = useState(false)
 
   const loadTests = useCallback(() => {
-    setTestsError(null)
     fetchRegressionTests()
-      .then((payload) => setTests(payload.tests))
+      .then((payload) => {
+        setTests(payload.tests)
+        setTestsError(null)
+      })
       .catch((error: unknown) => {
         setTestsError(error instanceof Error ? error.message : 'Failed to load tests')
       })

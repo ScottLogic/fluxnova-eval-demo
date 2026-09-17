@@ -71,16 +71,27 @@ Each step below is a single commit, small enough to review on its own, and leave
    process variable.
 10. **Eval config UI** — add controls in the Workflow run tab to toggle "auto-eval (listener)" and "eval service
     worker" independently for the next run; wired into the workflow-run request from step 8/9.
-11. **Eval definitions API** — endpoint(s) exposing which evals are configured to run for the listener
+11. **Trace listener live sampling** — add a `sample_rate` setting (0.0–1.0, i.e. "score none" / "1 in 10" /
+    "score every trace") to `eval-trace-listener`'s `ListenerConfig`, plus a small always-on control surface in
+    that same process (e.g. a minimal HTTP endpoint, `GET`/`PUT` the current rate) so the rate can be changed
+    while the listener is already running — no restart needed. Each poll cycle reads the current rate and
+    probabilistically skips scoring newly-completed traces accordingly (`0.0` = skip all, `1.0` = score every
+    one it finds).
+12. **Wire the auto-eval toggle to real sampling** — supersedes step 10's "just a UI-visible flag" behaviour
+    for this toggle specifically: `ui-api`'s `evals.py` gets an endpoint that forwards to the trace listener's
+    new control surface from step 11, and the Workflow tab's "Auto-eval (listener)" toggle calls it whenever
+    flipped — off sets the sample rate to `0.0` ("none"), on sets it to `1.0` ("100%"). The "eval service
+    worker" toggle is unaffected — it stays a per-run `skipEvalServiceWorker` process variable (steps 9/10).
+13. **Eval definitions API** — endpoint(s) exposing which evals are configured to run for the listener
     (`eval-trace-listener/config.yaml`) and for the service worker (its config source).
-12. **Eval definitions UI** — display the listener evals and service worker evals in the Evals tab from
-    step 11.
-13. **Metrics/tracing view** — read-only panel in a new Telemetry tab showing metrics and traces Fluxnova
+14. **Eval definitions UI** — display the listener evals and service worker evals in the Evals tab from
+    step 13.
+15. **Metrics/tracing view** — read-only panel in a new Telemetry tab showing metrics and traces Fluxnova
     exports, plus link-outs to Grafana and the MLflow dashboard.
-14. **Restore external links** — port over the existing links/panels to other FINOS services (CALM, CCC)
+16. **Restore external links** — port over the existing links/panels to other FINOS services (CALM, CCC)
     from the steel thread demo (`CalmArchitectureVisualizer.tsx`, `FinosProjectsPanel.tsx` equivalents)
     into the relevant tabs.
-15. **Polish pass** — loading/error states, responsive layout check, README for `frontend/` + `ui-api/`
+17. **Polish pass** — loading/error states, responsive layout check, README for `frontend/` + `ui-api/`
     covering how to run the UI and API layer together.
 
 Follow-ups:

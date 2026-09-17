@@ -5,8 +5,9 @@ function EvalsPage() {
         <p className="eyebrow">Evals</p>
         <h1>Evals</h1>
         <p className="panel-copy">
-          Toggle auto-eval and the eval service worker per run, see which evals
-          are configured, and review the metrics and traces Fluxnova exports.
+          See which evals are configured for both auto-eval (listener) and the eval service
+          worker, and review the metrics and traces Fluxnova exports. Toggle auto-eval and the
+          eval service worker for the next run from the Workflow tab.
         </p>
       </div>
     </section>

@@ -1,0 +1,54 @@
+.test-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.test-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.2rem;
+  border-top: 1px solid rgba(232, 237, 244, 0.1);
+}
+
+.test-list-item:first-child {
+  border-top: 0;
+}
+
+.test-list-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+}
+
+.test-list-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+
+.test-list-duration {
+  color: var(--paper-dim);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.test-run-output {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.45rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(232, 237, 244, 0.1);
+  color: var(--paper);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 18rem;
+  overflow: auto;
+}

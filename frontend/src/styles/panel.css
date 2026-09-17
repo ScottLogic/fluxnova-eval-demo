@@ -1,0 +1,52 @@
+.panel {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.panel-head h1,
+.panel-head h2 {
+  margin: 0.2rem 0 0.55rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  letter-spacing: -0.04em;
+}
+
+.panel-copy {
+  margin: 0;
+  color: var(--paper-dim);
+}
+
+.panel-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--copper);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.sample-preview-label {
+  margin: 0;
+  color: var(--copper);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--paper-dim);
+}
+
+.hint.danger {
+  color: #ef9a9a;
+}

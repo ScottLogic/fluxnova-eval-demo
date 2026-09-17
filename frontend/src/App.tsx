@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './App.css'
+import { EvalSettingsProvider } from './evalSettings'
 import EvalsPage from './pages/EvalsPage'
 import RegressionPage from './pages/RegressionPage'
 import WorkflowPage from './pages/WorkflowPage'
@@ -17,29 +18,31 @@ function App() {
   const ActivePage = TABS.find((tab) => tab.id === activeTab)?.Component ?? RegressionPage
 
   return (
-    <div className="app-shell">
-      <div className="mesh" aria-hidden="true" />
-      <header className="topbar">
-        <span className="brand">
-          <span className="brand-title">Fluxnova Eval Demo</span>
-        </span>
-        <nav className="topbar-nav" aria-label="Primary">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`topbar-nav-link${tab.id === activeTab ? ' is-active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </header>
-      <main className="stage">
-        <ActivePage />
-      </main>
-    </div>
+    <EvalSettingsProvider>
+      <div className="app-shell">
+        <div className="mesh" aria-hidden="true" />
+        <header className="topbar">
+          <span className="brand">
+            <span className="brand-title">Fluxnova Eval Demo</span>
+          </span>
+          <nav className="topbar-nav" aria-label="Primary">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`topbar-nav-link${tab.id === activeTab ? ' is-active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </header>
+        <main className="stage">
+          <ActivePage />
+        </main>
+      </div>
+    </EvalSettingsProvider>
   )
 }
 

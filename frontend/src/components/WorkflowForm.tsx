@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { WorkflowVariables } from '../api'
 
 interface WorkflowFormProps {
@@ -9,12 +9,13 @@ interface WorkflowFormProps {
 
 function WorkflowForm({ defaults, submitting, onSubmit }: WorkflowFormProps) {
   const [values, setValues] = useState<WorkflowVariables>({})
-
-  useEffect(() => {
-    if (defaults) {
-      setValues(defaults)
-    }
-  }, [defaults])
+  // Adjust state during render when `defaults` first arrives, rather than in a
+  // useEffect — see https://react.dev/reference/react/useState#storing-information-from-previous-renders
+  const [appliedDefaults, setAppliedDefaults] = useState<WorkflowVariables | null>(null)
+  if (defaults && defaults !== appliedDefaults) {
+    setAppliedDefaults(defaults)
+    setValues(defaults)
+  }
 
   function setField(name: string, value: string | number | boolean) {
     setValues((current) => ({ ...current, [name]: value }))

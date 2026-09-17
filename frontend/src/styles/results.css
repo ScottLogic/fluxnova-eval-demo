@@ -1,0 +1,19 @@
+.result-grid {
+  margin: 0;
+  display: grid;
+  gap: 0.9rem;
+  max-width: 36rem;
+}
+
+.result-grid dt {
+  color: var(--paper-dim);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.result-grid dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+  word-break: break-word;
+}
