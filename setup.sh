@@ -43,6 +43,9 @@ echo "=== Installing editable packages ==="
   -e "fluxnova-mlflow-dataset[dev]" \
   -e "fluxnova-runner[dev]"
 
+echo "=== Installing regression suite's extra dependencies ==="
+"$VENV_PY" -m pip install -r regression/requirements.txt
+
 echo
 echo "Done. Activate the environment with:"
 echo "  source $ACTIVATE"
