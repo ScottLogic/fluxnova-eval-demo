@@ -41,7 +41,9 @@ function App() {
           </nav>
         </header>
         <main className="stage">
-          <ActivePage />
+          <div className="stage-inner">
+            <ActivePage />
+          </div>
         </main>
       </div>
     </EvalSettingsProvider>

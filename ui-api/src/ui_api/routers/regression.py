@@ -17,6 +17,10 @@ router = APIRouter(prefix="/api/regression", tags=["regression"])
 def list_tests() -> dict[str, list[str]]:
     return {"tests": regression_runner.list_tests()}
 
+@router.get("/goldens")
+def list_goldens() -> dict[str, list[dict]]:
+    return {"goldens": regression_runner.list_goldens()}
+
 
 @router.post("/runs", status_code=202)
 def start_run() -> dict[str, str]:

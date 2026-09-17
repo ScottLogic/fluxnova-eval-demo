@@ -36,8 +36,17 @@ def _default_regression_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "regression"
 
 
+def _default_goldens_path() -> Path:
+    # Mirrors _default_regression_dir()'s reasoning: this only resolves correctly
+    # for an editable/source install, where repo root/datasets/ sits next to
+    # repo root/regression/. The Docker image copies datasets/ in directly and
+    # sets UI_API_GOLDENS_PATH explicitly (see ui-api/Dockerfile) to sidestep this.
+    return REGRESSION_DIR.parent / "datasets" / "loan-assessment" / "goldens.json"
+
+
 REGRESSION_DIR = Path(os.environ.get("UI_API_REGRESSION_DIR", str(_default_regression_dir())))
 REGRESSION_TEST_FILE = REGRESSION_DIR / "test_mlflow_regression.py"
+GOLDENS_PATH = Path(os.environ.get("UI_API_GOLDENS_PATH", str(_default_goldens_path())))
 
 RunStatus = Literal["running", "passed", "failed", "error"]
 
@@ -60,6 +69,10 @@ def list_tests() -> list[str]:
     )
     prefix = f"{REGRESSION_TEST_FILE.name}::"
     return [line.strip() for line in result.stdout.splitlines() if line.startswith(prefix)]
+
+def list_goldens() -> list[dict[str, Any]]:
+    """Returns the raw contents of the loan-assessment golden dataset."""
+    return json.loads(GOLDENS_PATH.read_text(encoding="utf-8"))
 
 
 @dataclass

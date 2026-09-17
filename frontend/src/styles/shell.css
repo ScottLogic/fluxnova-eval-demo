@@ -4,7 +4,6 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 0 clamp(1.25rem, 4vw, 3.5rem);
   overflow: hidden;
 }
 
@@ -42,15 +41,12 @@
 }
 
 .topbar {
-  position: sticky;
-  top: 0;
   z-index: 20;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin: 0 calc(-1 * clamp(1.25rem, 4vw, 3.5rem));
   padding: 0.75rem clamp(1.25rem, 4vw, 3.5rem);
   background: rgba(12, 16, 24, 0.82);
   border-bottom: 1px solid rgba(232, 237, 244, 0.08);
@@ -122,10 +118,30 @@
 }
 
 .stage {
-  width: min(1100px, 100%);
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: 1.75rem 0 2.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-gutter: stable;
+  padding: 0 clamp(1.25rem, 4vw, 3.5rem);
+}
+
+.stage-inner {
+  margin: 0 auto;
+  padding: 1.75rem 0 2.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+.regression-panel {
+  flex: 3 1 480px;
+  min-width: 0;
+}
+
+.goldens-panel {
+  flex: 2 1 420px;
+  min-width: 0;
+  max-width: 560px;
 }

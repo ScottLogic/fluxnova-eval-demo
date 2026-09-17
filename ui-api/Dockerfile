@@ -51,6 +51,7 @@ ENV UI_API_HOST=0.0.0.0
 # the current workflow — the older loan-assesment(-eval).yml/.bpmn files are
 # deprecated (see workflow_runner.py's _default_config_path).
 ENV UI_API_REGRESSION_DIR=/app/regression
+ENV UI_API_GOLDENS_PATH=/app/datasets/loan-assessment/goldens.json
 ENV UI_API_WORKFLOW_CONFIG=/app/fluxnova-runner/config/loan_approval_process_ai.yml
 
 ENTRYPOINT ["ui-api"]

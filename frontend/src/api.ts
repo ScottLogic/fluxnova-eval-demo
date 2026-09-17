@@ -22,6 +22,19 @@ export interface RegressionTests {
   tests: string[]
 }
 
+export interface Golden {
+  input: string
+  expected_output: string
+  context: string[]
+  additional_metadata: Record<string, unknown>
+  input_variables: Record<string, unknown>
+  tool_responses: Record<string, unknown>
+}
+
+export interface Goldens {
+  goldens: Golden[]
+}
+
 export interface RegressionRunStarted {
   runId: string
 }
@@ -43,6 +56,10 @@ export interface RegressionRunResult {
 
 export function fetchRegressionTests(): Promise<RegressionTests> {
   return get('/api/regression/tests')
+}
+
+export function fetchGoldens(): Promise<Goldens> {
+  return get('/api/regression/goldens')
 }
 
 export function startRegressionRun(): Promise<RegressionRunStarted> {

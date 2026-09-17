@@ -33,8 +33,8 @@ records an independent pass/fail per gate.
 live agent, and every later call — including from the other three gating tests' own `evaluate()` calls — replays that
 same cached result rather than re-running the agent. This is a deliberate departure from calling `predict_fn` fresh
 each time: the agent is a live, non-deterministic GPT-4o call, and without caching, `decision_quality`,
-`matches_golden`, `test_agent_passes_deterministic_checks`, and `evidence_citation` could each be judging a
-*different* actual output for the same golden — a scenario could pass one gate and fail another purely from LLM
+`matches_golden`, `test_agent_passes_deterministic_checks`, and `evidence_citation` could each be judging a *different*
+actual output for the same golden — a scenario could pass one gate and fail another purely from LLM
 variance between calls, unrelated to either scorer. Caching guarantees every gate judges the same real output, keeping
 scenario-level flakiness attributable to the agent rather than smeared across unrelated tests. The `evaluation_rows`
 fixture forces this one real run per golden up front (calling `predict_fn` directly, before any `evaluate()` call), so
@@ -45,12 +45,12 @@ every row's `inputs` already carries that run's full scorer data.
 The regression suite is the only consumer that runs the **LLM judges that need a reference answer or input
 variables**, because it has the golden dataset on hand.
 
-| Scorer                            | Type          | Gating test                                   |
-|------------------------------------|---------------|-----------------------------------------------|
-| `decision_quality`                 | LLM judge     | `test_agent_reaches_evidence_backed_decision` |
-| `matches_golden`                   | LLM judge     | `test_agent_matches_golden_decisions`         |
-| `ALL_DETERMINISTIC_SCORERS` (~14)  | Code          | `test_agent_passes_deterministic_checks`      |
-| `evidence_citation`                | LLM judge     | `test_agent_cites_gathered_evidence`          |
+| Scorer                            | Type      | Gating test                                   |
+|-----------------------------------|-----------|-----------------------------------------------|
+| `decision_quality`                | LLM judge | `test_agent_reaches_evidence_backed_decision` |
+| `matches_golden`                  | LLM judge | `test_agent_matches_golden_decisions`         |
+| `ALL_DETERMINISTIC_SCORERS` (~14) | Code      | `test_agent_passes_deterministic_checks`      |
+| `evidence_citation`               | LLM judge | `test_agent_cites_gathered_evidence`          |
 
 **How the scorer inputs are sourced — with no MLflow trace read.** `predict_fn` makes no `mlflow.*` call: a nested
 `mlflow.search_traces` inside a `predict_fn` corrupts MLflow's active-trace context and breaks assessment logging. So
