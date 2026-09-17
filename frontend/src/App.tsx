@@ -3,12 +3,14 @@ import './App.css'
 import { EvalSettingsProvider } from './evalSettings'
 import EvalsPage from './pages/EvalsPage'
 import RegressionPage from './pages/RegressionPage'
+import TelemetryPage from './pages/TelemetryPage'
 import WorkflowPage from './pages/WorkflowPage'
 
 const TABS = [
   { id: 'regression', label: 'Regression', Component: RegressionPage },
   { id: 'workflow', label: 'Workflow run', Component: WorkflowPage },
   { id: 'evals', label: 'Evals', Component: EvalsPage },
+  { id: 'telemetry', label: 'Telemetry', Component: TelemetryPage },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']

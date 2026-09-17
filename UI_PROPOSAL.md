@@ -109,3 +109,11 @@ Workflow run:
 - Would be nice to see the bpmn progress (same view as monitor in Fluxnova) if possible (how much effort?)
 - At the very least would be nice for it to update what stage the workflow is at.
 - Should show which bpmn is loaded and details of model, provider, prompt etc.
+
+Evals
+- scorers should be tabbed to flip between auto-eval and service worker within the evals page.
+- Deterministic / non deterministic scorers should be colour coded to distinguish
+- Upgrade the css such that the scroll bar is not in the center of the screen.
+
+Metrics
+- Add a description column to metrics exported
