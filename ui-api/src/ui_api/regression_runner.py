@@ -25,9 +25,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-# ui-api/src/ui_api/regression_runner.py -> repo root is three levels up.
-REPO_ROOT = Path(__file__).resolve().parents[3]
-REGRESSION_DIR = REPO_ROOT / "regression"
+def _default_regression_dir() -> Path:
+    # ui-api/src/ui_api/regression_runner.py -> repo root is three levels up. This
+    # only holds for an editable/source install (see ../../setup.sh) — once pip
+    # installs ui-api as a normal (non-editable) package, this file's copy under
+    # site-packages/ui_api/ no longer sits inside the repo checkout at all, so that
+    # relative walk resolves to nonsense (e.g. /usr/local/lib/regression in the
+    # ui-api container). The Docker image instead copies regression/ in directly and
+    # sets UI_API_REGRESSION_DIR explicitly (see ui-api/Dockerfile) to sidestep this.
+    return Path(__file__).resolve().parents[3] / "regression"
+
+
+REGRESSION_DIR = Path(os.environ.get("UI_API_REGRESSION_DIR", str(_default_regression_dir())))
 REGRESSION_TEST_FILE = REGRESSION_DIR / "test_mlflow_regression.py"
 
 RunStatus = Literal["running", "passed", "failed", "error"]

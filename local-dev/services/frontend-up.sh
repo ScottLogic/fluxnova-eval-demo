@@ -6,6 +6,10 @@
 # so nginx proxies /api/ to ui-api over plain localhost (see frontend/nginx.conf.template
 # and ui-api/README.md) rather than needing a separate published port for ui-api.
 #
+# ui-api's regression run needs OPENAI_API_KEY/LLM_JUDGE_PROVIDER for the LLM-judge
+# scorers (see fluxnova_mlflow_dataset.scorers) — sourced from local-dev/.env, same
+# as fluxnova-up.sh passes OPENAI_API_KEY to the engine for the BPMN agent itself.
+#
 # Requires fluxnova-up.sh already running for the UI's API calls to work once ui-api
 # grows Fluxnova-backed routes (the pod starts fine either way). fluxnova-local runs
 # on --network host (see OTEL-EXPORT-INVESTIGATION.md at the repo root), so this pod
@@ -68,6 +72,8 @@ else
   echo "Starting ui-api..."
   podman run -d --pod "$POD_NAME" --name ui-api \
     -e UI_API_PORT="$UI_API_PORT" \
+    -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
+    -e LLM_JUDGE_PROVIDER="${LLM_JUDGE_PROVIDER:-openai}" \
     "$UI_API_IMAGE_NAME"
 
   echo "Starting frontend..."

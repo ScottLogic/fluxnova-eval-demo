@@ -242,6 +242,11 @@ services:
         condition: service_started
     environment:
       UI_API_PORT: ${UI_API_PORT:-8090}
+      # Needed for the regression run's LLM-judge scorers (see
+      # fluxnova_mlflow_dataset.scorers) — same vars fluxnova-local gets for the BPMN
+      # agent itself.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
     extra_hosts:
       - "host.containers.internal:host-gateway"
 

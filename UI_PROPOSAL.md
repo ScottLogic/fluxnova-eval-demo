@@ -82,3 +82,12 @@ Each step below is a single commit, small enough to review on its own, and leave
     into the relevant tabs.
 15. **Polish pass** — loading/error states, responsive layout check, README for `frontend/` + `ui-api/`
     covering how to run the UI and API layer together.
+
+Follow-ups:
+Regression tests:
+- Should have a description of what the regressions tests are for and why they are useful
+- Should have the golden use cases alongside the tests in a separate component. I want to be able to click through each golden and view it in the UI.
+- Should give a description of each test returned from the api. This should be pulled from the tests own docstring if possible 
+- Should have each deterministic test as its own line item rather than all as one
+- Nice to have - Give better view of the tests running - can we stream what is happening in any way easily? Propose a solution first.
+
