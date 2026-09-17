@@ -85,6 +85,7 @@ Each step below is a single commit, small enough to review on its own, and leave
 
 Follow-ups:
 Regression tests:
+- Should cache the regression tests so we don't reload them every time
 - Should have a description of what the regressions tests are for and why they are useful
 - Should have the golden use cases alongside the tests in a separate component. I want to be able to click through each golden and view it in the UI.
 - Should give a description of each test returned from the api. This should be pulled from the tests own docstring if possible 

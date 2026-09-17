@@ -7,7 +7,7 @@ with UI-only plumbing, this API lives on its own and wraps them as a library/CLI
 them. See `UI_PROPOSAL.md` at the repo root for the full plan.
 
 One router per concern: `regression.py`, `workflow.py`, `evals.py` (all under `src/ui_api/routers/`).
-`workflow.py`/`evals.py` are still empty — see the proposal's steps 7-9 for what fills them in.
+`evals.py` is still empty — see the proposal's steps 9-13 for what fills it in.
 
 ## Regression endpoints
 
@@ -26,6 +26,27 @@ GET  /api/regression/runs/{run_id}   -> {"runId": ..., "status": "running"}
 The suite needs `fluxnova-runner`/`fluxnova-mlflow-dataset` installed (see `../setup.sh`'s shared `.venv`) — if
 ui-api itself isn't running from that same environment, point it at the right interpreter with
 `UI_API_REGRESSION_PYTHON=/path/to/.venv/bin/python`.
+
+## Workflow endpoints
+
+`workflow.py` calls `fluxnova_runner.client.Client`/`RunnerConfig` directly (see `src/ui_api/workflow_runner.py`) —
+no subprocess needed here, unlike regression, since deploying a BPMN and starting a process instance are just a
+couple of fast HTTP calls to Fluxnova rather than a slow live-agent test suite.
+
+```
+POST /api/workflow/runs             body: {"requestedAmount": 60000, ...}   -> {"instanceId": "<id>"}   (202)
+                                     (body keys override the config file's default `variables` — omit to use
+                                     the defaults from fluxnova-runner/config/loan-assesment.yml)
+GET  /api/workflow/runs/{instance_id} -> {"instanceId": ..., "status": "active"}
+                                       -> {"instanceId": ..., "status": "completed" | "terminated" | "error",
+                                           "state": "COMPLETED", "variables": {...}}
+```
+
+Each `POST` deploys the configured BPMN fresh (mirroring `fluxnova-run`'s default clean-redeploy behaviour) and
+starts the config's mock external-task workers once per ui-api process (they run forever, answering whichever
+matching task shows up — no need to restart them per run). Which workflow config file is used is controlled by
+`UI_API_WORKFLOW_CONFIG` (defaults to `fluxnova-runner/config/loan-assesment.yml`, resolved relative to the repo
+root for a source/editable install — the ui-api Docker image sets this explicitly instead).
 
 ## Run locally
 
