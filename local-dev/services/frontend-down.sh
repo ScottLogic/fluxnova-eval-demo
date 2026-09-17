@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Stops and removes the frontend-local pod created by frontend-up.sh.
-# The frontend keeps no local persistent data of its own, so --delete-data is
-# accepted here only for a consistent interface with the other *-down.sh scripts
-# (e.g. when called from pods-down.sh --delete-data) and is a no-op.
+# Stops and removes the frontend-local pod created by frontend-up.sh (both the
+# frontend and ui-api containers in it). Neither keeps any local persistent data of
+# its own, so --delete-data is accepted here only for a consistent interface with the
+# other *-down.sh scripts (e.g. when called from pods-down.sh --delete-data) and is a
+# no-op.
 #
 # Usage:
 #   ./frontend-down.sh                # stop/remove the pod

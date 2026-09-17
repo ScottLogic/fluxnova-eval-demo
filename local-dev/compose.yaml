@@ -203,7 +203,11 @@ services:
 
   # Frontend UI — served as a static build via nginx, same pattern as the eval
   # services (built from source, context = repo root). No profile: it's core, like
-  # postgres/mlflow/fluxnova/otel-collector above.
+  # postgres/mlflow/fluxnova/otel-collector above. Deployed together with ui-api-local
+  # (below) — ui-api-local shares this service's network namespace (the pod analog,
+  # same as grafana-local/prometheus-local below), so nginx proxies /api/ to it over
+  # plain localhost (see frontend/nginx.conf.template) rather than needing a
+  # separately published port for ui-api.
   frontend-local:
     build:
       context: ..
@@ -216,11 +220,28 @@ services:
     ports:
       - "${FRONTEND_PORT:-8081}:80"
     environment:
-      # fluxnova-local runs on --network host (see OTEL-EXPORT-INVESTIGATION.md), so
-      # it isn't resolvable by service name from this (default-network) container —
-      # reached via host.containers.internal instead (extra_hosts below), same as
-      # eval-service-worker-local.
-      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://host.containers.internal:8080/engine-rest/}
+      # ui-api-local shares this container's network namespace (network_mode:
+      # service:frontend-local below), so it's reached via plain localhost.
+      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://localhost:${UI_API_PORT:-8090}}
+
+  # ui-api: FastAPI backend for the frontend UI (see ui-api/README.md). Built from
+  # source (context = repo root), same as the eval services. Shares frontend-local's
+  # network namespace (the pod analog — see header comment above), so it inherits the
+  # published FRONTEND_PORT container's network stack rather than publishing its own
+  # port; reach Fluxnova via host.containers.internal here once ui-api grows
+  # Fluxnova-backed routes, same as eval-service-worker-local.
+  ui-api-local:
+    build:
+      context: ..
+      dockerfile: ui-api/Dockerfile
+    image: ${UI_API_IMAGE:-ui-api:local}
+    container_name: ui-api
+    network_mode: "service:frontend-local"
+    depends_on:
+      frontend-local:
+        condition: service_started
+    environment:
+      UI_API_PORT: ${UI_API_PORT:-8090}
     extra_hosts:
       - "host.containers.internal:host-gateway"
 

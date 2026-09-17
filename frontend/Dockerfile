@@ -19,7 +19,10 @@ FROM docker.io/library/nginx:1.29-alpine
 # docker-entrypoint (envsubst over /etc/nginx/templates/*.template) at container
 # start. LISTEN_PORT defaults to 80 for compose (which does the host port mapping);
 # local-dev/services/frontend-up.sh overrides it since it runs on --network host.
-ENV API_PROXY_PASS=http://host.containers.internal:8080/engine-rest/
+# API_PROXY_PASS defaults to ui-api on localhost:8090 — both local-dev/compose.yaml
+# and services/frontend-up.sh run the ui-api container in the same network namespace
+# as this one (the "same pod" the frontend and ui-api are deployed together in).
+ENV API_PROXY_PASS=http://localhost:8090
 ENV LISTEN_PORT=80
 COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
