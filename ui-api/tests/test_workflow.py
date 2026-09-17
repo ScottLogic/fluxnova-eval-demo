@@ -35,13 +35,16 @@ class _FakeClient:
         return "instance-1"
 
     def get_instance(self, instance_id: str):
-        return None
+        return self.active_instance
 
     def get_history(self, instance_id: str) -> dict:
         return {"state": "COMPLETED"}
 
     def get_variables(self, instance_id: str) -> dict:
         return {"recommendedDecision": "APPROVE"}
+
+
+_FakeClient.active_instance = None
 
 
 @pytest.fixture
@@ -52,6 +55,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(workflow_runner, "Client", _FakeClient)
     monkeypatch.setattr(workflow_runner, "start_workers", lambda *a, **k: [])
     monkeypatch.setattr(workflow_runner, "_mock_workers_started", False)
+    monkeypatch.setattr(_FakeClient, "active_instance", None)
     return TestClient(create_app())
 
 
@@ -70,6 +74,20 @@ def test_start_run_returns_instance_id(client: TestClient) -> None:
     assert response.json() == {"instanceId": "instance-1"}
 
 
+def test_start_run_passes_through_skip_eval_service_worker_override(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+    monkeypatch.setattr(
+        _FakeClient,
+        "start_process",
+        lambda self, process_key, variables: captured.update(variables) or "instance-1",
+    )
+    response = client.post("/api/workflow/runs", json={"skipEvalServiceWorker": True})
+    assert response.status_code == 202
+    assert captured["skipEvalServiceWorker"] is True
+
+
 def test_get_run_reports_completed_status(client: TestClient) -> None:
     client.post("/api/workflow/runs")
     response = client.get("/api/workflow/runs/instance-1")
@@ -78,5 +96,19 @@ def test_get_run_reports_completed_status(client: TestClient) -> None:
         "instanceId": "instance-1",
         "status": "completed",
         "state": "COMPLETED",
+        "variables": {"recommendedDecision": "APPROVE"},
+    }
+
+
+def test_get_run_reports_active_status_with_variables(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_FakeClient, "active_instance", {"id": "instance-1"})
+    client.post("/api/workflow/runs")
+    response = client.get("/api/workflow/runs/instance-1")
+    assert response.status_code == 200
+    assert response.json() == {
+        "instanceId": "instance-1",
+        "status": "active",
         "variables": {"recommendedDecision": "APPROVE"},
     }

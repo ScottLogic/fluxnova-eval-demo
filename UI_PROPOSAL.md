@@ -69,13 +69,13 @@ Each step below is a single commit, small enough to review on its own, and leave
    bypassed per run; the trace listener stays always-on, so its "toggle" just flips a UI-visible flag the
    workflow-run request includes. Update the bpmn(s) so the eval-service-worker task is gated on that
    process variable.
-10. **Eval config UI** — add controls in the Evals tab to toggle "auto-eval (listener)" and "eval service
+10. **Eval config UI** — add controls in the Workflow run tab to toggle "auto-eval (listener)" and "eval service
     worker" independently for the next run; wired into the workflow-run request from step 8/9.
 11. **Eval definitions API** — endpoint(s) exposing which evals are configured to run for the listener
     (`eval-trace-listener/config.yaml`) and for the service worker (its config source).
 12. **Eval definitions UI** — display the listener evals and service worker evals in the Evals tab from
     step 11.
-13. **Metrics/tracing view** — read-only panel in the Evals tab showing metrics and traces Fluxnova
+13. **Metrics/tracing view** — read-only panel in a new Telemetry tab showing metrics and traces Fluxnova
     exports, plus link-outs to Grafana and the MLflow dashboard.
 14. **Restore external links** — port over the existing links/panels to other FINOS services (CALM, CCC)
     from the steel thread demo (`CalmArchitectureVisualizer.tsx`, `FinosProjectsPanel.tsx` equivalents)

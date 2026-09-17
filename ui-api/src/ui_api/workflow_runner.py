@@ -24,11 +24,14 @@ def _default_config_path() -> Path:
     # regression_runner.py's _default_regression_dir for the same caveat) — the
     # ui-api Docker image copies fluxnova-runner/ in directly and sets
     # UI_API_WORKFLOW_CONFIG explicitly.
+    #
+    # loan_approval_process_ai.yml/LoanApprovalProcess_AI.bpmn is the current
+    # workflow — the older loan-assesment(-eval).yml/.bpmn files are deprecated.
     return (
         Path(__file__).resolve().parents[3]
         / "fluxnova-runner"
         / "config"
-        / "loan-assesment.yml"
+        / "loan_approval_process_ai.yml"
     )
 
 
@@ -83,7 +86,8 @@ def start_run(variable_overrides: dict[str, Any] | None = None) -> str:
 
     `variable_overrides` are merged over the config file's default `variables` —
     keys not given keep their config default (the "random input" a caller can
-    selectively edit).
+    selectively edit, including `skipEvalServiceWorker` — see
+    `bpmn/LoanApprovalProcess_AI.bpmn`'s `Gateway_SkipEvalServiceWorker`).
     """
     cfg = _load_config()
     client = _client(cfg)
@@ -111,12 +115,23 @@ def start_run(variable_overrides: dict[str, Any] | None = None) -> str:
 
 
 def get_run(instance_id: str) -> dict[str, Any]:
-    """Returns the current status (and, once ended, final variables) of a run."""
+    """Returns the current status and variables of a run.
+
+    Variables are included even while `status` is "active" — e.g. once the
+    ad-hoc agent subprocess finishes but the outer process is still waiting on
+    the (possibly skipped) eval step or a later human review task — using the
+    historic variable-instance query, which reflects current values regardless
+    of whether the instance has ended.
+    """
     cfg = _load_config()
     client = _client(cfg)
 
     if client.get_instance(instance_id) is not None:
-        return {"instanceId": instance_id, "status": "active"}
+        return {
+            "instanceId": instance_id,
+            "status": "active",
+            "variables": client.get_variables(instance_id),
+        }
 
     history = client.get_history(instance_id)
     state = history.get("state", "UNKNOWN")

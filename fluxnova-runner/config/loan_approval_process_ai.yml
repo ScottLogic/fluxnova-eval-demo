@@ -63,13 +63,25 @@ variables:
   hasCollateral: false
   collateralDescription: ""
   loanPurpose: Home improvement
+  # Gateway_4's ("Risk Approved?") condition (${aiRiskScore <= 1}) needs a starting value.
+  aiRiskScore: 0
+  # Gateway_5's ("Manual Review Required?") condition.
+  approvalDecision: ""
+  # Bypasses ServiceTask_EvaluateAgentOutput (Gateway_SkipEvalServiceWorker) when
+  # true — set per run via ui-api's evals.py router (see UI_PROPOSAL.md step 9).
+  skipEvalServiceWorker: false
 
-# Mock external task workers: topic name -> output variables to complete the task with
+# Mock external task workers: topic name -> output variables to complete the task
+# with. Covers every camunda:topic in LoanApprovalProcess_AI.bpmn (aside from
+# agent-output-eval, which is eval-service-worker's real job, not mocked) so a run
+# can reach an end event unattended.
 mock_workers:
   document-intelligence:
     isInvalid: false
   fraud-detection:
     isFraudulent: false
+  compliance-check:
+    complianceStatus: CLEARED
   credit-score-check:
     creditScore: 720
     creditRiskBand: LOW
@@ -86,6 +98,9 @@ mock_workers:
   affordability-assessment:
     debtToIncomeRatio: 0.28
     affordabilityPassed: true
-  generate-assessment-report:
-    recommendedDecision: APPROVE
-  rejection-notification: {}
+  adjust-interest-rate:
+    interestRate: 5.5
+  generate-loan-agreement:
+    agreementId: AGMT-001
+  send-for-e-signature: {}
+  disburse-fund: {}

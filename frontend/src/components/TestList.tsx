@@ -7,7 +7,7 @@ interface TestListProps {
 
 function shortTestName(nodeId: string): string {
   const index = nodeId.indexOf('::')
-  return index === -1 ? nodeId : nodeId.slice(index + 2).replace("_", " ");
+  return index === -1 ? nodeId : nodeId.slice(index + 2).replaceAll("_", " ");
 }
 
 function formatDuration(seconds: number | null): string {
