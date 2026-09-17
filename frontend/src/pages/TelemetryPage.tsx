@@ -1,3 +1,5 @@
+import FinosProjectsPanel from '../components/FinosProjectsPanel'
+
 const GRAFANA_URL = 'http://localhost:3000'
 const MLFLOW_URL = 'http://localhost:5000'
 
@@ -121,6 +123,8 @@ function TelemetryPage() {
           sensitive data.
         </p>
       </div>
+
+      <FinosProjectsPanel />
     </section>
   )
 }

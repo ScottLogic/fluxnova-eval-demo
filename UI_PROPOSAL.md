@@ -88,9 +88,12 @@ Each step below is a single commit, small enough to review on its own, and leave
     step 13.
 15. **Metrics/tracing view** — read-only panel in a new Telemetry tab showing metrics and traces Fluxnova
     exports, plus link-outs to Grafana and the MLflow dashboard.
-16. **Restore external links** — port over the existing links/panels to other FINOS services (CALM, CCC)
-    from the steel thread demo (`CalmArchitectureVisualizer.tsx`, `FinosProjectsPanel.tsx` equivalents)
-    into the relevant tabs.
+16. **Restore external links** — port over the `FinosProjectsPanel.tsx` equivalent (a static link list to
+    AIGF, CCC, CALM, Fluxnova) from the steel thread demo into a relevant tab. The interactive
+    `CalmArchitectureVisualizer.tsx` (a React Flow graph, needing a new `@xyflow/react` dependency and a
+    `*.calm.json` describing this repo's own architecture, which doesn't exist yet) is deliberately **out of
+    scope for now** — a plain link-out to the CALM Hub is enough here; porting the full visualizer is
+    future work if wanted later.
 17. **Polish pass** — loading/error states, responsive layout check, README for `frontend/` + `ui-api/`
     covering how to run the UI and API layer together.
 
@@ -117,3 +120,7 @@ Evals
 
 Metrics
 - Add a description column to metrics exported
+
+Other
+- Should have a home page with details of the project and the finos projects panel
+- 
