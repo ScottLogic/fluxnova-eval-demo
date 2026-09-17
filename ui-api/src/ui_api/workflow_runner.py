@@ -71,6 +71,13 @@ def _ensure_mock_workers(cfg: RunnerConfig) -> None:
         _mock_workers_started = True
 
 
+def get_config() -> dict[str, Any]:
+    """Returns the default process variables a run starts with, for a form to
+    pre-populate and selectively override (the "random input" a caller can edit)."""
+    cfg = _load_config()
+    return {"processKey": cfg.process_key, "variables": cfg.variables}
+
+
 def start_run(variable_overrides: dict[str, Any] | None = None) -> str:
     """Deploys the configured BPMN, starts mock workers, starts a process instance.
 

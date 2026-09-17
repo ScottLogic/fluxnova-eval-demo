@@ -6,8 +6,12 @@ async function get<T>(path: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
-async function post<T>(path: string): Promise<T> {
-  const response = await fetch(path, { method: 'POST' })
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
   if (!response.ok) {
     throw new Error(`${path} failed: ${response.status} ${response.statusText}`)
   }
@@ -47,4 +51,34 @@ export function startRegressionRun(): Promise<RegressionRunStarted> {
 
 export function fetchRegressionRun(runId: string): Promise<RegressionRunResult> {
   return get(`/api/regression/runs/${runId}`)
+}
+
+export type WorkflowVariables = Record<string, string | number | boolean>
+
+export interface WorkflowConfig {
+  processKey: string
+  variables: WorkflowVariables
+}
+
+export interface WorkflowRunStarted {
+  instanceId: string
+}
+
+export interface WorkflowRunStatus {
+  instanceId: string
+  status: 'active' | 'completed' | 'terminated' | 'error'
+  state?: string
+  variables?: WorkflowVariables
+}
+
+export function fetchWorkflowConfig(): Promise<WorkflowConfig> {
+  return get('/api/workflow/config')
+}
+
+export function startWorkflowRun(variableOverrides: WorkflowVariables): Promise<WorkflowRunStarted> {
+  return post('/api/workflow/runs', variableOverrides)
+}
+
+export function fetchWorkflowRun(instanceId: string): Promise<WorkflowRunStatus> {
+  return get(`/api/workflow/runs/${instanceId}`)
 }

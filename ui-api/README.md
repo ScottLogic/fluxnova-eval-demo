@@ -34,6 +34,7 @@ no subprocess needed here, unlike regression, since deploying a BPMN and startin
 couple of fast HTTP calls to Fluxnova rather than a slow live-agent test suite.
 
 ```
+GET  /api/workflow/config           -> {"processKey": "...", "variables": {...}}   (the run's default variables)
 POST /api/workflow/runs             body: {"requestedAmount": 60000, ...}   -> {"instanceId": "<id>"}   (202)
                                      (body keys override the config file's default `variables` — omit to use
                                      the defaults from fluxnova-runner/config/loan-assesment.yml)

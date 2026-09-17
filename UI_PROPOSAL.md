@@ -92,3 +92,9 @@ Regression tests:
 - Should have each deterministic test as its own line item rather than all as one
 - Nice to have - Give better view of the tests running - can we stream what is happening in any way easily? Propose a solution first.
 
+Workflow run:
+- Should show a link out to the fluxnova monitoring UI
+- Should show the last run so that when I click to another tab and come back it's still there
+- Would be nice to see the bpmn progress (same view as monitor in Fluxnova) if possible (how much effort?)
+- At the very least would be nice for it to update what stage the workflow is at.
+- Should show which bpmn is loaded and details of model, provider, prompt etc.

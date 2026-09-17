@@ -17,6 +17,11 @@ from ui_api import workflow_runner
 router = APIRouter(prefix="/api/workflow", tags=["workflow"])
 
 
+@router.get("/config")
+def get_config() -> dict[str, Any]:
+    return workflow_runner.get_config()
+
+
 @router.post("/runs", status_code=202)
 def start_run(variable_overrides: dict[str, Any] | None = None) -> dict[str, str]:
     try:

@@ -243,6 +243,8 @@
 
 .status-badge.status-fail,
 .status-badge.status-failed,
+.status-badge.status-error,
+.status-badge.status-terminated,
 .status-badge.status-exceeded {
   color: #e07a7a;
   border-color: rgba(224, 122, 122, 0.45);
@@ -285,6 +287,90 @@
   color: var(--paper-dim);
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
+}
+
+.panel-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sample-preview-label {
+  margin: 0;
+  color: var(--copper);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.result-grid {
+  margin: 0;
+  display: grid;
+  gap: 0.9rem;
+  max-width: 36rem;
+}
+
+.result-grid dt {
+  color: var(--paper-dim);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.result-grid dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+  word-break: break-word;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.form-group-row {
+  display: grid;
+  gap: 0.85rem;
+}
+
+@media (min-width: 720px) {
+  .form-group-row {
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  }
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field span {
+  color: var(--paper-dim);
+  font-size: 0.92rem;
+}
+
+.field input {
+  appearance: none;
+  border: 1px solid rgba(232, 237, 244, 0.18);
+  background: rgba(16, 20, 28, 0.55);
+  color: var(--paper);
+  border-radius: 0.35rem;
+  padding: 0.75rem 0.85rem;
+  width: 100%;
+}
+
+.field input[type='checkbox'] {
+  width: auto;
+  justify-self: start;
+}
+
+.field input:focus {
+  outline: 2px solid rgba(196, 107, 58, 0.55);
+  outline-offset: 1px;
+  border-color: transparent;
 }
 
 .test-run-output {

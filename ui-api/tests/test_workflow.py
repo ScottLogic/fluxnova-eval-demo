@@ -55,6 +55,15 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return TestClient(create_app())
 
 
+def test_get_config_returns_defaults(client: TestClient) -> None:
+    response = client.get("/api/workflow/config")
+    assert response.status_code == 200
+    assert response.json() == {
+        "processKey": "someProcess",
+        "variables": {"applicantName": "Jane Smith", "requestedAmount": 50000},
+    }
+
+
 def test_start_run_returns_instance_id(client: TestClient) -> None:
     response = client.post("/api/workflow/runs", json={"requestedAmount": 75000})
     assert response.status_code == 202
