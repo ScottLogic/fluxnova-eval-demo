@@ -13,8 +13,11 @@ no per-run hook, so its toggle instead drives the listener's live sample rate
 directly (see `ui_api.listener_client` / `eval_trace_listener/control.py`) —
 off sets it to 0.0 ("none"), on sets it to 1.0 ("every trace").
 
-Eval definitions / metrics-tracing are still empty — see UI_PROPOSAL.md steps
-13 and 15 for what fills those in.
+`definitions` (this file) exposes which scorers each service actually runs — read
+straight off the real scorer objects (see `ui_api.eval_definitions`), so it can
+never drift out of sync with what executes.
+
+Metrics/tracing is still empty — see UI_PROPOSAL.md step 15 for what fills that in.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ui_api import listener_client
+from ui_api import eval_definitions, listener_client
 
 router = APIRouter(prefix="/api/evals", tags=["evals"])
 
@@ -47,3 +50,11 @@ def set_auto_eval(config: AutoEvalConfig) -> AutoEvalConfig:
     except listener_client.ListenerControlError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     return AutoEvalConfig(enabled=rate > 0.0)
+
+
+@router.get("/definitions")
+def get_definitions() -> dict[str, list[dict[str, str]]]:
+    return {
+        "listener": eval_definitions.listener_scorers(),
+        "serviceWorker": eval_definitions.service_worker_scorers(),
+    }

@@ -12,6 +12,8 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "requests>=2.32",
     "fluxnova-runner",
+    "eval-trace-listener",
+    "eval-service-worker",
 ]
 
 [project.optional-dependencies]
