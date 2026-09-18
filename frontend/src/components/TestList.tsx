@@ -1,7 +1,7 @@
-import type { RegressionRunResult, RegressionTestResult } from '../api'
+import type { RegressionRunResult, RegressionTest, RegressionTestResult } from '../api'
 
 interface TestListProps {
-  tests: string[] | null
+  tests: RegressionTest[] | null
   runResult: RegressionRunResult | null
 }
 
@@ -28,11 +28,11 @@ function TestList({ tests, runResult }: TestListProps) {
 
   return (
     <ul className="test-list">
-      {tests.map((nodeId) => {
-        const result = outcomeByNodeId.get(nodeId)
+      {tests.map(({ name, description }) => {
+        const result = outcomeByNodeId.get(name)
         return (
-          <li key={nodeId} className="test-list-item">
-            <span className="test-list-name">{shortTestName(nodeId)}</span>
+          <li key={name} className="test-list-item" title={description || undefined}>
+            <span className="test-list-name">{shortTestName(name)}</span>
             <span className="test-list-meta">
               {result && (
                 <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>

@@ -18,8 +18,13 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export interface RegressionTest {
+  name: string
+  description: string
+}
+
 export interface RegressionTests {
-  tests: string[]
+  tests: RegressionTest[]
 }
 
 export interface Golden {

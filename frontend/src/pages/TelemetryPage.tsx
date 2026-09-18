@@ -1,5 +1,3 @@
-import FinosProjectsPanel from '../components/FinosProjectsPanel'
-
 const GRAFANA_URL = 'http://localhost:3000'
 const MLFLOW_URL = 'http://localhost:5000'
 
@@ -9,6 +7,7 @@ const METRICS: Array<{
   unit: string
   emittedPer: string
   attributes: string
+  details: string
 }> = [
   {
     metric: 'gen_ai.client.token.usage',
@@ -16,6 +15,7 @@ const METRICS: Array<{
     unit: '{token}',
     emittedPer: 'chat + invoke_agent',
     attributes: 'gen_ai.operation.name, gen_ai.token.type, gen_ai.provider.name, gen_ai.request.model',
+    details: 'Histogram of token consumption. Filter by gen_ai.token.type to separate input from output tokens.'
   },
   {
     metric: 'gen_ai.client.operation.duration',
@@ -24,6 +24,7 @@ const METRICS: Array<{
     emittedPer: 'chat, execute_tool, invoke_agent',
     attributes:
       'gen_ai.operation.name, gen_ai.provider.name, gen_ai.request.model, gen_ai.tool.name, error.type',
+    details: 'Histogram of LLM call latencies. Filter by gen_ai.request.model to compare models.'
   },
   {
     metric: 'gen_ai.invoke_agent.duration',
@@ -31,6 +32,7 @@ const METRICS: Array<{
     unit: 'seconds',
     emittedPer: 'subprocess execution',
     attributes: 'gen_ai.agent.name, gen_ai.request.model',
+    details: 'Measures the end-to-end latency of a single, in-process AI agent invocation'
   },
   {
     metric: 'gen_ai.invoke_agent.inference_calls',
@@ -38,6 +40,7 @@ const METRICS: Array<{
     unit: '{inference_call}',
     emittedPer: 'subprocess execution',
     attributes: 'gen_ai.agent.name',
+    details: 'This metric is a counter that tracks the total number of underlying Large Language Model (LLM) inference calls made during a single execution of an AI agent (invoke_agent operation)'
   },
   {
     metric: 'gen_ai.invoke_agent.tool_calls',
@@ -45,6 +48,7 @@ const METRICS: Array<{
     unit: '{tool_call}',
     emittedPer: 'subprocess execution',
     attributes: 'gen_ai.agent.name',
+    details: 'Tracks how many tool calls an AI agent executes during a single agent run'
   },
   {
     metric: 'gen_ai.execute_tool.duration',
@@ -52,6 +56,7 @@ const METRICS: Array<{
     unit: 'seconds',
     emittedPer: 'tool call',
     attributes: 'gen_ai.tool.name, gen_ai.tool.call.id, gen_ai.agent.name, error.type',
+    details: 'Measures the duration of a single AI agent tool execution'
   },
 ]
 
@@ -89,6 +94,7 @@ function TelemetryPage() {
                 <th>Unit</th>
                 <th>Emitted per</th>
                 <th>Key attributes</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody>
@@ -99,6 +105,7 @@ function TelemetryPage() {
                   <td>{row.unit}</td>
                   <td>{row.emittedPer}</td>
                   <td>{row.attributes}</td>
+                  <td>{row.details}</td>
                 </tr>
               ))}
             </tbody>
@@ -123,8 +130,6 @@ function TelemetryPage() {
           sensitive data.
         </p>
       </div>
-
-      <FinosProjectsPanel />
     </section>
   )
 }

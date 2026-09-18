@@ -30,7 +30,10 @@ def test_list_tests(client: TestClient) -> None:
     response = client.get("/api/regression/tests")
     assert response.status_code == 200
     assert response.json() == {
-        "tests": ["test_dummy_suite.py::test_pass", "test_dummy_suite.py::test_fail"]
+        "tests": [
+            {"name": "test_dummy_suite.py::test_pass", "description": ""},
+            {"name": "test_dummy_suite.py::test_fail", "description": ""},
+        ]
     }
 
 

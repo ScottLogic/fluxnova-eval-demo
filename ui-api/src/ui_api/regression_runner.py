@@ -13,6 +13,7 @@ scraping console output.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -57,9 +58,37 @@ def _python() -> str:
     # isn't running from that same environment.
     return os.environ.get("UI_API_REGRESSION_PYTHON", sys.executable)
 
+def _docstrings_by_qualified_name(source_path: Path) -> dict[str, str]:
+    """Maps ``"test_foo"``/``"SomeClass.test_foo"`` to that test's docstring.
 
-def list_tests() -> list[str]:
-    """Returns pytest node ids for the regression suite, via `pytest --collect-only`."""
+    Reads docstrings directly from the test file's own AST rather than from
+    pytest's ``-v`` console output — that output's indentation depth (used to
+    tell a docstring's continuation lines apart from the next test) depends on
+    how deeply pytest happens to nest this collection (module vs. class vs.
+    directory), so parsing it is brittle to nesting or pytest/plugin version
+    changes. The AST gives the same docstrings without depending on any of
+    that.
+    """
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    docstrings: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    docstrings[f"{node.name}.{child.name}"] = ast.get_docstring(child) or ""
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            docstrings.setdefault(node.name, ast.get_docstring(node) or "")
+    return docstrings
+
+
+def list_tests() -> list[dict[str, str]]:
+    """Returns one ``{name, description}`` entry per test in the regression suite.
+
+    ``name`` is the pytest node id (from `pytest --collect-only -q`, the same
+    structured/stable form the UI already used for run node ids elsewhere);
+    ``description`` is that test's own docstring, read directly from the
+    file's AST — see `_docstrings_by_qualified_name`.
+    """
     result = subprocess.run(
         [_python(), "-m", "pytest", "--collect-only", "-q", REGRESSION_TEST_FILE.name],
         cwd=REGRESSION_DIR,
@@ -68,7 +97,14 @@ def list_tests() -> list[str]:
         check=False,
     )
     prefix = f"{REGRESSION_TEST_FILE.name}::"
-    return [line.strip() for line in result.stdout.splitlines() if line.startswith(prefix)]
+    node_ids = [line.strip() for line in result.stdout.splitlines() if line.startswith(prefix)]
+
+    docstrings = _docstrings_by_qualified_name(REGRESSION_TEST_FILE)
+    tests = []
+    for node_id in node_ids:
+        qualified_name = node_id[len(prefix) :].replace("::", ".")
+        tests.append({"name": node_id, "description": docstrings.get(qualified_name, "")})
+    return tests
 
 def list_goldens() -> list[dict[str, Any]]:
     """Returns the raw contents of the loan-assessment golden dataset."""

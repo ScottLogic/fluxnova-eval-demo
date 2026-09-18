@@ -98,28 +98,31 @@ Each step below is a single commit, small enough to review on its own, and leave
     covering how to run the UI and API layer together.
 
 Follow-ups:
+Home page:
+- Should have a contents with a breif description of each tab
+- Projects list should be on the right unless screen width does not allow.
+
+Loan Assesment
+- Integrate the Finos AI Govenanvce and open catalog link from steel thread using the useCase.ts file
+
 Regression tests:
-- Should cache the regression tests so we don't reload them every time
-- Should have the golden use cases alongside the tests in a separate component. I want to be able to click through each golden and view it in the UI.
-- Should give a description of each test returned from the api. This should be pulled from the tests own docstring if possible 
 - Should have each deterministic test as its own line item rather than all as one
-- Nice to have - Give better view of the tests running - can we stream what is happening in any way easily? Propose a solution first.
+- I want a nicer view of this. It should show what is happening when I run the tests rather than wait for them to complete.
+- I also want to display the description of the test along with the name, result ect in a nice way rather than as a tooltip
 
 Workflow run:
+- Should include the 
 - Should show a link out to the fluxnova monitoring UI
-- Should show the last run so that when I click to another tab and come back it's still there
 - Would be nice to see the bpmn progress (same view as monitor in Fluxnova) if possible (how much effort?)
-- At the very least would be nice for it to update what stage the workflow is at.
-- Should show which bpmn is loaded and details of model, provider, prompt etc.
+- I need more information. Before a run I want to see details of model, provider, prompt etc
+- During the run I want to see what stage things are at using the history api from Fluxnova
 
 Evals
-- scorers should be tabbed to flip between auto-eval and service worker within the evals page.
+- I want this to be a complete list of scorers. It should give a description of what scoreres are and then for each show
+- the name, description, if it is used in auto eval, if used in eval service task, if used in regression testing
 - Deterministic / non deterministic scorers should be colour coded to distinguish
-- Upgrade the css such that the scroll bar is not in the center of the screen.
 
-Metrics
-- Add a description column to metrics exported
-
-Other
-- Should have a home page with details of the project and the finos projects panel. Should match the steel thread landing page in terms of header etc but without the use case catalog stuff.
-- Add finos AI governance section to home page 
+Architecture
+- I want the nodes to be redesigned to match the layout I have in the Fluxnova EDD.png diagram. Fluxnova should be larger to highlight it
+- I want nodes to be clickable with a description showing when I click. This should be possible using Toolbar and custom nodes https://reactflow.dev/examples/nodes/node-toolbar
+- 

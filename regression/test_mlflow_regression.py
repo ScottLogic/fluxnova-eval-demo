@@ -167,6 +167,37 @@ def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str,
     return final_output, run_variables
 
 
+def _assert_deterministic_scorer_passed(table, scorer_name: str) -> None:
+    """Gate one deterministic scorer's column in an ``eval_results`` table.
+
+    Handles every value shape ``fluxnova_mlflow_dataset.scorers`` returns for
+    these scorers: plain booleans (possibly surfaced as their string form,
+    e.g. ``"true"``/``"yes"``, depending on the store), graded 0.0-1.0 scores
+    (``tool_correctness`` and friends — treated as a hard gate here, requiring
+    the full 1.0, since this is a regression *gate* not a benchmark), and
+    ``None``/``NaN`` for scorers that report "not applicable" for a given row
+    (e.g. ``no_collateral_check_when_no_collateral`` when the applicant has no
+    collateral) — never a failure.
+    """
+    column = f"{scorer_name}/value"
+    if column not in table.columns:
+        return  # scorer produced no column at all (shouldn't happen, but not this helper's job)
+    values = table[column]
+
+    def _passed(value: object) -> bool:
+        if value is None or (isinstance(value, float) and value != value):  # NaN != itself
+            return True  # not applicable for this row
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return float(value) >= 1.0
+        return str(value).strip().lower() in {"true", "yes", "1"}
+
+    failed = values[~values.apply(_passed)]
+    assert failed.empty, (
+        f"{scorer_name} failed for {len(failed)} golden(s): {failed.tolist()}"
+    )
+
 @pytest.fixture(scope="session")
 def cfg() -> RunnerConfig:
     """Load the runner config once; skip the whole suite if the engine is down."""
@@ -316,23 +347,13 @@ def evaluation_rows(cfg: RunnerConfig, predict_fn, _run_cache: dict) -> list[dic
         )
     return rows
 
+########################## Regression tests ##########################
 
 @mlflow.test
 def test_agent_reaches_evidence_backed_decision(evaluation_rows: list[dict], predict_fn) -> None:
-    """Assert the loan-assessment agent's *actual* output on every golden still
-    satisfies the shared ``decision_quality`` guideline judge.
-
-    Note this does *not* compare against the golden's ``expected_output`` — that
-    is what ``test_agent_matches_golden_decisions`` does. ``decision_quality``
-    grades the output against fixed guidelines only: that it reaches a definitive
-    APPROVE/REJECT recommendation backed by specific cited evidence (see
-    ``fluxnova_mlflow_dataset.scorers.decision_quality``).
-
-    This is MLflow's canonical regression-testing pattern: ``evaluate()`` drives
-    the live agent per golden via ``predict_fn`` and scores its real output here
-    — rather than merely re-scoring the golden's own reference answer.
-    ``@mlflow.test`` tags this as a regression test run (run type ``test`` + a
-    session id) and records its pass/fail status.
+    """Assert the agent's actual output on every golden satisfies the ``decision_quality`` guideline judge.
+    ``decision_quality`` grades the output against fixed guidelines only: that it reaches a definitive
+    APPROVE/REJECT recommendation backed by specific cited evidence.
     """
     _log.info("Scoring %d golden(s) with decision_quality...", len(evaluation_rows))
     result = mlflow.genai.evaluate(
@@ -360,17 +381,13 @@ def test_agent_reaches_evidence_backed_decision(evaluation_rows: list[dict], pre
 
 @mlflow.test
 def test_agent_matches_golden_decisions(evaluation_rows: list[dict], predict_fn) -> None:
-    """Assert the loan-assessment agent's *actual* output on every golden matches
-    that golden's ``expected_output`` via the shared ``matches_golden`` judge.
-
+    """Assert the agent's actual output on every golden matches
+    that golden's ``expected_output`` via the ``matches_golden`` judge.
     Complements ``decision_quality`` (which grades the output against fixed
-    guidelines, ignoring the golden): this scores the live agent output *against
-    the scenario's reference answer*, returning a ``"yes"`` verdict only when both
+    guidelines, ignoring the golden): this scores the live agent output against
+    the scenario's reference answer, returning a ``"yes"`` verdict only when both
     reach the same APPROVE/REJECT decision and cite the same categories of
-    evidence (see ``fluxnova_mlflow_dataset.scorers.matches_golden``, which
-    thresholds its 0.0-1.0 judge score at ``GOLDEN_MATCH_THRESHOLD``).
-    ``@mlflow.test`` tags this as a regression test run and records its pass/fail
-    status.
+    evidence.
     """
     _log.info("Scoring %d golden(s) with matches_golden...", len(evaluation_rows))
     result = mlflow.genai.evaluate(
@@ -392,38 +409,6 @@ def test_agent_matches_golden_decisions(evaluation_rows: list[dict], predict_fn)
     assert failed.empty, (
         f"matches_golden scored below the {GOLDEN_MATCH_THRESHOLD} threshold for "
         f"{len(failed)} golden(s): {failed.tolist()}"
-    )
-
-
-def _assert_deterministic_scorer_passed(table, scorer_name: str) -> None:
-    """Gate one deterministic scorer's column in an ``eval_results`` table.
-
-    Handles every value shape ``fluxnova_mlflow_dataset.scorers`` returns for
-    these scorers: plain booleans (possibly surfaced as their string form,
-    e.g. ``"true"``/``"yes"``, depending on the store), graded 0.0-1.0 scores
-    (``tool_correctness`` and friends — treated as a hard gate here, requiring
-    the full 1.0, since this is a regression *gate* not a benchmark), and
-    ``None``/``NaN`` for scorers that report "not applicable" for a given row
-    (e.g. ``no_collateral_check_when_no_collateral`` when the applicant has no
-    collateral) — never a failure.
-    """
-    column = f"{scorer_name}/value"
-    if column not in table.columns:
-        return  # scorer produced no column at all (shouldn't happen, but not this helper's job)
-    values = table[column]
-
-    def _passed(value: object) -> bool:
-        if value is None or (isinstance(value, float) and value != value):  # NaN != itself
-            return True  # not applicable for this row
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return float(value) >= 1.0
-        return str(value).strip().lower() in {"true", "yes", "1"}
-
-    failed = values[~values.apply(_passed)]
-    assert failed.empty, (
-        f"{scorer_name} failed for {len(failed)} golden(s): {failed.tolist()}"
     )
 
 
@@ -460,20 +445,11 @@ def test_agent_passes_deterministic_checks(evaluation_rows: list[dict], predict_
 
 @mlflow.test
 def test_agent_cites_gathered_evidence(evaluation_rows: list[dict], predict_fn) -> None:
-    """Assert every golden's *actual* agent output cites the evidence it gathered,
-    via the shared ``evidence_citation`` LLM judge (see
-    ``fluxnova_mlflow_dataset.scorers``).
-
-    Where ``decision_quality`` grades the *shape* of the recommendation and
-    ``matches_golden`` compares it to the reference answer, ``evidence_citation``
-    grades how well the final answer grounds its reasoning in the specific
-    applicant/tool evidence — reading the agent's ``outputs`` plus the
-    ``input_variables`` supplied per row (it needs no trace and treats the
-    Fluxnova-only ``agent_goal`` as optional context). It returns a graded
-    0.0-1.0 score, so this gate requires every row to meet
-    ``_EVIDENCE_CITATION_THRESHOLD`` (env ``REGRESSION_EVIDENCE_CITATION_THRESHOLD``,
-    default 0.7). ``@mlflow.test`` tags this as a regression test run and records
-    its pass/fail status.
+    """Assert every golden's agent output cites the evidence it gathered,
+    via the ``evidence_citation`` LLM judge.
+    evidence_citation grades how well the final answer grounds its reasoning in the specific
+    applicant/tool evidence, reading the agent's outputs plus the
+    input_variables. It returns a graded 0.0-1.0 score.
     """
     _log.info(
         "Scoring %d golden(s) with evidence_citation...", len(evaluation_rows)

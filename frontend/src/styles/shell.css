@@ -81,6 +81,15 @@
   text-overflow: ellipsis;
 }
 
+.brand-logo {
+  display: block;
+  height: 2.65rem;
+  width: auto;
+  max-width: min(28vw, 5.5rem);
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .topbar-nav {
   display: flex;
   align-items: center;

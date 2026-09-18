@@ -1,93 +1,27 @@
-import {useCallback, useEffect, useState} from 'react'
-import {fetchRegressionRun, fetchRegressionTests, fetchGoldens, startRegressionRun, type Golden, type RegressionRunResult} from '../api'
+import {useEffect} from 'react'
+import {useRegressionStore} from '../store/regressionStore'
 import TestList from '../components/TestList'
 import Goldens from '../components/Goldens'
 
-const POLL_MS = 2000
 // Default MLflow port from local-dev/.env's MLFLOW_PORT.
 const MLFLOW_URL = 'http://localhost:5000'
 
 function RegressionPage() {
-    const [tests, setTests] = useState<string[] | null>(null)
-    const [testsError, setTestsError] = useState<string | null>(null)
-    const [goldens, setGoldens] = useState<Golden[]>([])
-    const [goldensError, setGoldensError] = useState<string | null>(null)
-    const [runId, setRunId] = useState<string | null>(null)
-    const [runResult, setRunResult] = useState<RegressionRunResult | null>(null)
-    const [runError, setRunError] = useState<string | null>(null)
-    const [starting, setStarting] = useState(false)
-
-    const loadTests = useCallback(() => {
-        fetchRegressionTests()
-            .then((payload) => {
-                setTests(payload.tests)
-                setTestsError(null)
-            })
-            .catch((error: unknown) => {
-                setTestsError(error instanceof Error ? error.message : 'Failed to load tests')
-            })
-    }, [])
-
-    const loadGoldens = useCallback(() => {
-      fetchGoldens()
-          .then((payload) => {
-            setGoldens(payload.goldens)
-            setGoldensError(null)
-          })
-          .catch((error: unknown) => {
-            setGoldensError(error instanceof Error ? error.message : 'Failed to load tests')
-          })
-    }, [])
+    const tests = useRegressionStore((state) => state.tests)
+    const testsError = useRegressionStore((state) => state.testsError)
+    const goldens = useRegressionStore((state) => state.goldens)
+    const goldensError = useRegressionStore((state) => state.goldensError)
+    const runResult = useRegressionStore((state) => state.runResult)
+    const runError = useRegressionStore((state) => state.runError)
+    const starting = useRegressionStore((state) => state.starting)
+    const loadTests = useRegressionStore((state) => state.loadTests)
+    const loadGoldens = useRegressionStore((state) => state.loadGoldens)
+    const startRun = useRegressionStore((state) => state.startRun)
 
     useEffect(() => {
         loadTests()
         loadGoldens()
     }, [loadTests, loadGoldens])
-
-    useEffect(() => {
-        if (!runId) {
-            return
-        }
-        let stopped = false
-        let timer: number
-
-        function poll() {
-            fetchRegressionRun(runId as string)
-                .then((result) => {
-                    if (stopped) {
-                        return
-                    }
-                    setRunResult(result)
-                    if (result.status === 'running') {
-                        timer = window.setTimeout(poll, POLL_MS)
-                    }
-                })
-                .catch((error: unknown) => {
-                    if (stopped) {
-                        return
-                    }
-                    setRunError(error instanceof Error ? error.message : 'Failed to fetch run status')
-                })
-        }
-
-        poll()
-        return () => {
-            stopped = true
-            window.clearTimeout(timer)
-        }
-    }, [runId])
-
-    function handleRun() {
-        setStarting(true)
-        setRunError(null)
-        setRunResult(null)
-        startRegressionRun()
-            .then((payload) => setRunId(payload.runId))
-            .catch((error: unknown) => {
-                setRunError(error instanceof Error ? error.message : 'Failed to start run')
-            })
-            .finally(() => setStarting(false))
-    }
 
     const running = starting || runResult?.status === 'running'
 
@@ -139,7 +73,7 @@ function RegressionPage() {
             </div>
 
             <div className="actions">
-                <button type="button" className="btn primary" onClick={handleRun} disabled={running}>
+                <button type="button" className="btn primary" onClick={startRun} disabled={running}>
                     {running ? 'Running…' : 'Run regression suite'}
                 </button>
                 <a className="btn ghost" href={MLFLOW_URL} target="_blank" rel="noreferrer">

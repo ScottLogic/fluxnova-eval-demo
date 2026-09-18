@@ -1,85 +1,27 @@
-import { useCallback, useEffect, useState } from 'react'
-import {
-  fetchWorkflowConfig,
-  fetchWorkflowRun,
-  startWorkflowRun,
-  type WorkflowRunStatus as WorkflowRunStatusData,
-  type WorkflowVariables,
-} from '../api'
+import { useEffect } from 'react'
+import type { WorkflowVariables } from '../api'
 import EvalToggles from '../components/EvalToggles'
 import WorkflowForm from '../components/WorkflowForm'
 import WorkflowRunStatus from '../components/WorkflowRunStatus'
 import { useEvalSettings } from '../useEvalSettings'
-
-const POLL_MS = 2000
+import { useWorkflowStore } from '../store/workflowStore'
 
 function WorkflowPage() {
   const { skipEvalServiceWorker } = useEvalSettings()
-  const [defaults, setDefaults] = useState<WorkflowVariables | null>(null)
-  const [configError, setConfigError] = useState<string | null>(null)
-  const [instanceId, setInstanceId] = useState<string | null>(null)
-  const [run, setRun] = useState<WorkflowRunStatusData | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [runError, setRunError] = useState<string | null>(null)
-
-  const loadConfig = useCallback(() => {
-    fetchWorkflowConfig()
-      .then((config) => {
-        setDefaults(config.variables)
-        setConfigError(null)
-      })
-      .catch((error: unknown) => {
-        setConfigError(error instanceof Error ? error.message : 'Failed to load defaults')
-      })
-  }, [])
+  const defaults = useWorkflowStore((state) => state.defaults)
+  const configError = useWorkflowStore((state) => state.configError)
+  const run = useWorkflowStore((state) => state.run)
+  const runError = useWorkflowStore((state) => state.runError)
+  const submitting = useWorkflowStore((state) => state.submitting)
+  const loadConfig = useWorkflowStore((state) => state.loadConfig)
+  const startRun = useWorkflowStore((state) => state.startRun)
 
   useEffect(() => {
     loadConfig()
   }, [loadConfig])
 
-  useEffect(() => {
-    if (!instanceId) {
-      return
-    }
-    let stopped = false
-    let timer: number
-
-    function poll() {
-      fetchWorkflowRun(instanceId as string)
-        .then((result) => {
-          if (stopped) {
-            return
-          }
-          setRun(result)
-          if (result.status === 'active') {
-            timer = window.setTimeout(poll, POLL_MS)
-          }
-        })
-        .catch((error: unknown) => {
-          if (stopped) {
-            return
-          }
-          setRunError(error instanceof Error ? error.message : 'Failed to fetch run status')
-        })
-    }
-
-    poll()
-    return () => {
-      stopped = true
-      window.clearTimeout(timer)
-    }
-  }, [instanceId])
-
   function handleSubmit(values: WorkflowVariables) {
-    setSubmitting(true)
-    setRunError(null)
-    setRun(null)
-    startWorkflowRun({ ...values, skipEvalServiceWorker })
-      .then((payload) => setInstanceId(payload.instanceId))
-      .catch((error: unknown) => {
-        setRunError(error instanceof Error ? error.message : 'Failed to start run')
-      })
-      .finally(() => setSubmitting(false))
+    startRun({ ...values, skipEvalServiceWorker })
   }
 
   return (
