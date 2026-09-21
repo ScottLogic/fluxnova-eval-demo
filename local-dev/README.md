@@ -1,11 +1,14 @@
 # Local development: PostgreSQL + Fluxnova + OTel Collector + MLflow + Grafana (Podman)
 
 This directory contains everything needed to run **PostgreSQL**, the **Fluxnova engine**, the **OTel Collector**,
-(optionally) the **MLflow tracking server**, and a **Prometheus + Grafana** GenAI-metrics dashboard as containers for
-local development, using [Podman](https://podman.io) —
+(optionally) the **MLflow tracking server**, the **frontend UI** (with its **ui-api** backend), and a
+**Prometheus + Grafana** GenAI-metrics dashboard as containers for local development, using
+[Podman](https://podman.io) —
 grouped into a single Podman pod per service (`services/postgres-up.sh` / `services/postgres-down.sh` for PostgreSQL,
 `services/fluxnova-up.sh` / `services/fluxnova-down.sh` for Fluxnova + the OTel Collector, `services/mlflow-up.sh` /
-`services/mlflow-down.sh` for MLflow, `services/observability-up.sh` / `services/observability-down.sh` for
+`services/mlflow-down.sh` for MLflow, `services/frontend-up.sh` / `services/frontend-down.sh` for the frontend UI
+*and* ui-api (same pod — see "frontend UI" below),
+`services/observability-up.sh` / `services/observability-down.sh` for
 Prometheus + Grafana — plus `services/eval-service-up.sh` / `services/eval-service-down.sh` for the
 optional eval-service worker), with no compose provider required. PostgreSQL is the shared backing database for both
 MLflow's tracking-server backend store and Fluxnova's process-engine datasource, replacing their previous SQLite-file
@@ -20,22 +23,24 @@ re-run) and accept one or more pod names to start/stop only a subset:
 ```bash
 cd local-dev
 
-./pods-up.sh                    # start postgres, mlflow, fluxnova, eval-service, observability, in that order
+./pods-up.sh                    # start postgres, mlflow, fluxnova, frontend, eval-service, observability, in that order
 ./pods-up.sh mlflow             # start (or leave alone, if already running) only mlflow
 ./pods-up.sh postgres fluxnova  # start only postgres and fluxnova (still in order)
 
-./pods-down.sh                  # stop/remove observability, eval-service, fluxnova, mlflow, postgres, in that order
+./pods-down.sh                  # stop/remove observability, eval-service, frontend, fluxnova, mlflow, postgres, in that order
 ./pods-down.sh mlflow           # stop/remove only mlflow
 ./pods-down.sh --delete-data    # stop/remove all AND delete their persistent
                                  # data (postgres' PGDATA volume, mlflow's artifact
-                                 # files) — fluxnova/eval-service/observability have none of their own
+                                 # files) — fluxnova/frontend/eval-service/observability have none of their own
 ```
 
 Run `./pods-up.sh --help` / `./pods-down.sh --help` for full usage. The pod names are `postgres`, `mlflow`,
-`fluxnova`, `eval-service`, and `observability`. The sections below describe each underlying per-service script in the
+`fluxnova`, `frontend`, `eval-service`, and `observability`. The sections below describe each underlying per-service
+script in the
 `services/`
 subfolder (`services/postgres-up.sh`/`services/postgres-down.sh` etc.) in more detail, including their own
-`--delete-data` flags (`fluxnova-down.sh`/`eval-service-down.sh`/`observability-down.sh` accept the flag too, for a
+`--delete-data` flags (`fluxnova-down.sh`/`frontend-down.sh`/`eval-service-down.sh`/`observability-down.sh` accept the
+flag too, for a
 consistent interface, but
 are no-ops since they have no local data).
 
@@ -51,7 +56,7 @@ run simultaneously — pick one). Requires a compose provider (`podman compose`,
 ```bash
 cd local-dev
 
-podman compose up -d                    # core stack: postgres, mlflow, otel-collector, fluxnova
+podman compose up -d                    # core stack: postgres, mlflow, otel-collector, fluxnova, frontend, ui-api
 podman compose --profile eval up -d     # also build + start the eval worker (opt-in)
 podman compose --profile grafana up -d  # also start Prometheus + Grafana (opt-in)
 podman compose --profile eval --profile grafana up -d   # everything
@@ -68,8 +73,13 @@ Tomcat startup.
 Notes and differences from the pod scripts:
 
 - **Every service is named `<container>-local`** (`postgres-local`, `mlflow-local`, `otel-collector-local`,
-  `fluxnova-local`, `eval-service-worker-local`, `prometheus-local`, `grafana-local`) for consistency. The short
+  `fluxnova-local`, `frontend-local`, `ui-api-local`, `eval-service-worker-local`, `prometheus-local`,
+  `grafana-local`) for consistency. The short
   `container_name` (`postgres`, `fluxnova`, …) is what plain `podman logs <name>` / `podman exec <name>` use.
+- **`ui-api-local` shares `frontend-local`'s namespace** (`network_mode: "service:frontend-local"`, the pod
+  analog — same relationship as `grafana-local`/`prometheus-local` below), so nginx (in `frontend-local`) proxies
+  `/api/` requests to it over plain `localhost` — see `frontend/nginx.conf.template`. Only `frontend-local`
+  publishes a host port (`FRONTEND_PORT`); `ui-api-local` has none of its own.
 - **`otel-collector-local`/`fluxnova-local` run on `network_mode: host`** — see
   [`OTEL-EXPORT-INVESTIGATION.md`](../OTEL-EXPORT-INVESTIGATION.md) at the repo root: running Fluxnova in any isolated
   Podman network namespace (including this pair's own previous bridge-networked setup) silently breaks the
@@ -469,6 +479,35 @@ client.rename_experiment("<experiment_id>", "<new-name>")
 the `evaluation_datasets` table of the PostgreSQL tracking store instead (safe for local dev data; the `dataset_id`,
 schema, and records are untouched, only the lookup name changes).
 
+## Frontend UI and ui-api
+
+The demo UI (`frontend/`, a React/Vite app served as a static nginx build) and its backend (`ui-api/`, FastAPI —
+see `UI_PROPOSAL.md` at the repo root for the full plan) are always deployed together, in the same Podman pod
+(`frontend-local`, created by `services/frontend-up.sh`) or the compose analog (`ui-api-local` sharing
+`frontend-local`'s network namespace — see "Alternative: a single `podman compose` file" above). They share one
+network namespace so nginx can proxy `/api/` requests to ui-api over plain `localhost` (see
+`frontend/nginx.conf.template`) without needing ui-api to publish its own port — `ui-api`'s routers are already
+mounted under `/api/...` (see `ui-api/src/ui_api/routers/`), so nginx forwards the request URI unchanged rather than
+rewriting it.
+
+```bash
+cd local-dev
+./services/frontend-up.sh            # build images if missing, start the frontend-local pod (frontend + ui-api)
+REBUILD=1 ./services/frontend-up.sh  # force a rebuild after changing frontend/ or ui-api/ code
+./services/frontend-down.sh          # stop and remove it
+```
+
+Or start it as part of the whole stack with `./pods-up.sh` (started after `fluxnova`, which ui-api will depend on
+once it grows Fluxnova-backed routes). Like `eval-service-up.sh`, each image is only built **when missing** —
+pass `REBUILD=1` to force a rebuild, and re-run `./services/frontend-down.sh` first to pick up a fresh image
+(an existing pod is only *started*, not recreated). The pod runs on `--network host` for the same reason
+`eval-service-up.sh`/`observability-up.sh` do — see
+[`OTEL-EXPORT-INVESTIGATION.md`](../OTEL-EXPORT-INVESTIGATION.md) — so `FRONTEND_PORT` binds directly rather than
+through a port mapping, and once ui-api calls Fluxnova it will reach it via plain `localhost` too.
+
+Frontend UI: `http://localhost:${FRONTEND_PORT}` (default `8081`). ui-api has no config file of its own — see
+`ui-api/README.md`.
+
 ## eval-service-worker: scoring completed subprocess runs
 
 `eval-service-worker` (see `eval-service-worker/` and `EVAL-SERVICE-WORKER-PLAN.md` at the repo root) is a standalone
@@ -585,6 +624,7 @@ to skip).
 | `postgres/init.sh`                                                | Creates the `mlflow`/`fluxnova` databases and roles on first startup                                                                                                                                                  |
 | `services/fluxnova-up.sh` / `services/fluxnova-down.sh`           | Start/stop the `fluxnova-local` pod (Fluxnova + OTel Collector)                                                                                                                                                       |
 | `services/mlflow-up.sh` / `services/mlflow-down.sh`               | Start/stop the `mlflow-local` pod                                                                                                                                                                                     |
+| `services/frontend-up.sh` / `services/frontend-down.sh`           | Build/start/stop the `frontend-local` pod (frontend UI + ui-api — see "Frontend UI and ui-api" above)                                                                                                                 |
 | `services/eval-service-up.sh` / `services/eval-service-down.sh`   | Build/start/stop the `eval-service-local` pod (see above)                                                                                                                                                             |
 | `services/observability-up.sh` / `services/observability-down.sh` | Start/stop the `observability-local` pod (Prometheus + Grafana GenAI dashboard)                                                                                                                                       |
 | `default.yml`                                                     | Fluxnova config mounted by `services/fluxnova-up.sh` (OTel plugin → `localhost:4317`, `--network host` pod; datasource → PostgreSQL via `localhost:5432`)                                                             |

@@ -1,6 +1,7 @@
 .idea/
 __pycache__/
 *.egg-info/
+build/
 .venv
 .fluxnova/
 *.db

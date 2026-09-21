@@ -1,0 +1,26 @@
+# Templated by the nginx image's docker-entrypoint (envsubst on files under
+# /etc/nginx/templates/ into /etc/nginx/conf.d/). API_PROXY_PASS and LISTEN_PORT are
+# set by local-dev/compose.yaml's frontend-local service (LISTEN_PORT stays the
+# Dockerfile default there, since compose does the host port mapping) or by
+# local-dev/services/frontend-up.sh (which runs on --network host, so LISTEN_PORT is
+# set to FRONTEND_PORT since there's no port mapping to rely on).
+#
+# API_PROXY_PASS has no path component (unlike a plain reverse-proxy-to-a-single-
+# upstream setup) — ui-api's own routers are already mounted under /api/... (see
+# ui-api/src/ui_api/routers/), so nginx forwards the request URI unchanged rather than
+# stripping the /api/ prefix.
+server {
+    listen ${LISTEN_PORT};
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/ {
+        proxy_pass ${API_PROXY_PASS};
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        try_files $uri /index.html;
+    }
+}

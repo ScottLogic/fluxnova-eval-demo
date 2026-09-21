@@ -29,10 +29,13 @@ from eval_service_worker.scoring import NoFinalOutputError, score_process_instan
 
 logger = logging.getLogger(__name__)
 
-# Retries once (a transient MLflow/network failure) before giving up on a
-# task and leaving it for manual/BPMN-level intervention.
-_MAX_RETRIES = 1
-_RETRY_TIMEOUT_MS = 5_000
+# Retries a few times (a transient MLflow/network failure, or the trace not having
+# landed yet within DEFAULT_TRACE_POLL_TIMEOUT_S) before giving up on a task and
+# leaving it for manual/BPMN-level intervention — once Camunda's retry count hits 0
+# it does NOT automatically retry the task again, so too small a budget here
+# permanently stalls the BPMN gate rather than just being slow.
+_MAX_RETRIES = 3
+_RETRY_TIMEOUT_MS = 10_000
 
 
 def _now() -> str:

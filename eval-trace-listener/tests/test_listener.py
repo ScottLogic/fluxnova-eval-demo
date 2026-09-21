@@ -226,3 +226,36 @@ def test_gives_up_on_poison_trace_after_max_attempts(monkeypatch) -> None:
     # After the retry budget it's marked scored (skipped) and no longer retried.
     assert "tr-bad" in listener._scored
     assert "tr-bad" not in listener._failures
+
+
+def test_sample_rate_zero_skips_scoring_but_marks_handled() -> None:
+    listener, calls = _listener(sample_rate=0.0)
+    assert listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT)) is False
+    assert calls == []
+    assert "tr-1" in listener._scored  # decided once, not re-rolled every poll
+
+
+def test_sample_rate_one_always_scores() -> None:
+    listener, calls = _listener(sample_rate=1.0)
+    assert listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT)) is True
+    assert calls == ["tr-1"]
+
+
+def test_sample_rate_control_overrides_static_config_live() -> None:
+    from eval_trace_listener.control import SampleRateControl
+
+    control = SampleRateControl(initial=1.0)
+    config = ListenerConfig(agent_names=[_TARGET_AGENT])
+    listener = TraceListener(config, scorers=_SCORERS, sample_rate=control)
+    calls: list[str] = []
+    listener._score = lambda trace: (  # type: ignore[method-assign]
+        calls.append(trace.info.trace_id)
+        or TraceEvalOutcome(trace_id=trace.info.trace_id, passed=True, scorer_results={})
+    )
+
+    control.set(0.0)
+    assert listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT)) is False
+
+    control.set(1.0)
+    assert listener._process_trace(make_trace("tr-2", agent_name=_TARGET_AGENT)) is True
+    assert calls == ["tr-2"]

@@ -11,7 +11,9 @@ shared Postgres store — breaking ``evaluate()``'s dataset logging with
 Selecting the store + experiment here, in ``pytest_configure`` (which runs
 before any test call), ensures the plugin opens the run directly against the
 shared MLflow tracking *server* (HTTP, ``default_server_tracking_uri()``) under
-the dedicated regression experiment. Going through the server rather than
+the same experiment real/demo runs land in (traces this suite generates are
+tagged so eval-trace-listener can skip them — see
+``test_mlflow_regression.py``'s ``_tag_trace_as_regression``). Going through the server rather than
 connecting to Postgres directly means the server owns the DB schema, so the
 client never runs MLflow's strict SqlAlchemyStore schema-version check — which
 otherwise makes the suite skip with "Detected out-of-date database schema"
@@ -102,7 +104,15 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ.setdefault("MLFLOW_TRACKING_URI", default_server_tracking_uri())
     os.environ.setdefault(
         "MLFLOW_EXPERIMENT_NAME",
-        experiment_name_for("loanAssessmentProcess-regression"),
+        # Deliberately the same experiment real/demo runs land in (matching
+        # test_mlflow_regression.py's _REGRESSION_EXPERIMENT/_TRACE_EXPERIMENT_NAME),
+        # not a separate "-regression" one — this is what the @mlflow.test plugin
+        # actually opens its Run under (see this function's docstring), so it must
+        # stay in sync with those constants for regression Runs to land where
+        # expected. eval_trace_listener skips traces tagged by this suite (see
+        # _tag_trace_as_regression) so sharing the experiment doesn't cause
+        # real/demo-run scoring to pick them up.
+        experiment_name_for("loanAssessmentEvalProcess"),
     )
     # Serialize scoring: mlflow.genai.evaluate fans out every row's judge call
     # concurrently (MLFLOW_GENAI_EVAL_MAX_WORKERS defaults to 10). Against the

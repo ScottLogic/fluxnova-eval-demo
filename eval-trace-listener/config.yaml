@@ -25,3 +25,14 @@ poll_interval_s: 10
 
 # Upper bound on recent traces pulled per poll (already-scored ones are skipped).
 max_traces_per_poll: 200
+
+# Fraction of newly-completed, in-scope traces to actually score: 1.0 (default)
+# scores every one, 0.0 scores none, 0.1 ~1-in-10, etc. Unlike the other settings
+# here, this can also be changed live while the listener is already running, via
+# the sample-rate control endpoint below (e.g. PUT http://localhost:8092/config
+# with body {"sample_rate": 0.5}) — no restart needed.
+sample_rate: 1.0
+
+# Host/port the sample-rate control endpoint binds on.
+control_host: 0.0.0.0
+control_port: 8092

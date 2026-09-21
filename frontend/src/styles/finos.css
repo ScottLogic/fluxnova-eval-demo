@@ -1,0 +1,77 @@
+.finos-panel {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.15rem 1.2rem 1.2rem;
+  border: 1px solid rgba(232, 237, 244, 0.14);
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(165deg, rgba(32, 40, 54, 0.5), rgba(14, 18, 26, 0.72)),
+    rgba(14, 18, 26, 0.65);
+  box-shadow: inset 0 1px 0 rgba(232, 237, 244, 0.06);
+}
+
+.finos-panel .sample-preview-label {
+  margin: 0;
+}
+
+.finos-panel-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--paper);
+}
+
+.finos-panel-lede {
+  margin: 0;
+  color: var(--paper-dim);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.finos-project-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.finos-project {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid rgba(232, 237, 244, 0.1);
+  color: inherit;
+  text-decoration: none;
+  transition: opacity 140ms ease;
+}
+
+.finos-project-list li:first-child .finos-project {
+  border-top: 0;
+  padding-top: 0.35rem;
+}
+
+.finos-project:hover,
+.finos-project:focus-visible {
+  opacity: 0.88;
+}
+
+.finos-project:focus-visible {
+  outline: 2px solid rgba(196, 107, 58, 0.45);
+  outline-offset: 3px;
+}
+
+.finos-project-logo {
+  display: block;
+  width: min(100%, 11rem);
+  height: auto;
+  border-radius: 0.3rem;
+}
+
+.finos-project-copy {
+  color: var(--paper-dim);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}

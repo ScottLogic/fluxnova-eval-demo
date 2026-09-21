@@ -22,6 +22,7 @@ import sys
 from collections.abc import Iterable
 
 from eval_trace_listener.config import ListenerConfig
+from eval_trace_listener.control import SampleRateControl, start_control_server
 from eval_trace_listener.listener import TraceListener
 
 
@@ -50,6 +51,18 @@ def _build_config(args: argparse.Namespace) -> ListenerConfig:
     if poll_interval:
         config.poll_interval_s = float(poll_interval)
 
+    sample_rate = args.sample_rate or _env("SAMPLE_RATE")
+    if sample_rate:
+        config.sample_rate = float(sample_rate)
+
+    control_host = args.control_host or _env("CONTROL_HOST")
+    if control_host:
+        config.control_host = control_host
+
+    control_port = args.control_port or _env("CONTROL_PORT")
+    if control_port:
+        config.control_port = int(control_port)
+
     return config
 
 
@@ -75,6 +88,23 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "config file's agent_names.",
     )
     parser.add_argument("--poll-interval", default=None, help="Override the poll interval (seconds).")
+    parser.add_argument(
+        "--sample-rate",
+        default=None,
+        help="Fraction of newly-completed traces to score, 0.0-1.0 (default: 1.0, i.e. every "
+        "trace). Can also be changed live while running via PUT http://<host>:<control-port>/config "
+        "— see --control-host/--control-port.",
+    )
+    parser.add_argument(
+        "--control-host",
+        default=None,
+        help="Host the sample-rate control endpoint binds on (default: 0.0.0.0).",
+    )
+    parser.add_argument(
+        "--control-port",
+        default=None,
+        help="Port the sample-rate control endpoint binds on (default: 8092).",
+    )
     parser.add_argument("--log-level", default=_env("LOG_LEVEL", "INFO"), help="Logging level (default: INFO).")
     return parser.parse_args(list(argv) if argv is not None else None)
 
@@ -86,7 +116,9 @@ def main(argv: Iterable[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     config = _build_config(args)
-    TraceListener(config).run_forever()
+    sample_rate = SampleRateControl(config.sample_rate)
+    start_control_server(sample_rate, config.control_host, config.control_port)
+    TraceListener(config, sample_rate=sample_rate).run_forever()
 
 
 if __name__ == "__main__":

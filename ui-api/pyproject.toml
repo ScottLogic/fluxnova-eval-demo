@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ui-api"
+version = "0.1.0"
+description = "HTTP API backing the demo UI (frontend/): triggers regression runs, BPMN workflow runs, and eval toggles by wrapping the existing regression/, fluxnova-runner/, eval-trace-listener/ and eval-service-worker/ packages as a library/CLI, so those core folders stay free of UI-only plumbing. See UI_PROPOSAL.md."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "requests>=2.32",
+    "fluxnova-runner",
+    "eval-trace-listener",
+    "eval-service-worker",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-json-report>=1.5",
+    "httpx>=0.27",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+ui-api = "ui_api.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ui_api"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short"

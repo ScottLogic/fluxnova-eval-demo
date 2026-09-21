@@ -42,6 +42,20 @@ EVAL_LISTENER_TRACKING_URI="${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:50
 # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single source
 # of truth so both eval services read the same experiment.
 EVAL_LISTENER_EXPERIMENT_NAME="${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}"
+# Selects the LLM provider for this listener's decision_quality/evidence_citation
+# judges (see fluxnova_mlflow_dataset.scorers.LLM_JUDGE_PROVIDER) — was previously
+# left unset here, so the container silently fell back to that module's own
+# "openai" default rather than actually reading .env's value. Wired through
+# explicitly so switching .env's LLM_JUDGE_PROVIDER (e.g. to "ollama" for a fully
+# local judge) actually takes effect. OPENAI_API_KEY is only required/read when
+# this resolves to "openai".
+LLM_JUDGE_PROVIDER="${LLM_JUDGE_PROVIDER:-openai}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+# Sample-rate control endpoint (see eval_trace_listener/control.py) — published on
+# the host so a --network host container (e.g. ui-api, in the frontend-local pod)
+# can reach it via host.containers.internal, same as eval-service-worker reaches
+# fluxnova-local.
+EVAL_LISTENER_CONTROL_PORT="${EVAL_LISTENER_CONTROL_PORT:-8092}"
 
 podman network create --ignore "$DEV_NETWORK"
 
@@ -65,17 +79,22 @@ else
   echo "Creating pod '$POD_NAME'..."
   podman pod create --name "$POD_NAME" \
     --network "$DEV_NETWORK" \
-    --add-host host.containers.internal:host-gateway
+    --add-host host.containers.internal:host-gateway \
+    --publish "${EVAL_LISTENER_CONTROL_PORT}:${EVAL_LISTENER_CONTROL_PORT}"
 
   echo "Starting eval-trace-listener..."
   podman run -d --pod "$POD_NAME" --name eval-trace-listener \
     -e EVAL_LISTENER_TRACKING_URI="$EVAL_LISTENER_TRACKING_URI" \
     -e EVAL_LISTENER_EXPERIMENT_NAME="$EVAL_LISTENER_EXPERIMENT_NAME" \
+    -e LLM_JUDGE_PROVIDER="$LLM_JUDGE_PROVIDER" \
+    -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+    -e EVAL_LISTENER_CONTROL_PORT="$EVAL_LISTENER_CONTROL_PORT" \
     "$IMAGE_NAME"
 fi
 
 echo
 echo "Listener running. Tailing experiment: $EVAL_LISTENER_EXPERIMENT_NAME"
 echo "Scoring agents:  see agent_names in the baked-in config.yaml (override with EVAL_LISTENER_AGENT_NAMES)"
+echo "Sample rate:     GET/PUT http://localhost:${EVAL_LISTENER_CONTROL_PORT}/config (e.g. {\"sample_rate\": 0.5})"
 echo "Logs:            podman logs -f eval-trace-listener"
 echo "Stop/remove:     ./eval-listener-down.sh"

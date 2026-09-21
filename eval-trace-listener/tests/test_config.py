@@ -13,6 +13,9 @@ def test_defaults() -> None:
     assert config.agent_names == ["AdHocSubProcess_LoanAssessmentAgent"]
     assert config.poll_interval_s == 10.0
     assert config.max_traces_per_poll == 200
+    assert config.sample_rate == 1.0
+    assert config.control_host == "0.0.0.0"
+    assert config.control_port == 8092
 
 
 def test_from_mapping_overrides_and_ignores_unknown() -> None:
@@ -22,6 +25,9 @@ def test_from_mapping_overrides_and_ignores_unknown() -> None:
             "experiment_name": "fluxnova-somethingElse",
             "agent_names": ["A", "B"],
             "poll_interval_s": 3,
+            "sample_rate": 0.5,
+            "control_host": "127.0.0.1",
+            "control_port": 9999,
             "future_setting_we_dont_read_yet": True,
         }
     )
@@ -29,6 +35,9 @@ def test_from_mapping_overrides_and_ignores_unknown() -> None:
     assert config.experiment_name == "fluxnova-somethingElse"
     assert config.agent_names == ["A", "B"]
     assert config.poll_interval_s == 3.0
+    assert config.sample_rate == 0.5
+    assert config.control_host == "127.0.0.1"
+    assert config.control_port == 9999
     # unspecified key falls back to default
     assert config.max_traces_per_poll == 200
 
@@ -61,3 +70,5 @@ def test_packaged_config_yaml_loads() -> None:
     packaged = Path(__file__).resolve().parent.parent / "config.yaml"
     config = ListenerConfig.from_file(packaged)
     assert config.experiment_name == "fluxnova-loanAssessmentEvalProcess"
+    assert config.sample_rate == 1.0
+    assert config.control_port == 8092

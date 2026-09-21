@@ -17,7 +17,7 @@
 # otel-collector-config.yaml and prometheus.yml, all of which now expect that.
 #
 # Usage (from this local-dev/ directory):
-#   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel
+#   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel, frontend
 #   podman compose --profile eval up -d      # also start the eval worker + trace listener
 #   podman compose --profile grafana up -d   # also start Prometheus + Grafana
 #   podman compose --profile eval --profile grafana up -d   # everything
@@ -198,6 +198,62 @@ services:
       # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single
       # source of truth so both eval services read the same experiment.
       EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
+      EVAL_LISTENER_CONTROL_PORT: ${EVAL_LISTENER_CONTROL_PORT:-8092}
+    ports:
+      # Sample-rate control endpoint (see eval_trace_listener/control.py) —
+      # published so a --network host container (ui-api, in the frontend-local
+      # pod) can reach it via host.containers.internal, same as
+      # eval-service-worker-local reaches fluxnova-local.
+      - "${EVAL_LISTENER_CONTROL_PORT:-8092}:${EVAL_LISTENER_CONTROL_PORT:-8092}"
+    extra_hosts:
+      - "host.containers.internal:host-gateway"
+
+  # Frontend UI — served as a static build via nginx, same pattern as the eval
+  # services (built from source, context = repo root). No profile: it's core, like
+  # postgres/mlflow/fluxnova/otel-collector above. Deployed together with ui-api-local
+  # (below) — ui-api-local shares this service's network namespace (the pod analog,
+  # same as grafana-local/prometheus-local below), so nginx proxies /api/ to it over
+  # plain localhost (see frontend/nginx.conf.template) rather than needing a
+  # separately published port for ui-api.
+  frontend-local:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    image: ${FRONTEND_IMAGE:-frontend:local}
+    container_name: frontend
+    depends_on:
+      fluxnova-local:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"
+    environment:
+      # ui-api-local shares this container's network namespace (network_mode:
+      # service:frontend-local below), so it's reached via plain localhost.
+      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://localhost:${UI_API_PORT:-8090}}
+
+  # ui-api: FastAPI backend for the frontend UI (see ui-api/README.md). Built from
+  # source (context = repo root), same as the eval services. Shares frontend-local's
+  # network namespace (the pod analog — see header comment above), so it inherits the
+  # published FRONTEND_PORT container's network stack rather than publishing its own
+  # port; reach Fluxnova via host.containers.internal here once ui-api grows
+  # Fluxnova-backed routes, same as eval-service-worker-local.
+  ui-api-local:
+    build:
+      context: ..
+      dockerfile: ui-api/Dockerfile
+    image: ${UI_API_IMAGE:-ui-api:local}
+    container_name: ui-api
+    network_mode: "service:frontend-local"
+    depends_on:
+      frontend-local:
+        condition: service_started
+    environment:
+      UI_API_PORT: ${UI_API_PORT:-8090}
+      # Needed for the regression run's LLM-judge scorers (see
+      # fluxnova_mlflow_dataset.scorers) — same vars fluxnova-local gets for the BPMN
+      # agent itself.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
     extra_hosts:
       - "host.containers.internal:host-gateway"
 
