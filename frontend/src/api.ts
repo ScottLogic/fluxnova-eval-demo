@@ -120,11 +120,14 @@ export function updateAutoEvalConfig(enabled: boolean): Promise<AutoEvalConfig> 
 export interface EvalScorer {
   name: string
   description: string
+  deterministic: boolean
+  usedInAutoEval: boolean
+  usedInEvalServiceWorker: boolean
+  usedInRegression: boolean
 }
 
 export interface EvalDefinitions {
-  listener: EvalScorer[]
-  serviceWorker: EvalScorer[]
+  scorers: EvalScorer[]
 }
 
 export function fetchEvalDefinitions(): Promise<EvalDefinitions> {

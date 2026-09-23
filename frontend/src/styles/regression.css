@@ -7,16 +7,21 @@
 }
 
 .test-list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  display: grid;
+  gap: 0.3rem;
   padding: 0.65rem 0.2rem;
   border-top: 1px solid rgba(232, 237, 244, 0.1);
 }
 
 .test-list-item:first-child {
   border-top: 0;
+}
+
+.test-list-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .test-list-name {
@@ -35,6 +40,13 @@
   color: var(--paper-dim);
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
+}
+
+.test-list-description {
+  margin: 0;
+  color: var(--paper-dim);
+  font-size: 0.85rem;
+  line-height: 1.45;
 }
 
 .test-run-output {

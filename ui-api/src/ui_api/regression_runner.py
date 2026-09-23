@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -81,13 +82,46 @@ def _docstrings_by_qualified_name(source_path: Path) -> dict[str, str]:
     return docstrings
 
 
+_DETERMINISTIC_CHECK_RE = re.compile(r"^test_agent_passes_deterministic_check\[(.+)\]$")
+
+
+def _clean_docstring(doc: str | None) -> str:
+    if not doc:
+        return ""
+    return " ".join(line.strip() for line in doc.strip().splitlines()).strip()
+
+
+def _deterministic_scorer_docstring(scorer_name: str) -> str:
+    """Looks up one deterministic scorer's own docstring by name.
+
+    `test_agent_passes_deterministic_check` is parametrized once per scorer (see
+    `regression/test_mlflow_regression.py`) so each reports pass/fail as its own
+    line item, but they all share that one test function's docstring — this
+    returns the *scorer's* own docstring instead, so each parametrized entry
+    gets a description specific to what it actually checks (mirrors
+    `ui_api.eval_definitions._describe`'s same fallback for the eval services).
+    """
+    from fluxnova_mlflow_dataset.scorers import ALL_DETERMINISTIC_SCORERS
+
+    for scorer in ALL_DETERMINISTIC_SCORERS:
+        if scorer.name == scorer_name:
+            description = getattr(scorer, "description", None)
+            if description:
+                return description
+            original_func = getattr(scorer, "_original_func", None)
+            return _clean_docstring(getattr(original_func, "__doc__", None) if original_func else None)
+    return ""
+
+
 def list_tests() -> list[dict[str, str]]:
     """Returns one ``{name, description}`` entry per test in the regression suite.
 
     ``name`` is the pytest node id (from `pytest --collect-only -q`, the same
     structured/stable form the UI already used for run node ids elsewhere);
-    ``description`` is that test's own docstring, read directly from the
-    file's AST — see `_docstrings_by_qualified_name`.
+    ``description`` is that test's own docstring, read directly from the file's
+    AST (see `_docstrings_by_qualified_name`) — except for the parametrized
+    `test_agent_passes_deterministic_check[<scorer>]` entries, which use that
+    scorer's own docstring instead (see `_deterministic_scorer_docstring`).
     """
     result = subprocess.run(
         [_python(), "-m", "pytest", "--collect-only", "-q", REGRESSION_TEST_FILE.name],
@@ -103,7 +137,12 @@ def list_tests() -> list[dict[str, str]]:
     tests = []
     for node_id in node_ids:
         qualified_name = node_id[len(prefix) :].replace("::", ".")
-        tests.append({"name": node_id, "description": docstrings.get(qualified_name, "")})
+        deterministic_match = _DETERMINISTIC_CHECK_RE.match(qualified_name)
+        if deterministic_match:
+            description = _deterministic_scorer_docstring(deterministic_match.group(1))
+        else:
+            description = docstrings.get(qualified_name, "")
+        tests.append({"name": node_id, "description": description})
     return tests
 
 def list_goldens() -> list[dict[str, Any]]:
@@ -151,6 +190,60 @@ def start_run() -> str:
     return run_id
 
 
+_INLINE_RESULT_RE = re.compile(r"^(?P<nodeid>\S+\.py::\S+)\s+(?P<outcome>PASSED|FAILED|ERROR|SKIPPED)\b")
+_NODEID_ONLY_RE = re.compile(r"^(?P<nodeid>\S+\.py::\S+)\s*$")
+_OUTCOME_ONLY_RE = re.compile(r"^(?P<outcome>PASSED|FAILED|ERROR|SKIPPED)\b")
+
+
+def _parse_partial_results(output_text: str, prefix: str) -> list[dict[str, Any]]:
+    """Best-effort per-test outcomes parsed from pytest's live ``-v`` console
+    output, so a run *in progress* can show what's happened so far instead of
+    the UI going quiet until the whole suite finishes (the JSON report file
+    only exists once the process has exited — see `get_run`).
+
+    Handles both shapes pytest's console output takes: a plain
+    ``"nodeid OUTCOME [ N%]"`` line when nothing else printed during the test,
+    and — when ``log_cli`` output interleaves, as this suite's live per-golden
+    logging does (see ``regression/pytest.ini``) — the nodeid alone on its own
+    line, followed by the log lines, followed by a bare ``"OUTCOME [ N%]"``
+    line once the test ends. Whichever nodeid started but has no outcome line
+    yet is reported as ``"running"`` — the test currently executing.
+    """
+    outcomes: dict[str, str] = {}
+    order: list[str] = []
+    pending: str | None = None
+
+    for raw_line in output_text.splitlines():
+        line = raw_line.rstrip()
+        inline_match = _INLINE_RESULT_RE.match(line)
+        if inline_match and line.startswith(prefix):
+            node_id = inline_match.group("nodeid")
+            if node_id not in outcomes:
+                order.append(node_id)
+            outcomes[node_id] = inline_match.group("outcome").lower()
+            pending = None
+            continue
+
+        nodeid_match = _NODEID_ONLY_RE.match(line)
+        if nodeid_match and line.startswith(prefix):
+            node_id = nodeid_match.group("nodeid")
+            if node_id not in outcomes:
+                order.append(node_id)
+            outcomes.setdefault(node_id, "running")
+            pending = node_id
+            continue
+
+        outcome_match = _OUTCOME_ONLY_RE.match(line)
+        if outcome_match and pending:
+            outcomes[pending] = outcome_match.group("outcome").lower()
+            pending = None
+
+    return [
+        {"nodeId": node_id, "outcome": outcomes[node_id], "durationSeconds": None}
+        for node_id in order
+    ]
+
+
 def get_run(run_id: str) -> dict[str, Any] | None:
     """Returns the current status/result of a run, or None if run_id is unknown."""
     with _runs_lock:
@@ -160,7 +253,9 @@ def get_run(run_id: str) -> dict[str, Any] | None:
 
     exit_code = run.process.poll()
     if exit_code is None:
-        return {"runId": run_id, "status": "running"}
+        output = run.output_path.read_text(encoding="utf-8", errors="replace") if run.output_path.exists() else ""
+        prefix = f"{REGRESSION_TEST_FILE.name}::"
+        return {"runId": run_id, "status": "running", "tests": _parse_partial_results(output, prefix)}
 
     if run.report_path.exists():
         report = json.loads(run.report_path.read_text(encoding="utf-8"))

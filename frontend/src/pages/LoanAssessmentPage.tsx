@@ -11,8 +11,8 @@ const DIAGRAMS = [
                 <p>
                     A multi-agent loan approval workflow that automates document intake, fraud detection, credit risk
                     assessment, decisioning, pricing, human review, agreement generation, e-signature, and disbursement.
-                    <p>
-                    </p>
+                </p>
+                <p>
                     Automates and optimizes evaluating, approving, pricing, documenting, and disbursing loans. A loan
                     approval orchestrator coordinates specialist agents for document intelligence, fraud detection,
                     compliance review, credit risk assessment, dynamic pricing, and document generation, with

@@ -7,7 +7,7 @@ interface TestListProps {
 
 function shortTestName(nodeId: string): string {
   const index = nodeId.indexOf('::')
-  return index === -1 ? nodeId : nodeId.slice(index + 2).replaceAll("_", " ");
+  return index === -1 ? nodeId : nodeId.slice(index + 2).replaceAll('_', ' ')
 }
 
 function formatDuration(seconds: number | null): string {
@@ -31,16 +31,19 @@ function TestList({ tests, runResult }: TestListProps) {
       {tests.map(({ name, description }) => {
         const result = outcomeByNodeId.get(name)
         return (
-          <li key={name} className="test-list-item" title={description || undefined}>
-            <span className="test-list-name">{shortTestName(name)}</span>
-            <span className="test-list-meta">
-              {result && (
-                <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>
-              )}
-              {result && (
-                <span className="test-list-duration">{formatDuration(result.durationSeconds)}</span>
-              )}
-            </span>
+          <li key={name} className="test-list-item">
+            <div className="test-list-item-head">
+              <span className="test-list-name">{shortTestName(name)}</span>
+              <span className="test-list-meta">
+                {result && (
+                  <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>
+                )}
+                {result && (
+                  <span className="test-list-duration">{formatDuration(result.durationSeconds)}</span>
+                )}
+              </span>
+            </div>
+            {description && <p className="test-list-description">{description}</p>}
           </li>
         )
       })}

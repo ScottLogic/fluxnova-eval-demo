@@ -1,0 +1,48 @@
+.contents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.contents-item {
+  appearance: none;
+  width: 100%;
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.65rem 0.2rem;
+  border-top: 1px solid rgba(232, 237, 244, 0.1);
+  cursor: pointer;
+}
+
+.contents-list li:first-child .contents-item {
+  border-top: 0;
+}
+
+.contents-item:hover,
+.contents-item:focus-visible {
+  color: var(--copper);
+  outline: none;
+}
+
+.contents-item-label {
+  font-weight: 650;
+  color: var(--paper);
+}
+
+.contents-item:hover .contents-item-label,
+.contents-item:focus-visible .contents-item-label {
+  color: var(--copper);
+}
+
+.contents-item-description {
+  color: var(--paper-dim);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}

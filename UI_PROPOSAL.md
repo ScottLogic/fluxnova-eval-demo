@@ -98,31 +98,23 @@ Each step below is a single commit, small enough to review on its own, and leave
     covering how to run the UI and API layer together.
 
 Follow-ups:
-Home page:
-- Should have a contents with a breif description of each tab
-- Projects list should be on the right unless screen width does not allow.
-
 Loan Assesment
-- Integrate the Finos AI Govenanvce and open catalog link from steel thread using the useCase.ts file
+- Integrate the Finos AI Govenanvce and open catalog link from steel thread using the useCase.ts file - maybe don't bother with this
 
 Regression tests:
-- Should have each deterministic test as its own line item rather than all as one
-- I want a nicer view of this. It should show what is happening when I run the tests rather than wait for them to complete.
-- I also want to display the description of the test along with the name, result ect in a nice way rather than as a tooltip
+- I want a nicer view of this. I want to see the initial runs of each golden with a loading spinner followed by the tests running. I want the view refactored as a table rather than a list 
 
 Workflow run:
-- Should include the 
 - Should show a link out to the fluxnova monitoring UI
 - Would be nice to see the bpmn progress (same view as monitor in Fluxnova) if possible (how much effort?)
 - I need more information. Before a run I want to see details of model, provider, prompt etc
 - During the run I want to see what stage things are at using the history api from Fluxnova
 
 Evals
-- I want this to be a complete list of scorers. It should give a description of what scoreres are and then for each show
-- the name, description, if it is used in auto eval, if used in eval service task, if used in regression testing
-- Deterministic / non deterministic scorers should be colour coded to distinguish
+- Get rid of or combine the ones that are the same
+- Stop using or clarify the working of ones that should only be regression (expected tool calls?)
+- Suggest / add some new scorers to the list.
 
 Architecture
 - I want the nodes to be redesigned to match the layout I have in the Fluxnova EDD.png diagram. Fluxnova should be larger to highlight it
 - I want nodes to be clickable with a description showing when I click. This should be possible using Toolbar and custom nodes https://reactflow.dev/examples/nodes/node-toolbar
-- 

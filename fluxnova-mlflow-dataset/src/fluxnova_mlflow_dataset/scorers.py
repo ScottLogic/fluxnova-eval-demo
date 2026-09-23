@@ -35,7 +35,8 @@ def decision_quality_judge(model: str) -> Guidelines:
     Gateway (automatic/online scoring, and the synchronous eval-service-worker).
     """
     return Guidelines(
-        name=DECISION_QUALITY_NAME, guidelines=DECISION_QUALITY_GUIDELINES, model=model
+        name=DECISION_QUALITY_NAME, guidelines=DECISION_QUALITY_GUIDELINES, model=model,
+        description="Evaluate whether the agent's response follows specific constraints or instructions provided in the guidelines. For example: The final output must reach a definitive APPROVE or REJECT lending recommendation."
     )
 
 
@@ -149,15 +150,9 @@ def automatic_judges(model: str = GATEWAY_JUDGE_MODEL) -> list[Guidelines]:
 
 @scorer
 def evidence_citation(inputs: dict, outputs: str) -> Feedback:
-    """Output must explicitly reference the key financial data points gathered.
-
-    The required evidence categories depend on applicantType: EMPLOYED applicants
-    are verified via employment verification, others via bank statement analysis.
-
-    Reads ``inputs["input_variables"]`` for the applicant profile. ``agent_goal``
-    is optional supplementary context for the judge (available from Fluxnova's
-    REST history, but not from a trace) — it's included only when the caller
-    supplies it, so trace-only callers (eval-trace-listener) can run this too.
+    """
+    Evaluate whether the agent's final output explicitly references the core financial data collected during the assessment.
+    An output that draws a conclusion without citing specific gathered evidence should score poorly.
     """
     variables = (inputs or {}).get("input_variables") or {}
     applicant_type = variables.get("applicantType")
@@ -180,14 +175,10 @@ def evidence_citation(inputs: dict, outputs: str) -> Feedback:
 
 @scorer
 def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
-    """Final output must reach the same APPROVE/REJECT decision as the golden for this scenario.
-
-    The underlying LLM judge yields a graduated 0.0-1.0 similarity score, but this
-    scorer returns a ``"yes"``/``"no"`` pass/fail verdict (thresholded at
-    :data:`GOLDEN_MATCH_THRESHOLD`) as its feedback *value* so the MLflow GenAI
-    evaluation UI renders it as a pass/fail badge (numeric feedback values are
-    only shown as bare scores, never as pass/fail). The raw score is preserved in
-    the feedback ``metadata`` under ``"score"`` for anyone who needs the gradation.
+    """
+    Compare the agent's actual output to the expected (golden) output. Award a high score if both reach the same
+    APPROVE or REJECT decision AND the actual output cites at least the same categories of evidence.
+    Penalise if the decision differs or critical evidence cited in the golden is entirely absent from the actual output.
     """
     expected_output = expectations.get("expected_output")
     if not expected_output:
@@ -302,8 +293,10 @@ def _expected_tools_for(variables: dict) -> tuple[set[str], set[str]]:
 
 @scorer
 def required_tools_called(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """Deterministic check: were exactly the tools this applicant's profile requires
-    called (and none of the ones that shouldn't be), per ``_expected_tools_for``?
+    """
+    Check that exactly the tools that this applicant's profile requires were
+    called and none of the ones that shouldn't be.
+    TODO THIS MAKES NO SENSE FOR OUTSIDE REGRESSION TESTING
     """
     variables = _input_variables(inputs)
     called = _called_tool_names(inputs, ok_only=True)
@@ -325,8 +318,8 @@ def required_tools_called(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer s
 
 @scorer
 def no_tool_errors(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """Deterministic check: did every tool call the agent made succeed
-    (no failed tool executions)?
+    """
+    Did every tool call the agent made succeed
     """
     failed = [c.get("name") for c in _tool_calls(inputs) if c.get("status") != "OK"]
     passed = not failed
@@ -338,9 +331,10 @@ def no_tool_errors(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signatur
 
 @scorer
 def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """Deterministic check: does the final output literally contain an APPROVE or
-    REJECT keyword? A hard syntactic check, complementing (not replacing) the
-    ``decision_quality`` LLM judge's opinion on whether it's well-reasoned.
+    """
+    Does the final output literally contain an APPROVE or REJECT keyword?
+    A hard syntactic check, complementing (not replacing)
+    the decision_quality LLM judge's opinion on whether it's well-reasoned.
     """
     matched = bool(_DECISION_KEYWORD_RE.search(_decision_text(outputs)))
     return Feedback(
@@ -355,11 +349,11 @@ def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow sc
 
 @scorer
 def tool_correctness(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """Graded (0.0–1.0) counterpart to :func:`required_tools_called`: all tools the
-    applicant's profile requires must be called, and forbidden ones penalised.
+    """All tools the applicant's profile requires must be called, and forbidden ones penalisedGraded (0.0–1.0).
 
     Both derive the expected/forbidden tool set from ``_expected_tools_for``;
     this one returns a proportional score rather than a boolean.
+    TODO - again this can probably replace the other and not be used for anything other than regression
     """
     variables = _input_variables(inputs)
     called = _called_tool_names(inputs, ok_only=True)
@@ -377,7 +371,10 @@ def tool_correctness(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signat
 
 @scorer
 def all_tool_calls_completed(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """Every tool call the agent initiated must have completed without an error status."""
+    """
+    Every tool call the agent initiated must have completed without an error status.
+    TODO - this can probably replace the other one
+    """
     failed = [c.get("name") for c in _tool_calls(inputs) if c.get("status") != "OK"]
     return Feedback(
         value=not failed,
@@ -428,7 +425,6 @@ def step_efficiency(inputs) -> Feedback | None:  # noqa: ANN001 - MLflow scorer 
     The base budget is 3 LLM inference calls (fraud, credit, and either
     employment-verification or bank-statement-analysis, then affordability);
     an extra iteration is allowed when collateral valuation is also required.
-    Returns ``None`` when the caller supplied no iteration count to check.
     """
     iterations = (inputs or {}).get("iterations")
     if iterations is None:
@@ -445,12 +441,8 @@ def step_efficiency(inputs) -> Feedback | None:  # noqa: ANN001 - MLflow scorer 
 
 @scorer
 def affordability_called_after_income_confirmed(inputs) -> Feedback | None:  # noqa: ANN001
-    """Affordability must be assessed only after employment/income has been confirmed.
-
-    The BPMN's agent prompt requires Assess Affordability to run "after income
-    has been confirmed" — i.e. after Verify Employment (EMPLOYED) or Analyse
-    Bank Statements (otherwise). Tool calls are expected in chronological order
-    (see :func:`fluxnova_mlflow_dataset.traces.scorer_inputs_from_trace`).
+    """
+    Affordability must be assessed only after employment/income has been confirmed.
     """
     applicant_type = _input_variables(inputs).get("applicantType")
     income_tool = "Verify Employment" if applicant_type == "EMPLOYED" else "Analyse Bank Statements"
@@ -478,10 +470,8 @@ def affordability_called_after_income_confirmed(inputs) -> Feedback | None:  # n
 
 @scorer
 def tool_argument_correctness(inputs) -> Feedback | None:  # noqa: ANN001 - MLflow scorer signature
-    """Each required tool must be invoked with the arguments the BPMN wires up for it.
-
-    Returns ``None`` when no tool-call arguments were captured (content capture
-    disabled), since correctness cannot then be judged.
+    """
+    Each required tool must be invoked with the arguments the BPMN wires up for it.
     """
     variables = _input_variables(inputs)
     calls = _tool_calls(inputs)
@@ -519,7 +509,9 @@ def tool_argument_correctness(inputs) -> Feedback | None:  # noqa: ANN001 - MLfl
 
 @scorer
 def collateral_valuation_called_correctly_when_required(inputs) -> Feedback | None:  # noqa: ANN001
-    """Value Collateral must be called, with the correct applicationId, when hasCollateral is true."""
+    """
+    Value Collateral must be called, with the correct applicationId, when hasCollateral is true.
+    """
     variables = _input_variables(inputs)
     if not variables.get("hasCollateral"):
         return None  # not applicable for this run
@@ -544,7 +536,9 @@ def collateral_valuation_called_correctly_when_required(inputs) -> Feedback | No
 
 @scorer
 def requested_amount_passed_to_affordability(inputs) -> Feedback | None:  # noqa: ANN001
-    """Affordability assessment must receive the correct customerId and requestedAmount."""
+    """
+    Affordability assessment must receive the correct customerId and requestedAmount.
+    """
     calls = [c for c in _tool_calls(inputs) if c.get("name") == "Assess Affordability"]
     if not calls:
         return Feedback(value=0.0, rationale="Assess Affordability was never called")

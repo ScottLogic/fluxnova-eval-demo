@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "requests>=2.32",
     "fluxnova-runner",
+    "fluxnova-mlflow-dataset",
     "eval-trace-listener",
     "eval-service-worker",
 ]
