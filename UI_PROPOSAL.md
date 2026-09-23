@@ -114,7 +114,3 @@ Evals
 - Get rid of or combine the ones that are the same
 - Stop using or clarify the working of ones that should only be regression (expected tool calls?)
 - Suggest / add some new scorers to the list.
-
-Architecture
-- I want the nodes to be redesigned to match the layout I have in the Fluxnova EDD.png diagram. Fluxnova should be larger to highlight it
-- I want nodes to be clickable with a description showing when I click. This should be possible using Toolbar and custom nodes https://reactflow.dev/examples/nodes/node-toolbar

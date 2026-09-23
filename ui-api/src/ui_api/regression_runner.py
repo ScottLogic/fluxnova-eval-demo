@@ -194,6 +194,37 @@ _INLINE_RESULT_RE = re.compile(r"^(?P<nodeid>\S+\.py::\S+)\s+(?P<outcome>PASSED|
 _NODEID_ONLY_RE = re.compile(r"^(?P<nodeid>\S+\.py::\S+)\s*$")
 _OUTCOME_ONLY_RE = re.compile(r"^(?P<outcome>PASSED|FAILED|ERROR|SKIPPED)\b")
 
+# Matches the structured progress markers `evaluation_rows` logs (see
+# regression/test_mlflow_regression.py) for the upfront pass that drives each
+# golden through the live agent once, before any pytest test line appears.
+_GOLDEN_START_RE = re.compile(r"Golden run starting (?P<index>\d+)/(?P<total>\d+): (?P<name>.+)$")
+_GOLDEN_DONE_RE = re.compile(r"Golden run finished (?P<index>\d+)/(?P<total>\d+): (?P<name>.+)$")
+
+
+def _parse_golden_progress(output_text: str) -> list[dict[str, Any]]:
+    """Best-effort per-golden progress for the live-agent pass, parsed from the
+    same in-progress console output `_parse_partial_results` reads.
+
+    Returns one ``{name, status}`` entry per golden that's started, in the order
+    it started, with ``status`` "running" until its matching finish line shows up.
+    """
+    progress: dict[str, str] = {}
+    order: list[str] = []
+    for raw_line in output_text.splitlines():
+        line = raw_line.rstrip()
+        start_match = _GOLDEN_START_RE.search(line)
+        if start_match:
+            name = start_match.group("name")
+            if name not in progress:
+                order.append(name)
+            progress[name] = "running"
+            continue
+        done_match = _GOLDEN_DONE_RE.search(line)
+        if done_match:
+            progress[done_match.group("name")] = "done"
+
+    return [{"name": name, "status": progress[name]} for name in order]
+
 
 def _parse_partial_results(output_text: str, prefix: str) -> list[dict[str, Any]]:
     """Best-effort per-test outcomes parsed from pytest's live ``-v`` console
@@ -255,7 +286,12 @@ def get_run(run_id: str) -> dict[str, Any] | None:
     if exit_code is None:
         output = run.output_path.read_text(encoding="utf-8", errors="replace") if run.output_path.exists() else ""
         prefix = f"{REGRESSION_TEST_FILE.name}::"
-        return {"runId": run_id, "status": "running", "tests": _parse_partial_results(output, prefix)}
+        return {
+            "runId": run_id,
+            "status": "running",
+            "tests": _parse_partial_results(output, prefix),
+            "goldens": _parse_golden_progress(output),
+        }
 
     if run.report_path.exists():
         report = json.loads(run.report_path.read_text(encoding="utf-8"))

@@ -335,9 +335,18 @@ def evaluation_rows(cfg: RunnerConfig, predict_fn, _run_cache: dict) -> list[dic
     goldens = load_goldens(_GOLDENS_PATH)
     assert goldens, f"No goldens found at {_GOLDENS_PATH}"
     rows = []
-    for golden in goldens:
+    total = len(goldens)
+    for index, golden in enumerate(goldens, start=1):
+        scenario = (golden.get("additional_metadata") or {}).get("scenario") or f"scenario-{index}"
+        # Structured markers the UI's regression_runner parses to show per-golden
+        # progress while this upfront live-run pass is in flight (see
+        # ui_api.regression_runner._GOLDEN_START_RE/_GOLDEN_DONE_RE) — this pass can
+        # take minutes per golden, so without it the UI just says "running" for the
+        # whole suite with no sense of what's actually happening.
+        _log.info("Golden run starting %d/%d: %s", index, total, scenario)
         variables = _golden_to_variables(cfg, golden)
         predict_fn(variables)
+        _log.info("Golden run finished %d/%d: %s", index, total, scenario)
         scorer_inputs = _run_cache[_cache_key(variables)]["scorer_inputs"]
         rows.append(
             {

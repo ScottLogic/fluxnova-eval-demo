@@ -50,12 +50,18 @@ export interface RegressionTestResult {
   durationSeconds: number | null
 }
 
+export interface RegressionGoldenProgress {
+  name: string
+  status: 'running' | 'done'
+}
+
 export interface RegressionRunResult {
   runId: string
   status: 'running' | 'passed' | 'failed' | 'error'
   exitCode?: number
   summary?: Record<string, number>
   tests?: RegressionTestResult[]
+  goldens?: RegressionGoldenProgress[]
   output?: string
 }
 

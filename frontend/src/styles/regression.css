@@ -1,4 +1,54 @@
-.test-list {
+.test-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.test-table th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+  border-bottom: 1px solid rgba(232, 237, 244, 0.16);
+}
+
+.golden-blurb p {
+  margin-top: 0;
+}
+
+.test-table-row td {
+  padding: 0.65rem 0.5rem;
+  border-top: 1px solid rgba(232, 237, 244, 0.1);
+  vertical-align: top;
+}
+
+.test-table-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+}
+
+.test-table-description {
+  margin: 0.25rem 0 0;
+  color: var(--paper-dim);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.test-table-duration {
+  color: var(--paper-dim);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.golden-progress {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.golden-progress-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -6,47 +56,57 @@
   gap: 0.15rem;
 }
 
-.test-list-item {
-  display: grid;
-  gap: 0.3rem;
-  padding: 0.65rem 0.2rem;
+.golden-progress-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.2rem;
   border-top: 1px solid rgba(232, 237, 244, 0.1);
 }
 
-.test-list-item:first-child {
+.golden-progress-item:first-child {
   border-top: 0;
 }
 
-.test-list-item-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.test-list-name {
+.golden-progress-name {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.88rem;
-}
-
-.test-list-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-shrink: 0;
-}
-
-.test-list-duration {
-  color: var(--paper-dim);
-  font-size: 0.82rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.test-list-description {
-  margin: 0;
-  color: var(--paper-dim);
   font-size: 0.85rem;
-  line-height: 1.45;
+  flex: 1;
+}
+
+.golden-progress-state {
+  color: var(--paper-dim);
+  font-size: 0.8rem;
+}
+
+.golden-progress-icon {
+  display: inline-flex;
+  width: 0.9rem;
+  justify-content: center;
+}
+
+.golden-progress-done {
+  color: #6db892;
+}
+
+.golden-progress-pending {
+  color: var(--paper-dim);
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(232, 237, 244, 0.22);
+  border-top-color: var(--copper);
+  border-radius: 50%;
+  animation: spinner-spin 0.7s linear infinite;
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .test-run-output {

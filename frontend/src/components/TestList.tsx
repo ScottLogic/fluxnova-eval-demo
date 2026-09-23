@@ -27,27 +27,38 @@ function TestList({ tests, runResult }: TestListProps) {
   )
 
   return (
-    <ul className="test-list">
-      {tests.map(({ name, description }) => {
-        const result = outcomeByNodeId.get(name)
-        return (
-          <li key={name} className="test-list-item">
-            <div className="test-list-item-head">
-              <span className="test-list-name">{shortTestName(name)}</span>
-              <span className="test-list-meta">
-                {result && (
+    <table className="test-table">
+      <thead>
+        <tr>
+          <th>Test</th>
+          <th>Status</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tests.map(({ name, description }) => {
+          const result = outcomeByNodeId.get(name)
+          return (
+            <tr key={name} className="test-table-row">
+              <td>
+                <span className="test-table-name">{shortTestName(name)}</span>
+                {description && <p className="test-table-description">{description}</p>}
+              </td>
+              <td>
+                {result?.outcome === 'running' ? (
+                  <span className="spinner" aria-hidden="true" />
+                ) : result ? (
                   <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>
+                ) : (
+                  '—'
                 )}
-                {result && (
-                  <span className="test-list-duration">{formatDuration(result.durationSeconds)}</span>
-                )}
-              </span>
-            </div>
-            {description && <p className="test-list-description">{description}</p>}
-          </li>
-        )
-      })}
-    </ul>
+              </td>
+              <td className="test-table-duration">{result ? formatDuration(result.durationSeconds) : '—'}</td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
