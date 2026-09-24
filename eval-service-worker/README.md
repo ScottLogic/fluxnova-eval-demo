@@ -7,9 +7,10 @@ the full background/scope and `local-dev/README.md`'s "eval-service-worker" sect
 
 **Scorers run per task:** `decision_quality` (the non-deterministic `Guidelines` LLM judge) plus the full
 `DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`
-(`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`, `tool_correctness`,
-`all_tool_calls_completed`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
-`no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`).
+(`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, `cites_key_evidence_terms`,
+`no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
+`no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`,
+`risk_checks_precede_affordability`, `no_duplicate_tool_calls`).
 This is the deliberately narrow online set: `decision_quality` is the one judge cheap enough to run per-run through the
 `fluxnova-judge` gateway, and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
 `matches_golden`) are left to the offline `eval-trace-listener` / `regression` suites.

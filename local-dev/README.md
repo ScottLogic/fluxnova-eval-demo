@@ -512,8 +512,8 @@ Frontend UI: `http://localhost:${FRONTEND_PORT}` (default `8081`). ui-api has no
 
 `eval-service-worker` (see `eval-service-worker/` and `EVAL-SERVICE-WORKER-PLAN.md` at the repo root) is a standalone
 BPMN external-task worker that scores a just-completed agentic subprocess run against the `decision_quality` MLflow
-judge plus a set of trace-only deterministic scorers (`required_tools_called`, `no_tool_errors`,
-`definitive_decision_stated`), reading data purely from MLflow's trace store (no BPMN parsing, no Fluxnova REST
+judge plus a set of trace-only deterministic scorers (`tool_correctness`, `no_tool_errors`,
+`definitive_decision_stated`, and others), reading data purely from MLflow's trace store (no BPMN parsing, no Fluxnova REST
 history calls). All scorers' `Feedback` are logged back onto the trace as MLflow assessments grouped under one
 Evaluation Run, plus a lightweight MLflow evaluation-dataset record; the task then completes with
 `evalPassed`/`evalRationale` output variables — `evalPassed` is driven solely by `decision_quality` (the deterministic

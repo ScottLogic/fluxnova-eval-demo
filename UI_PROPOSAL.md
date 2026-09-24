@@ -101,9 +101,6 @@ Follow-ups:
 Loan Assesment
 - Integrate the Finos AI Govenanvce and open catalog link from steel thread using the useCase.ts file - maybe don't bother with this
 
-Regression tests:
-- I want a nicer view of this. I want to see the initial runs of each golden with a loading spinner followed by the tests running. I want the view refactored as a table rather than a list 
-
 Workflow run:
 - Should show a link out to the fluxnova monitoring UI
 - Would be nice to see the bpmn progress (same view as monitor in Fluxnova) if possible (how much effort?)

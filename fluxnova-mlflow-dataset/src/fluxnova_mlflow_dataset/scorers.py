@@ -241,6 +241,11 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 
 _ALWAYS_REQUIRED_TOOLS = ("Check Credit Score", "Run Fraud Screening", "Assess Affordability")
 _DECISION_KEYWORD_RE = re.compile(r"\b(APPROVE|REJECT)\b", re.IGNORECASE)
+_EVIDENCE_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
+    "credit": re.compile(r"credit", re.IGNORECASE),
+    "fraud": re.compile(r"fraud", re.IGNORECASE),
+    "affordability": re.compile(r"afford", re.IGNORECASE),
+}
 
 
 def _input_variables(inputs: dict | None) -> dict:
@@ -292,31 +297,6 @@ def _expected_tools_for(variables: dict) -> tuple[set[str], set[str]]:
 
 
 @scorer
-def required_tools_called(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """
-    Check that exactly the tools that this applicant's profile requires were
-    called and none of the ones that shouldn't be.
-    TODO THIS MAKES NO SENSE FOR OUTSIDE REGRESSION TESTING
-    """
-    variables = _input_variables(inputs)
-    called = _called_tool_names(inputs, ok_only=True)
-    required, forbidden = _expected_tools_for(variables)
-    missing = required - called
-    unexpected = forbidden & called
-    passed = not missing and not unexpected
-    problems = []
-    if missing:
-        problems.append(f"missing required tool call(s): {sorted(missing)}")
-    if unexpected:
-        problems.append(f"unexpected tool call(s) for this applicant profile: {sorted(unexpected)}")
-    return Feedback(
-        value=passed,
-        rationale="; ".join(problems)
-                  or "All tools required for this applicant profile were called, and no unexpected ones were.",
-    )
-
-
-@scorer
 def no_tool_errors(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
     """
     Did every tool call the agent made succeed
@@ -348,12 +328,30 @@ def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow sc
 
 
 @scorer
-def tool_correctness(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """All tools the applicant's profile requires must be called, and forbidden ones penalisedGraded (0.0–1.0).
+def cites_key_evidence_terms(outputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
+    """
+    Hard syntactic check that the final output mentions the core evidence
+    categories (credit, fraud, affordability) by name. A free, always-on proxy
+    for the evidence_citation LLM judge — complements (not replaces) that
+    judge's opinion on whether the evidence is well-integrated, the same
+    relationship definitive_decision_stated has with decision_quality.
+    """
+    text = _decision_text(outputs)
+    missing = [term for term, pattern in _EVIDENCE_TERM_PATTERNS.items() if not pattern.search(text)]
+    return Feedback(
+        value=not missing,
+        rationale=(
+            f"Final output does not mention: {missing}" if missing
+            else "Final output cites credit, fraud, and affordability evidence."
+        ),
+    )
 
-    Both derive the expected/forbidden tool set from ``_expected_tools_for``;
-    this one returns a proportional score rather than a boolean.
-    TODO - again this can probably replace the other and not be used for anything other than regression
+
+@scorer
+def tool_correctness(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
+    """Graded (0.0-1.0) check that the agent called exactly the tool set this
+    applicant's profile requires based on the inputs. This gives a holistic score of the overall tool correctness
+    which compliments the more specific individual tool scorers.
     """
     variables = _input_variables(inputs)
     called = _called_tool_names(inputs, ok_only=True)
@@ -369,16 +367,17 @@ def tool_correctness(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signat
     return Feedback(value=max(0.0, score), rationale=rationale)
 
 
-@scorer
-def all_tool_calls_completed(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
+def _assert_tool_not_called(inputs: dict | None, tool_name: str, reason: str) -> Feedback:
+    """Shared body for the profile-specific "forbidden tool" scorers below.
+
+    Each of those scorers already establishes applicability itself (returning
+    ``None`` when the rule doesn't apply to this run's profile) before calling
+    this — it just reports whether ``tool_name`` was actually called.
     """
-    Every tool call the agent initiated must have completed without an error status.
-    TODO - this can probably replace the other one
-    """
-    failed = [c.get("name") for c in _tool_calls(inputs) if c.get("status") != "OK"]
+    called = tool_name in _called_tool_names(inputs)
     return Feedback(
-        value=not failed,
-        rationale=f"Tool calls did not complete: {failed}" if failed else "OK",
+        value=not called,
+        rationale=f"{tool_name} was invoked despite {reason}" if called else "OK",
     )
 
 
@@ -387,11 +386,7 @@ def no_collateral_check_when_no_collateral(inputs) -> Feedback | None:  # noqa: 
     """Value Collateral must not be called when hasCollateral is false."""
     if _input_variables(inputs).get("hasCollateral"):
         return None  # not applicable for this run
-    called = "Value Collateral" in _called_tool_names(inputs)
-    return Feedback(
-        value=not called,
-        rationale="Value Collateral was invoked despite hasCollateral=false" if called else "OK",
-    )
+    return _assert_tool_not_called(inputs, "Value Collateral", "hasCollateral=false")
 
 
 @scorer
@@ -399,11 +394,7 @@ def no_bank_statement_for_employed_applicant(inputs) -> Feedback | None:  # noqa
     """Bank statement analysis must not be called for an employed (salaried) applicant."""
     if _input_variables(inputs).get("applicantType") != "EMPLOYED":
         return None
-    called = "Analyse Bank Statements" in _called_tool_names(inputs)
-    return Feedback(
-        value=not called,
-        rationale="Analyse Bank Statements was invoked for an EMPLOYED applicant" if called else "OK",
-    )
+    return _assert_tool_not_called(inputs, "Analyse Bank Statements", "applicantType=EMPLOYED")
 
 
 @scorer
@@ -411,10 +402,49 @@ def no_verify_employment_for_self_employed_applicant(inputs) -> Feedback | None:
     """Employment verification must not be called for a self-employed applicant."""
     if _input_variables(inputs).get("applicantType") == "EMPLOYED":
         return None
-    called = "Verify Employment" in _called_tool_names(inputs)
+    return _assert_tool_not_called(inputs, "Verify Employment", "applicantType != EMPLOYED")
+
+
+@scorer
+def no_duplicate_tool_calls(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
+    """
+    No tool should be called more than once (successfully) in a single run — a
+    repeat call usually means the agent looped or re-derived a result it
+    already had, a different failure mode from tool_correctness (which only
+    checks presence/absence, not call count).
+    """
+    called_names = [c.get("name") for c in _tool_calls(inputs) if c.get("status") == "OK"]
+    duplicates = sorted({name for name in called_names if called_names.count(name) > 1})
     return Feedback(
-        value=not called,
-        rationale="Verify Employment was invoked for a non-EMPLOYED applicant" if called else "OK",
+        value=not duplicates,
+        rationale=f"Tool(s) called more than once: {duplicates}" if duplicates else "OK",
+    )
+
+
+@scorer
+def risk_checks_precede_affordability(inputs) -> Feedback | None:  # noqa: ANN001
+    """
+    Check Credit Score and Run Fraud Screening must both complete before Assess
+    Affordability runs — affordability should be assessed against an already-known
+    risk profile. Extends affordability_called_after_income_confirmed's ordering
+    check (income verification before affordability) to the other two
+    prerequisite checks.
+    """
+    names = [c.get("name") for c in _tool_calls(inputs)]
+    if "Assess Affordability" not in names:
+        return None  # covered by tool_correctness if missing entirely
+    affordability_index = names.index("Assess Affordability")
+    out_of_order = [
+        tool_name
+        for tool_name in ("Check Credit Score", "Run Fraud Screening")
+        if tool_name in names and names.index(tool_name) > affordability_index
+    ]
+    return Feedback(
+        value=not out_of_order,
+        rationale=(
+            "OK" if not out_of_order
+            else f"Assess Affordability (index {affordability_index}) ran before: {out_of_order}"
+        ),
     )
 
 
@@ -557,16 +587,17 @@ def requested_amount_passed_to_affordability(inputs) -> Feedback | None:  # noqa
 # Default bundle: checks needing no captured tool arguments — safe everywhere.
 # Used by eval-service-worker, eval-trace-listener and regression.
 DETERMINISTIC_SCORERS = [
-    required_tools_called,
+    tool_correctness,
     no_tool_errors,
     definitive_decision_stated,
-    tool_correctness,
-    all_tool_calls_completed,
+    cites_key_evidence_terms,
     no_collateral_check_when_no_collateral,
     no_bank_statement_for_employed_applicant,
     no_verify_employment_for_self_employed_applicant,
     step_efficiency,
     affordability_called_after_income_confirmed,
+    risk_checks_precede_affordability,
+    no_duplicate_tool_calls,
 ]
 
 # Opt-in bundle: scorers that inspect tool-call *arguments* — only meaningful
