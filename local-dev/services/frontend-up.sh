@@ -88,3 +88,15 @@ echo "Frontend UI:   http://localhost:${FRONTEND_PORT}"
 echo "ui-api:        http://localhost:${UI_API_PORT} (proxied by the frontend at /api/)"
 echo "Logs:          podman logs -f frontend   /   podman logs -f ui-api"
 echo "Stop/remove:   ./frontend-down.sh"
+
+# Open the UI in the default browser — set FRONTEND_OPEN_BROWSER=false to skip.
+if [ "${FRONTEND_OPEN_BROWSER:-true}" = "true" ]; then
+  FRONTEND_URL="http://localhost:${FRONTEND_PORT}"
+  if command -v explorer.exe >/dev/null 2>&1; then
+    explorer.exe "$FRONTEND_URL" >/dev/null 2>&1 || true   # Windows / Git Bash
+  elif command -v open >/dev/null 2>&1; then
+    open "$FRONTEND_URL" || true                            # macOS
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$FRONTEND_URL" >/dev/null 2>&1 || true         # Linux
+  fi
+fi
