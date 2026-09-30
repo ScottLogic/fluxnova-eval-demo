@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from fluxnova_mlflow_dataset.bpmn import BpmnLookup, BpmnLookupError
 from fluxnova_runner.client import ApiError, Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
@@ -74,11 +75,60 @@ def _ensure_mock_workers(cfg: RunnerConfig) -> None:
         _mock_workers_started = True
 
 
+def _agent_bpmn_lookup(cfg: RunnerConfig) -> BpmnLookup:
+    """Find the BPMN file that actually declares the ad-hoc subprocess's ``agent:config``.
+
+    ``cfg.bpmn_path`` is often the *outer* process — the agent-bearing subprocess
+    can instead live in one of ``additional_bpmn_paths``, reached via a Call
+    Activity (e.g. ``loan_approval_process_ai.yml``'s ``bpmn_path`` is
+    ``LoanApprovalProcess_AI.bpmn``, but the ad-hoc subprocess itself is declared
+    in ``additional_bpmn_paths``' ``loan-assesment.bpmn``). Tries every candidate
+    file in order and returns the first one that actually has the subprocess.
+    """
+    # BpmnLookup's constructor only parses the file — it doesn't validate that
+    # the subprocess actually lives there (that's checked lazily, by whichever
+    # of system_prompt()/provider()/model() gets called first), so trying each
+    # candidate must explicitly check has_subprocess() before returning it,
+    # rather than just catching a constructor error that never comes.
+    for path in (cfg.bpmn_path, *cfg.additional_bpmn_paths):
+        lookup = BpmnLookup(path, cfg.subprocess_id)
+        if lookup.has_subprocess():
+            return lookup
+    raise BpmnLookupError(
+        f"No adHocSubProcess with id {cfg.subprocess_id!r} in {cfg.bpmn_path} or its additional_bpmn_paths"
+    )
+
+
+def _agent_config(cfg: RunnerConfig) -> dict[str, str] | None:
+    """Returns the agent's ``{provider, model, systemPrompt}`` as authored on the
+    BPMN, or ``None`` if the config has no agent subprocess or it can't be found.
+
+    This reflects what's *authored* in the BPMN — it may not be the actual
+    runtime model if the engine's own model-provider config overrides it.
+    """
+    if not cfg.subprocess_id:
+        return None
+    try:
+        lookup = _agent_bpmn_lookup(cfg)
+        return {
+            "provider": lookup.provider(),
+            "model": lookup.model(),
+            "systemPrompt": lookup.system_prompt(),
+        }
+    except BpmnLookupError:
+        return None
+
+
 def get_config() -> dict[str, Any]:
     """Returns the default process variables a run starts with, for a form to
-    pre-populate and selectively override (the "random input" a caller can edit)."""
+    pre-populate and selectively override (the "random input" a caller can
+    edit), plus the agent's model/provider/prompt as authored on the BPMN."""
     cfg = _load_config()
-    return {"processKey": cfg.process_key, "variables": cfg.variables}
+    return {
+        "processKey": cfg.process_key,
+        "variables": cfg.variables,
+        "agentConfig": _agent_config(cfg),
+    }
 
 
 def start_run(variable_overrides: dict[str, Any] | None = None) -> str:

@@ -65,6 +65,54 @@ def test_get_config_returns_defaults(client: TestClient) -> None:
     assert response.json() == {
         "processKey": "someProcess",
         "variables": {"applicantName": "Jane Smith", "requestedAmount": 50000},
+        "agentConfig": None,
+    }
+
+
+def test_get_config_returns_agent_config_when_subprocess_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bpmn_path = tmp_path / "agent.bpmn"
+    bpmn_path.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:agent="http://fluxnova.finos.org/schema/1.0/ai/agent"
+             id="Definitions_1">
+  <process id="someProcess">
+    <adHocSubProcess id="Agent_1">
+      <extensionElements>
+        <agent:config provider="openai" model="gpt-4o" systemPrompt="Be a good agent." />
+      </extensionElements>
+    </adHocSubProcess>
+  </process>
+</definitions>
+"""
+    )
+    config_path = tmp_path / "workflow.yml"
+    config_path.write_text(
+        f"""
+fluxnova_url: http://fluxnova.invalid/engine-rest
+bpmn_path: {bpmn_path.as_posix()}
+process_key: someProcess
+subprocess_id: Agent_1
+deployment_name: Some Deployment
+variables:
+  applicantName: Jane Smith
+"""
+    )
+    monkeypatch.setattr(workflow_runner, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(workflow_runner, "Client", _FakeClient)
+    monkeypatch.setattr(workflow_runner, "start_workers", lambda *a, **k: [])
+    monkeypatch.setattr(workflow_runner, "_mock_workers_started", False)
+    monkeypatch.setattr(_FakeClient, "active_instance", None)
+    test_client = TestClient(create_app())
+
+    response = test_client.get("/api/workflow/config")
+    assert response.status_code == 200
+    assert response.json()["agentConfig"] == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "systemPrompt": "Be a good agent.",
     }
 
 

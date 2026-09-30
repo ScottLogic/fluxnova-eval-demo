@@ -83,9 +83,16 @@ export function fetchRegressionRun(runId: string): Promise<RegressionRunResult> 
 
 export type WorkflowVariables = Record<string, string | number | boolean>
 
+export interface AgentConfig {
+  provider: string
+  model: string
+  systemPrompt: string
+}
+
 export interface WorkflowConfig {
   processKey: string
   variables: WorkflowVariables
+  agentConfig: AgentConfig | null
 }
 
 export interface WorkflowRunStarted {

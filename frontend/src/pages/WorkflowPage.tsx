@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { WorkflowVariables } from '../api'
+import AgentConfigPanel from '../components/AgentConfigPanel'
 import EvalToggles from '../components/EvalToggles'
 import WorkflowForm from '../components/WorkflowForm'
 import WorkflowRunStatus from '../components/WorkflowRunStatus'
@@ -9,6 +10,7 @@ import { useWorkflowStore } from '../store/workflowStore'
 function WorkflowPage() {
   const { skipEvalServiceWorker } = useEvalSettings()
   const defaults = useWorkflowStore((state) => state.defaults)
+  const agentConfig = useWorkflowStore((state) => state.agentConfig)
   const configError = useWorkflowStore((state) => state.configError)
   const run = useWorkflowStore((state) => state.run)
   const runError = useWorkflowStore((state) => state.runError)
@@ -34,7 +36,7 @@ function WorkflowPage() {
         </p>
       </div>
 
-      <div>
+      <div className="finos-panel evals-section">
         <p className="sample-preview-label">Evals</p>
         <p className="hint">
           Auto-eval takes effect immediately for all traces; eval service worker applies to the
@@ -44,7 +46,13 @@ function WorkflowPage() {
       </div>
 
       {configError && <p className="hint danger">{configError}</p>}
-      <WorkflowForm defaults={defaults} submitting={submitting} onSubmit={handleSubmit} />
+      <div>
+        <h2 className="workflow-section-heading">Inputs</h2>
+        <div className="workflow-input-grid">
+          <WorkflowForm defaults={defaults} submitting={submitting} onSubmit={handleSubmit} />
+          <AgentConfigPanel agentConfig={agentConfig} />
+        </div>
+      </div>
 
       {runError && <p className="hint danger">{runError}</p>}
       {run && <WorkflowRunStatus run={run} />}

@@ -1,0 +1,41 @@
+.evals-section {
+  margin: 0;
+}
+
+.workflow-section-heading {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--paper);
+}
+
+.workflow-input-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .workflow-input-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.agent-config-prompt {
+  margin: 0.35rem 0 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.45rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(232, 237, 244, 0.1);
+  color: var(--paper);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 16rem;
+  overflow: auto;
+}

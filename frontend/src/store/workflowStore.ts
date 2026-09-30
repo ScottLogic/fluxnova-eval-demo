@@ -3,6 +3,7 @@ import {
   fetchWorkflowConfig,
   fetchWorkflowRun,
   startWorkflowRun,
+  type AgentConfig,
   type WorkflowRunStatus,
   type WorkflowVariables,
 } from '../api'
@@ -11,6 +12,7 @@ const POLL_MS = 2000
 
 interface WorkflowState {
   defaults: WorkflowVariables | null
+  agentConfig: AgentConfig | null
   configError: string | null
   configLoaded: boolean
 
@@ -53,6 +55,7 @@ function pollRun(instanceId: string, set: (partial: Partial<WorkflowState>) => v
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   defaults: null,
+  agentConfig: null,
   configError: null,
   configLoaded: false,
 
@@ -66,7 +69,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return
     }
     fetchWorkflowConfig()
-      .then((config) => set({ defaults: config.variables, configError: null, configLoaded: true }))
+      .then((config) =>
+        set({
+          defaults: config.variables,
+          agentConfig: config.agentConfig,
+          configError: null,
+          configLoaded: true,
+        }),
+      )
       .catch((error: unknown) => {
         set({ configError: error instanceof Error ? error.message : 'Failed to load defaults' })
       })
