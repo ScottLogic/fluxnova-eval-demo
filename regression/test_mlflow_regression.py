@@ -335,9 +335,18 @@ def evaluation_rows(cfg: RunnerConfig, predict_fn, _run_cache: dict) -> list[dic
     goldens = load_goldens(_GOLDENS_PATH)
     assert goldens, f"No goldens found at {_GOLDENS_PATH}"
     rows = []
-    for golden in goldens:
+    total = len(goldens)
+    for index, golden in enumerate(goldens, start=1):
+        scenario = (golden.get("additional_metadata") or {}).get("scenario") or f"scenario-{index}"
+        # Structured markers the UI's regression_runner parses to show per-golden
+        # progress while this upfront live-run pass is in flight (see
+        # ui_api.regression_runner._GOLDEN_START_RE/_GOLDEN_DONE_RE) — this pass can
+        # take minutes per golden, so without it the UI just says "running" for the
+        # whole suite with no sense of what's actually happening.
+        _log.info("Golden run starting %d/%d: %s", index, total, scenario)
         variables = _golden_to_variables(cfg, golden)
         predict_fn(variables)
+        _log.info("Golden run finished %d/%d: %s", index, total, scenario)
         scorer_inputs = _run_cache[_cache_key(variables)]["scorer_inputs"]
         rows.append(
             {
@@ -413,13 +422,21 @@ def test_agent_matches_golden_decisions(evaluation_rows: list[dict], predict_fn)
 
 
 @mlflow.test
-def test_agent_passes_deterministic_checks(evaluation_rows: list[dict], predict_fn) -> None:
-    """Assert every golden's *actual* agent run passes the full deterministic
-    scorer bundle (see ``fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS``):
-    states a definitive APPROVE/REJECT decision, called exactly the tools its
-    applicant profile requires (and none it shouldn't), made no failed tool
-    calls, called tools in the expected order, and — since content capture is
-    enabled — passed each tool the arguments the BPMN wires up for it.
+@pytest.mark.parametrize("scorer", ALL_DETERMINISTIC_SCORERS, ids=lambda s: s.name)
+def test_agent_passes_deterministic_check(evaluation_rows: list[dict], predict_fn, scorer) -> None:
+    """Assert every golden's *actual* agent run passes one deterministic scorer
+    from ``fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS`` (e.g. that
+    exactly the tools the applicant's profile requires were called, no tool call
+    failed, tools ran in the expected order, or — since content capture is
+    enabled — each tool got the arguments the BPMN wires up for it).
+
+    Parametrized one test per scorer (rather than asserting the whole bundle in
+    one test) so each check's pass/fail is reported as its own line item — see
+    ``ui_api.regression_runner.list_tests``, which reads each scorer's own
+    docstring for this parametrized test's description instead of this shared
+    one. Each scorer still gets its own ``evaluate()`` call here, same as every
+    other gating test in this file — deterministic scorers make no LLM calls, so
+    this costs nothing beyond what the earlier bundled version did.
 
     These are the same deterministic scorers ``eval-service-worker`` and
     ``eval-trace-listener`` run, know nothing about tracing, and grade the
@@ -430,17 +447,9 @@ def test_agent_passes_deterministic_checks(evaluation_rows: list[dict], predict_
     on whether the decision is well-reasoned. ``@mlflow.test`` tags this as a
     regression test run and records its pass/fail status.
     """
-    _log.info(
-        "Scoring %d golden(s) with the full deterministic scorer bundle...",
-        len(evaluation_rows),
-    )
-    result = mlflow.genai.evaluate(
-        data=evaluation_rows, predict_fn=predict_fn, scorers=ALL_DETERMINISTIC_SCORERS
-    )
-
-    table = result.tables["eval_results"]
-    for scorer in ALL_DETERMINISTIC_SCORERS:
-        _assert_deterministic_scorer_passed(table, scorer.name)
+    _log.info("Scoring %d golden(s) with %s...", len(evaluation_rows), scorer.name)
+    result = mlflow.genai.evaluate(data=evaluation_rows, predict_fn=predict_fn, scorers=[scorer])
+    _assert_deterministic_scorer_passed(result.tables["eval_results"], scorer.name)
 
 
 @mlflow.test

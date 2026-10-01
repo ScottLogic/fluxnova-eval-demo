@@ -21,9 +21,24 @@
 }
 
 .status-badge.status-warn,
-.status-badge.status-active {
+.status-badge.status-active,
+.status-badge.status-running {
   color: var(--copper);
   border-color: rgba(196, 107, 58, 0.45);
+}
+
+.status-badge.status-running {
+  animation: status-badge-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes status-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .status-badge.status-fail,

@@ -75,6 +75,12 @@ function Goldens({goldens, errors}: GoldenProps) {
                     </div>
                 )}
             </div>
+            <div className="golden-blurb">
+                <p>
+                    A golden dataset is a curated set of inputs paired with "known-good" expected outputs, used to test an AI agent the same way on every change.
+                    The best golden datasets are grown from real production cases, especially the ones that went wrong so that we can ensure we don't introduce regressions in functionality.
+                </p>
+            </div>
 
             {errors && <p className="hint danger">{errors}</p>}
             {!errors && goldens.length === 0 && <p className="hint">Loading goldens…</p>}

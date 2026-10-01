@@ -198,16 +198,17 @@ service's README for exactly how it sources the scorer inputs.
 
 | Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
 |-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
-| `required_tools_called`                               | Code      | DETERMINISTIC | Every tool the scenario requires was called                                       | W · L     |
+| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones (graded 0.0-1.0)         | W · L     |
 | `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | W · L     |
 | `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
-| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | W · L     |
-| `all_tool_calls_completed`                            | Code      | DETERMINISTIC | Every initiated tool call reached a completed status                              | W · L     |
+| `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output literally mentions credit/fraud/affordability evidence                     | W · L     |
 | `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | W · L     |
 | `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | W · L     |
 | `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | W · L     |
 | `step_efficiency`                                     | Code      | DETERMINISTIC | Agent completes within a budget of loop iterations (+1 if collateral)             | W · L     |
 | `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | W · L     |
+| `risk_checks_precede_affordability`                   | Code      | DETERMINISTIC | Credit score/fraud screening run before affordability is assessed                 | W · L     |
+| `no_duplicate_tool_calls`                             | Code      | DETERMINISTIC | No tool is called more than once in a single run                                  | W · L     |
 | `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | —         |
 | `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | —         |
 | `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | —         |

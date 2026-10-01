@@ -7,7 +7,7 @@ interface TestListProps {
 
 function shortTestName(nodeId: string): string {
   const index = nodeId.indexOf('::')
-  return index === -1 ? nodeId : nodeId.slice(index + 2).replaceAll("_", " ");
+  return index === -1 ? nodeId : nodeId.slice(index + 2).replaceAll('_', ' ')
 }
 
 function formatDuration(seconds: number | null): string {
@@ -27,24 +27,38 @@ function TestList({ tests, runResult }: TestListProps) {
   )
 
   return (
-    <ul className="test-list">
-      {tests.map(({ name, description }) => {
-        const result = outcomeByNodeId.get(name)
-        return (
-          <li key={name} className="test-list-item" title={description || undefined}>
-            <span className="test-list-name">{shortTestName(name)}</span>
-            <span className="test-list-meta">
-              {result && (
-                <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>
-              )}
-              {result && (
-                <span className="test-list-duration">{formatDuration(result.durationSeconds)}</span>
-              )}
-            </span>
-          </li>
-        )
-      })}
-    </ul>
+    <table className="test-table">
+      <thead>
+        <tr>
+          <th>Test</th>
+          <th>Status</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tests.map(({ name, description }) => {
+          const result = outcomeByNodeId.get(name)
+          return (
+            <tr key={name} className="test-table-row">
+              <td>
+                <span className="test-table-name">{shortTestName(name)}</span>
+                {description && <p className="test-table-description">{description}</p>}
+              </td>
+              <td>
+                {result?.outcome === 'running' ? (
+                  <span className="spinner" aria-hidden="true" />
+                ) : result ? (
+                  <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>
+                ) : (
+                  '—'
+                )}
+              </td>
+              <td className="test-table-duration">{result ? formatDuration(result.durationSeconds) : '—'}</td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 

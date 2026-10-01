@@ -1,9 +1,9 @@
-"""Which evals are configured to run, for the listener and the service worker.
+"""The complete set of scorers used anywhere in this project, and where.
 
-Reads the actual scorer objects each service runs — not a hand-maintained
-duplicate list — so this endpoint can never drift out of sync with what really
-executes. Both are pure in-memory objects to construct (no network calls, no
-BPMN/Fluxnova access), so this is safe to call on every page load.
+Reads the actual scorer objects each consumer runs — not a hand-maintained
+duplicate list — so this can never drift out of sync with what really
+executes. All of these are pure in-memory objects to construct (no network
+calls, no BPMN/Fluxnova access), so this is safe to call on every page load.
 """
 
 from __future__ import annotations
@@ -25,19 +25,56 @@ def _describe(scorer: Any) -> dict[str, str]:
     return {"name": scorer.name, "description": description or ""}
 
 
-def listener_scorers() -> list[dict[str, str]]:
-    """Scorers `eval-trace-listener` runs per (sampled) trace — see its scoring.py."""
+def all_scorers() -> list[dict[str, Any]]:
+    """Every scorer this project defines, with where each one runs.
+
+    - **deterministic** — a plain code check (no LLM call), as opposed to an
+      LLM-judge scorer (``decision_quality``, ``evidence_citation``,
+      ``matches_golden``).
+    - **usedInAutoEval** — runs in `eval-trace-listener`'s always-on poll loop
+      (see its ``LISTENER_SCORERS``).
+    - **usedInEvalServiceWorker** — runs synchronously in the BPMN's eval
+      service task (see `eval-service-worker`'s ``scoring.py``:
+      ``decision_quality`` plus the plain ``DETERMINISTIC_SCORERS`` — neither
+      ``evidence_citation``/``matches_golden`` nor the tool-argument scorers,
+      which need data the worker's trace-only inputs don't carry).
+    - **usedInRegression** — `regression/test_mlflow_regression.py` is the one
+      place that exercises every scorer that exists (its own dedicated tests
+      for ``decision_quality``/``matches_golden``/``evidence_citation``, plus
+      one parametrized test per entry in ``ALL_DETERMINISTIC_SCORERS``), so
+      this is always ``True`` here — kept as an explicit field (rather than a
+      hardcoded ``True`` in the response) so a future reader sees *why*, and
+      so this stays correct if that ever changes.
+    """
     from eval_trace_listener.scoring import LISTENER_SCORERS
+    from fluxnova_mlflow_dataset.scorers import (
+        ALL_DETERMINISTIC_SCORERS,
+        DETERMINISTIC_SCORERS,
+        decision_quality,
+        evidence_citation,
+        matches_golden,
+    )
 
-    return [_describe(scorer) for scorer in LISTENER_SCORERS]
+    # The full scorer universe — every scorer defined anywhere in the project.
+    universe = [decision_quality, evidence_citation, matches_golden, *ALL_DETERMINISTIC_SCORERS]
 
+    deterministic_names = {scorer.name for scorer in ALL_DETERMINISTIC_SCORERS}
+    auto_eval_names = {scorer.name for scorer in LISTENER_SCORERS}
+    # eval-service-worker builds its own decision_quality_judge(...) instance rather
+    # than importing the shared `decision_quality` object, but it's the same scorer
+    # by name (see eval_service_worker/scoring.py) — checking the name avoids
+    # constructing a real judge model client just to compare identities.
+    eval_service_worker_names = {scorer.name for scorer in DETERMINISTIC_SCORERS} | {
+        decision_quality.name
+    }
 
-def service_worker_scorers() -> list[dict[str, str]]:
-    """Scorers `eval-service-worker` runs synchronously per BPMN task — see its
-    config.py (DEFAULT_JUDGE_MODEL) and scoring.py."""
-    from eval_service_worker.config import EvalServiceConfig
-    from fluxnova_mlflow_dataset.scorers import DETERMINISTIC_SCORERS, decision_quality_judge
-
-    judge_model = EvalServiceConfig().judge_model
-    scorers = [decision_quality_judge(judge_model), *DETERMINISTIC_SCORERS]
-    return [_describe(scorer) for scorer in scorers]
+    return [
+        {
+            **_describe(scorer),
+            "deterministic": scorer.name in deterministic_names,
+            "usedInAutoEval": scorer.name in auto_eval_names,
+            "usedInEvalServiceWorker": scorer.name in eval_service_worker_names,
+            "usedInRegression": True,
+        }
+        for scorer in universe
+    ]

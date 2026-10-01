@@ -50,12 +50,18 @@ export interface RegressionTestResult {
   durationSeconds: number | null
 }
 
+export interface RegressionGoldenProgress {
+  name: string
+  status: 'running' | 'done'
+}
+
 export interface RegressionRunResult {
   runId: string
   status: 'running' | 'passed' | 'failed' | 'error'
   exitCode?: number
   summary?: Record<string, number>
   tests?: RegressionTestResult[]
+  goldens?: RegressionGoldenProgress[]
   output?: string
 }
 
@@ -77,13 +83,28 @@ export function fetchRegressionRun(runId: string): Promise<RegressionRunResult> 
 
 export type WorkflowVariables = Record<string, string | number | boolean>
 
+export interface AgentConfig {
+  provider: string
+  model: string
+  systemPrompt: string
+}
+
 export interface WorkflowConfig {
   processKey: string
   variables: WorkflowVariables
+  agentConfig: AgentConfig | null
 }
 
 export interface WorkflowRunStarted {
   instanceId: string
+}
+
+export interface WorkflowStage {
+  activityId: string
+  name: string
+  startTime: string | null
+  endTime: string | null
+  children?: WorkflowStage[]
 }
 
 export interface WorkflowRunStatus {
@@ -91,6 +112,7 @@ export interface WorkflowRunStatus {
   status: 'active' | 'completed' | 'terminated' | 'error'
   state?: string
   variables?: WorkflowVariables
+  stages?: WorkflowStage[]
 }
 
 export function fetchWorkflowConfig(): Promise<WorkflowConfig> {
@@ -120,11 +142,14 @@ export function updateAutoEvalConfig(enabled: boolean): Promise<AutoEvalConfig> 
 export interface EvalScorer {
   name: string
   description: string
+  deterministic: boolean
+  usedInAutoEval: boolean
+  usedInEvalServiceWorker: boolean
+  usedInRegression: boolean
 }
 
 export interface EvalDefinitions {
-  listener: EvalScorer[]
-  serviceWorker: EvalScorer[]
+  scorers: EvalScorer[]
 }
 
 export function fetchEvalDefinitions(): Promise<EvalDefinitions> {

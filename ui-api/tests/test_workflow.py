@@ -43,8 +43,12 @@ class _FakeClient:
     def get_variables(self, instance_id: str) -> dict:
         return {"recommendedDecision": "APPROVE"}
 
+    def get_activity_instances(self, instance_id: str) -> list:
+        return self.activities_by_instance.get(instance_id, [])
+
 
 _FakeClient.active_instance = None
+_FakeClient.activities_by_instance = {}
 
 
 @pytest.fixture
@@ -56,6 +60,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(workflow_runner, "start_workers", lambda *a, **k: [])
     monkeypatch.setattr(workflow_runner, "_mock_workers_started", False)
     monkeypatch.setattr(_FakeClient, "active_instance", None)
+    monkeypatch.setattr(_FakeClient, "activities_by_instance", {})
     return TestClient(create_app())
 
 
@@ -65,6 +70,54 @@ def test_get_config_returns_defaults(client: TestClient) -> None:
     assert response.json() == {
         "processKey": "someProcess",
         "variables": {"applicantName": "Jane Smith", "requestedAmount": 50000},
+        "agentConfig": None,
+    }
+
+
+def test_get_config_returns_agent_config_when_subprocess_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bpmn_path = tmp_path / "agent.bpmn"
+    bpmn_path.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:agent="http://fluxnova.finos.org/schema/1.0/ai/agent"
+             id="Definitions_1">
+  <process id="someProcess">
+    <adHocSubProcess id="Agent_1">
+      <extensionElements>
+        <agent:config provider="openai" model="gpt-4o" systemPrompt="Be a good agent." />
+      </extensionElements>
+    </adHocSubProcess>
+  </process>
+</definitions>
+"""
+    )
+    config_path = tmp_path / "workflow.yml"
+    config_path.write_text(
+        f"""
+fluxnova_url: http://fluxnova.invalid/engine-rest
+bpmn_path: {bpmn_path.as_posix()}
+process_key: someProcess
+subprocess_id: Agent_1
+deployment_name: Some Deployment
+variables:
+  applicantName: Jane Smith
+"""
+    )
+    monkeypatch.setattr(workflow_runner, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(workflow_runner, "Client", _FakeClient)
+    monkeypatch.setattr(workflow_runner, "start_workers", lambda *a, **k: [])
+    monkeypatch.setattr(workflow_runner, "_mock_workers_started", False)
+    monkeypatch.setattr(_FakeClient, "active_instance", None)
+    test_client = TestClient(create_app())
+
+    response = test_client.get("/api/workflow/config")
+    assert response.status_code == 200
+    assert response.json()["agentConfig"] == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "systemPrompt": "Be a good agent.",
     }
 
 
@@ -97,6 +150,7 @@ def test_get_run_reports_completed_status(client: TestClient) -> None:
         "status": "completed",
         "state": "COMPLETED",
         "variables": {"recommendedDecision": "APPROVE"},
+        "stages": [],
     }
 
 
@@ -111,4 +165,107 @@ def test_get_run_reports_active_status_with_variables(
         "instanceId": "instance-1",
         "status": "active",
         "variables": {"recommendedDecision": "APPROVE"},
+        "stages": [],
     }
+
+
+def test_get_run_filters_out_gateways_and_orders_by_start_time(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_FakeClient, "active_instance", {"id": "instance-1"})
+    monkeypatch.setattr(
+        _FakeClient,
+        "activities_by_instance",
+        {
+            "instance-1": [
+                {
+                    "activityId": "ServiceTask_FraudDetection",
+                    "activityName": "AI: Fraud Detection",
+                    "activityType": "serviceTask",
+                    "startTime": "2026-01-01T00:00:02.000Z",
+                    "endTime": "2026-01-01T00:00:03.000Z",
+                },
+                {
+                    "activityId": "Gateway_1",
+                    "activityName": "Automated Validation",
+                    "activityType": "exclusiveGateway",
+                    "startTime": "2026-01-01T00:00:01.500Z",
+                    "endTime": "2026-01-01T00:00:01.500Z",
+                },
+                {
+                    "activityId": "StartEvent_1",
+                    "activityName": "Loan Application Submitted",
+                    "activityType": "startEvent",
+                    "startTime": "2026-01-01T00:00:00.000Z",
+                    "endTime": "2026-01-01T00:00:00.100Z",
+                },
+            ]
+        },
+    )
+    client.post("/api/workflow/runs")
+    response = client.get("/api/workflow/runs/instance-1")
+    assert response.status_code == 200
+    assert response.json()["stages"] == [
+        {
+            "activityId": "StartEvent_1",
+            "name": "Loan Application Submitted",
+            "startTime": "2026-01-01T00:00:00.000Z",
+            "endTime": "2026-01-01T00:00:00.100Z",
+        },
+        {
+            "activityId": "ServiceTask_FraudDetection",
+            "name": "AI: Fraud Detection",
+            "startTime": "2026-01-01T00:00:02.000Z",
+            "endTime": "2026-01-01T00:00:03.000Z",
+        },
+    ]
+
+
+def test_get_run_nests_call_activity_children(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_FakeClient, "active_instance", {"id": "instance-1"})
+    monkeypatch.setattr(
+        _FakeClient,
+        "activities_by_instance",
+        {
+            "instance-1": [
+                {
+                    "activityId": "AgentTask_CreditRisk",
+                    "activityName": "AI Credit Risk Agent",
+                    "activityType": "callActivity",
+                    "startTime": "2026-01-01T00:00:00.000Z",
+                    "endTime": None,
+                    "calledProcessInstanceId": "child-1",
+                },
+            ],
+            "child-1": [
+                {
+                    "activityId": "ServiceTask_CreditScoreCheck",
+                    "activityName": "Check Credit Score",
+                    "activityType": "serviceTask",
+                    "startTime": "2026-01-01T00:00:01.000Z",
+                    "endTime": "2026-01-01T00:00:02.000Z",
+                },
+            ],
+        },
+    )
+    client.post("/api/workflow/runs")
+    response = client.get("/api/workflow/runs/instance-1")
+    assert response.status_code == 200
+    assert response.json()["stages"] == [
+        {
+            "activityId": "AgentTask_CreditRisk",
+            "name": "AI Credit Risk Agent",
+            "startTime": "2026-01-01T00:00:00.000Z",
+            "endTime": None,
+            "children": [
+                {
+                    "activityId": "ServiceTask_CreditScoreCheck",
+                    "name": "Check Credit Score",
+                    "startTime": "2026-01-01T00:00:01.000Z",
+                    "endTime": "2026-01-01T00:00:02.000Z",
+                },
+            ],
+        },
+    ]

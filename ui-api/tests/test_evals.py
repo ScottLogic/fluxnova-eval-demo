@@ -77,21 +77,44 @@ def test_get_auto_eval_returns_502_when_listener_unreachable(
     assert response.status_code == 502
 
 
-def test_get_definitions_returns_real_scorer_names(client: TestClient) -> None:
+def test_get_definitions_returns_complete_scorer_matrix(client: TestClient) -> None:
     response = client.get("/api/evals/definitions")
     assert response.status_code == 200
-    body = response.json()
+    scorers = {scorer["name"]: scorer for scorer in response.json()["scorers"]}
 
-    listener_names = {scorer["name"] for scorer in body["listener"]}
-    assert "decision_quality" in listener_names
-    assert "evidence_citation" in listener_names
-    assert "step_efficiency" in listener_names
+    for scorer in scorers.values():
+        assert set(scorer) == {
+            "name",
+            "description",
+            "deterministic",
+            "usedInAutoEval",
+            "usedInEvalServiceWorker",
+            "usedInRegression",
+        }
+        # regression/test_mlflow_regression.py exercises every scorer that exists.
+        assert scorer["usedInRegression"] is True
 
-    worker_names = {scorer["name"] for scorer in body["serviceWorker"]}
-    assert "decision_quality" in worker_names
-    assert "step_efficiency" in worker_names
-    # evidence_citation is listener-only (needs a golden the worker doesn't have).
-    assert "evidence_citation" not in worker_names
+    # LLM judges: non-deterministic, and each used in a different subset of places.
+    assert scorers["decision_quality"]["deterministic"] is False
+    assert scorers["decision_quality"]["usedInAutoEval"] is True
+    assert scorers["decision_quality"]["usedInEvalServiceWorker"] is True
 
-    for scorer in body["listener"] + body["serviceWorker"]:
-        assert set(scorer) == {"name", "description"}
+    assert scorers["evidence_citation"]["deterministic"] is False
+    assert scorers["evidence_citation"]["usedInAutoEval"] is True
+    # evidence_citation needs data (agent_goal) the worker's trace-only inputs don't
+    # carry, so it never runs there — see eval_definitions.all_scorers's docstring.
+    assert scorers["evidence_citation"]["usedInEvalServiceWorker"] is False
+
+    assert scorers["matches_golden"]["deterministic"] is False
+    assert scorers["matches_golden"]["usedInAutoEval"] is False
+    assert scorers["matches_golden"]["usedInEvalServiceWorker"] is False
+
+    # A deterministic check used everywhere.
+    assert scorers["step_efficiency"]["deterministic"] is True
+    assert scorers["step_efficiency"]["usedInAutoEval"] is True
+    assert scorers["step_efficiency"]["usedInEvalServiceWorker"] is True
+
+    # Tool-argument scorers are deterministic but regression-only.
+    assert scorers["tool_argument_correctness"]["deterministic"] is True
+    assert scorers["tool_argument_correctness"]["usedInAutoEval"] is False
+    assert scorers["tool_argument_correctness"]["usedInEvalServiceWorker"] is False

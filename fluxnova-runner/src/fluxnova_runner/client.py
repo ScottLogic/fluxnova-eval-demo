@@ -225,6 +225,27 @@ class Client:
         self._raise_for_status(response, "get historic process instance")
         return response.json()
 
+    def get_activity_instances(self, instance_id: str) -> list[dict[str, Any]]:
+        """Return every historic activity instance (running or finished) for one
+        process instance, in Camunda's raw shape.
+
+        Unlike :meth:`wait_for_activity_completion` (which filters to one named,
+        already-finished activity), this returns everything, including
+        currently-running elements (``endTime`` is ``None``) — so a caller can
+        show live progress through the process. A ``callActivity`` row carries
+        its own ``calledProcessInstanceId`` once the called process instance has
+        started, letting a caller recurse into that instance's own activity
+        history for its inner steps (e.g. the agent's individual tool calls,
+        which run in a separate process instance spawned by a Call Activity —
+        see ``ui_api.workflow_runner._stages_for``).
+        """
+        response = self._session.get(
+            f"{self._base}/history/activity-instance",
+            params={"processInstanceId": instance_id},
+        )
+        self._raise_for_status(response, "get activity instances")
+        return response.json()
+
     def get_variables(self, instance_id: str) -> dict[str, Any]:
         """Return the current (or final) variables for an instance.
 

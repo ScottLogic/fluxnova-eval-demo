@@ -318,8 +318,46 @@ you don't hit this on your machine, `http://localhost:5000` works as documented 
 
 MLflow's built-in AI Gateway (`http://localhost:5000/#/gateway`, part of the same `mlflow-local` pod/server — no
 separate service to run) is required for **automatic evaluation** judges (`Scorer.register()` + `Scorer.start()`),
-which — unlike offline/EDD judges — must reference a `gateway:/<endpoint-name>` model URI rather than calling Ollama
-directly. Here's how to reproduce a working local `fluxnova-judge` endpoint backed by a host-run Ollama:
+which — unlike offline/EDD judges — must reference a `gateway:/<endpoint-name>` model URI rather than calling the
+underlying provider directly. `fluxnova_mlflow_dataset.scorers.GATEWAY_JUDGE_MODEL` is hardcoded to
+`"gateway:/fluxnova-judge"`, so the endpoint must be named exactly `fluxnova-judge` regardless of which provider
+backs it.
+
+### OpenAI (default)
+
+`LLM_JUDGE_PROVIDER` defaults to `openai` (see `scorers.py`), matching the OpenAI-by-default judge model
+(`openai/gpt-4o-mini`), so the gateway endpoint should normally be backed by OpenAI too rather than Ollama. Use
+`gpt-4o-mini` here, not `gpt-4o` — the BPMN agent itself runs on `gpt-4o` (see "BPMN agent LLM provider" above), and
+an LLM-as-judge should not grade output from the exact same model it would be judging:
+
+1. Open `http://localhost:5000/#/gateway` and click **Create Endpoint**.
+2. Name it `fluxnova-judge`, select provider **OpenAI**.
+3. Pick model `gpt-4o-mini`.
+4. Create a new connection for it:
+   - **API key**: the same `OPENAI_API_KEY` from your `.env`.
+   - Leave the base URL at its default (api.openai.com) unless you're routing through a proxy.
+5. Save. There's no in-place "edit" option once an endpoint/connection is created in this MLflow version — to fix a
+   mistake, delete and recreate rather than editing.
+6. Verify with the OpenAI-compatible unified endpoint (works with `curl` or the OpenAI Python SDK):
+   ```python
+   from openai import OpenAI
+
+   client = OpenAI(
+       base_url="http://localhost:5000/gateway/mlflow/v1",
+       api_key="unused",  # MLflow uses the connection's stored OpenAI key server-side, not this one
+   )
+   response = client.chat.completions.create(
+       model="fluxnova-judge",  # the endpoint name, not the underlying OpenAI model name
+       messages=[{"role": "user", "content": "How are you?"}],
+   )
+   print(response.choices[0].message)
+   ```
+   A real completion coming back (rather than a 401/404/500) confirms the endpoint is wired up correctly.
+
+### Ollama (alternative)
+
+Set `LLM_JUDGE_PROVIDER=ollama` to match if you use this. Here's how to reproduce a working local `fluxnova-judge`
+endpoint backed by a host-run Ollama instead:
 
 1. Make sure Ollama itself is listening on all interfaces, not just `127.0.0.1` — the `mlflow-local` container needs
    to reach it from outside the Windows host's own loopback, which is not the default. Set `OLLAMA_HOST` and
@@ -512,8 +550,8 @@ Frontend UI: `http://localhost:${FRONTEND_PORT}` (default `8081`). ui-api has no
 
 `eval-service-worker` (see `eval-service-worker/` and `EVAL-SERVICE-WORKER-PLAN.md` at the repo root) is a standalone
 BPMN external-task worker that scores a just-completed agentic subprocess run against the `decision_quality` MLflow
-judge plus a set of trace-only deterministic scorers (`required_tools_called`, `no_tool_errors`,
-`definitive_decision_stated`), reading data purely from MLflow's trace store (no BPMN parsing, no Fluxnova REST
+judge plus a set of trace-only deterministic scorers (`tool_correctness`, `no_tool_errors`,
+`definitive_decision_stated`, and others), reading data purely from MLflow's trace store (no BPMN parsing, no Fluxnova REST
 history calls). All scorers' `Feedback` are logged back onto the trace as MLflow assessments grouped under one
 Evaluation Run, plus a lightweight MLflow evaluation-dataset record; the task then completes with
 `evalPassed`/`evalRationale` output variables — `evalPassed` is driven solely by `decision_quality` (the deterministic

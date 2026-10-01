@@ -62,10 +62,22 @@
   cursor: default;
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
   color: inherit;
   font: inherit;
   min-width: 0;
+}
+
+.brand-logos {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.brand-logo-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(232, 237, 244, 0.18);
 }
 
 .brand-title {
@@ -89,6 +101,14 @@
   object-fit: contain;
   flex-shrink: 0;
 }
+
+/* Scott Logic's mark is a busier, multi-color shape than FINOS's flat icon —
+   at the same height it reads as visually louder/more dominant, so it's sized
+   down slightly to carry roughly equal visual weight instead. */
+.brand-logo--secondary {
+  height: 2.45rem;
+}
+
 
 .topbar-nav {
   display: flex;
