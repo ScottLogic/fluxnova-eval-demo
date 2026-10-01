@@ -26,6 +26,8 @@
 .test-table-name {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88rem;
+  color: var(--copper);
+  font-weight: 600;
 }
 
 .test-table-description {

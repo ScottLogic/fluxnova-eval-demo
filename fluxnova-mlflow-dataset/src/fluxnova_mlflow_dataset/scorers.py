@@ -128,6 +128,15 @@ def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL
         model=model,
         messages=[{"role": "user", "content": prompt}],
         format="json",
+        # Without an explicit timeout, a single hung request (observed in
+        # practice: a trace-listener run stuck "RUNNING" in MLflow for 26+
+        # minutes with no further log output, no CPU activity, and no error —
+        # network/auth to the provider both verified fine in isolation) blocks
+        # this scorer, and therefore the whole evaluate() call, forever. 60s is
+        # generous for a short JSON-scoring prompt; num_retries bounds the
+        # total worst case to a few minutes instead of indefinite.
+        timeout=60,
+        num_retries=2,
     )
     content = response["choices"][0]["message"]["content"]
     try:
