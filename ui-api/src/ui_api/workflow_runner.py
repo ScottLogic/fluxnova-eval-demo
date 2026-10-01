@@ -164,14 +164,63 @@ def start_run(variable_overrides: dict[str, Any] | None = None) -> str:
     return client.start_process(cfg.process_key, variables)
 
 
+# Activity types worth showing as their own "stage" row — everything else
+# (gateways, sequence flows) is just BPMN routing logic, not a step a user
+# watching a run would consider a distinct stage. Matched case-insensitively by
+# substring since Camunda's own casing varies (`serviceTask`, `noneEndEvent`,
+# `startEvent`, `adHocSubProcess`, ...); `callActivity` doesn't contain any of
+# these substrings so it's checked for explicitly.
+_STAGE_ACTIVITY_TYPE_MARKERS = ("task", "subprocess", "startevent", "endevent")
+
+
+def _is_stage_activity(activity_type: str | None) -> bool:
+    if not activity_type:
+        return False
+    lowered = activity_type.lower()
+    return lowered == "callactivity" or any(marker in lowered for marker in _STAGE_ACTIVITY_TYPE_MARKERS)
+
+
+def _stages_for(client: Client, instance_id: str) -> list[dict[str, Any]]:
+    """Build the ordered, filtered stage list for one process instance.
+
+    Recurses into a Call Activity's own called process instance (via that
+    activity's `calledProcessInstanceId`, present once it's started) so its
+    inner steps nest under that row — e.g. the agent's individual tool calls,
+    which actually run inside a *separate* process instance
+    (`loanAssessmentProcess`) spawned by the outer process's
+    `AgentTask_CreditRisk` Call Activity, not the outer instance itself
+    (confirmed against a real run: `/history/activity-instance` on the outer
+    instance only ever shows the Call Activity as one row; the tool-call-level
+    detail lives on the called instance's own history).
+    """
+    stages = []
+    for activity in client.get_activity_instances(instance_id):
+        if not _is_stage_activity(activity.get("activityType")):
+            continue
+        stage: dict[str, Any] = {
+            "activityId": activity["activityId"],
+            "name": activity.get("activityName") or activity["activityId"],
+            "startTime": activity.get("startTime"),
+            "endTime": activity.get("endTime"),
+        }
+        called_instance_id = activity.get("calledProcessInstanceId")
+        if called_instance_id:
+            stage["children"] = _stages_for(client, called_instance_id)
+        stages.append(stage)
+    stages.sort(key=lambda stage: stage["startTime"] or "")
+    return stages
+
+
 def get_run(instance_id: str) -> dict[str, Any]:
-    """Returns the current status and variables of a run.
+    """Returns the current status, variables, and stage progress of a run.
 
     Variables are included even while `status` is "active" — e.g. once the
     ad-hoc agent subprocess finishes but the outer process is still waiting on
     the (possibly skipped) eval step or a later human review task — using the
     historic variable-instance query, which reflects current values regardless
-    of whether the instance has ended.
+    of whether the instance has ended. `stages` is included in every status —
+    even once the run has finished, so the stage list stays visible as a
+    record of what happened rather than disappearing.
     """
     cfg = _load_config()
     client = _client(cfg)
@@ -181,6 +230,7 @@ def get_run(instance_id: str) -> dict[str, Any]:
             "instanceId": instance_id,
             "status": "active",
             "variables": client.get_variables(instance_id),
+            "stages": _stages_for(client, instance_id),
         }
 
     history = client.get_history(instance_id)
@@ -191,4 +241,5 @@ def get_run(instance_id: str) -> dict[str, Any]:
         "status": status,
         "state": state,
         "variables": client.get_variables(instance_id),
+        "stages": _stages_for(client, instance_id),
     }

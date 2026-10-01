@@ -99,11 +99,20 @@ export interface WorkflowRunStarted {
   instanceId: string
 }
 
+export interface WorkflowStage {
+  activityId: string
+  name: string
+  startTime: string | null
+  endTime: string | null
+  children?: WorkflowStage[]
+}
+
 export interface WorkflowRunStatus {
   instanceId: string
   status: 'active' | 'completed' | 'terminated' | 'error'
   state?: string
   variables?: WorkflowVariables
+  stages?: WorkflowStage[]
 }
 
 export function fetchWorkflowConfig(): Promise<WorkflowConfig> {

@@ -338,6 +338,26 @@ class TestClientWaitForCompletion:
             client.wait_for_completion("abc-123", poll_interval=0, timeout=0.01)
 
 
+class TestClientGetActivityInstances:
+    def _client(self) -> Client:
+        return Client(base_url="http://localhost:8080/engine-rest")
+
+    def test_returns_raw_activity_list_including_unfinished(self):
+        client = self._client()
+        mock_response = MagicMock(ok=True)
+        mock_response.json.return_value = [
+            {"activityId": "AgentTask_CreditRisk", "activityType": "callActivity", "endTime": None},
+            {"activityId": "Gateway_1", "activityType": "exclusiveGateway", "endTime": "..."},
+        ]
+        with patch.object(client._session, "get", return_value=mock_response) as mock_get:
+            result = client.get_activity_instances("abc-123")
+        assert result == mock_response.json.return_value
+        mock_get.assert_called_once_with(
+            "http://localhost:8080/engine-rest/history/activity-instance",
+            params={"processInstanceId": "abc-123"},
+        )
+
+
 class TestClientWaitForActivityCompletion:
     def _client(self) -> Client:
         return Client(base_url="http://localhost:8080/engine-rest")

@@ -18,8 +18,13 @@ DECISION_QUALITY_NAME = "decision_quality"
 
 DECISION_QUALITY_GUIDELINES = [
     "The final output must reach a definitive APPROVE or REJECT lending recommendation. "
-    "Vague conclusions or deferred decisions such as 'next steps required' do not satisfy "
-    "this guideline.",
+    "Ordinary phrasing of a definitive decision — e.g. 'I recommend APPROVE', "
+    "'Recommendation: REJECT', or 'My decision is to APPROVE' — fully satisfies this "
+    "guideline; the word 'recommend' here is just how the decision is phrased, not a sign "
+    "of hedging. Only mark this guideline as failed for conclusions that are actually "
+    "vague or deferred, such as 'further review required', 'additional information "
+    "needed', or 'next steps required' — i.e. cases with no clear APPROVE/REJECT outcome "
+    "at all.",
     "The final output must state its recommendation backed by evidence: it must cite "
     "specific data points gathered during the assessment, such as credit score, fraud "
     "risk, affordability result, or employment status.",
