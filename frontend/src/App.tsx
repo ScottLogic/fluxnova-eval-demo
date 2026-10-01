@@ -14,7 +14,11 @@ function App() {
         <div className="mesh" aria-hidden="true" />
         <header className="topbar">
           <button type="button" className="brand" onClick={() => setActiveTab('landing')}>
-            <img className="brand-logo" src="/logos/finos.png" alt="FINOS" />
+            <div className="brand-logos">
+              <img className="brand-logo" src="/logos/finos.png" alt="FINOS" />
+              <span className="brand-logo-divider" aria-hidden="true" />
+              <img className="brand-logo brand-logo--secondary" src="/logos/scott-logic.svg" alt="Scott Logic" />
+            </div>
             <span className="brand-title">Fluxnova Eval Demo</span>
           </button>
           <nav className="topbar-nav" aria-label="Primary">
