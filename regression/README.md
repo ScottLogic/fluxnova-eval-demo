@@ -7,54 +7,50 @@ judges/scorers).
 
 ## What it does
 
-`test_mlflow_regression.py` follows MLflow's canonical
-[`predict_fn` regression-testing pattern](https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/): for
-every golden scenario in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json), a
-`predict_fn` fixture drives the live loan-assessment agent end-to-end via `fluxnova-runner`, and
-`mlflow.genai.evaluate()` scores the agent's *actual* output. Four gating tests:
+`test_mlflow_regression.py` has **one test per golden**: `test_agent_passes_golden` is parametrized over every scenario
+in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json), with the golden's
+`additional_metadata.scenario` as its test id (e.g. `test_agent_passes_golden[employed-high-fraud-reject]`). Each test:
 
-- `test_agent_reaches_evidence_backed_decision` — the output satisfies the shared `decision_quality` guideline judge (a
-  definitive APPROVE/REJECT backed by cited evidence).
-- `test_agent_matches_golden_decisions` — the output matches the golden's `expected_output` via the shared
-  `matches_golden` judge (thresholded at `GOLDEN_MATCH_THRESHOLD`).
-- `test_agent_passes_deterministic_checks` — the output/run passes every scorer in
-  `fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS`: states an APPROVE/REJECT keyword, called exactly the
+1. drives the live loan-assessment agent end-to-end once via `fluxnova-runner`;
+2. scores that one actual output with **every** gating scorer in a single `mlflow.genai.evaluate()` call;
+3. asserts every applicable scorer passed, listing *all* failing scorers (value + rationale) in the failure message.
+
+The gating scorers:
+
+- `decision_quality` — guideline judge: a definitive APPROVE/REJECT backed by cited evidence.
+- `matches_golden` — judge: matches the golden's `expected_output` (thresholded at `GOLDEN_MATCH_THRESHOLD`).
+- `evidence_citation` — judge: grounds its reasoning in the applicant/tool evidence (a graded 0.0–1.0 score,
+  thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`).
+- `fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS` — states an APPROVE/REJECT keyword, called exactly the
   tools its applicant profile requires (and none it shouldn't), made no failed tool calls, called tools in the
-  expected order, and passed each tool the arguments the BPMN wires up for it.
-- `test_agent_cites_gathered_evidence` — the output grounds its reasoning in the applicant/tool evidence, via the
-  shared `evidence_citation` judge (a graded 0.0–1.0 score, thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`).
+  expected order, and passed each tool the arguments the BPMN wires up for it. Graded scores must be a full 1.0.
 
-Each gating test is its own `mlflow.genai.evaluate(predict_fn=predict_fn, scorers=[...])` call, so `@mlflow.test`
-records an independent pass/fail per gate.
+A judge that produces no verdict, or any scorer that errors, fails the golden. A deterministic scorer returning `None`
+("not applicable" to this golden's profile, e.g. `no_collateral_check_when_no_collateral` when there is collateral) is
+reported as `n/a` and never fails it.
 
-### One real run per golden, replayed across every gate
+Running the agent once per golden and scoring that one output with every scorer guarantees they all judge the *same*
+real (non-deterministic) output, with no cross-test caching. It also means a single scenario can be rerun cheaply with
+`pytest -k <scenario>`, and a golden whose agent run times out fails only its own test.
 
-`predict_fn` is cached (keyed by the golden's process variables): the first call for a scenario actually drives the
-live agent, and every later call — including from the other three gating tests' own `evaluate()` calls — replays that
-same cached result rather than re-running the agent. This is a deliberate departure from calling `predict_fn` fresh
-each time: the agent is a live, non-deterministic GPT-4o call, and without caching, `decision_quality`,
-`matches_golden`, `test_agent_passes_deterministic_checks`, and `evidence_citation` could each be judging a *different*
-actual output for the same golden — a scenario could pass one gate and fail another purely from LLM
-variance between calls, unrelated to either scorer. Caching guarantees every gate judges the same real output, keeping
-scenario-level flakiness attributable to the agent rather than smeared across unrelated tests. The `evaluation_rows`
-fixture forces this one real run per golden up front (calling `predict_fn` directly, before any `evaluate()` call), so
-every row's `inputs` already carries that run's full scorer data.
+Every scorer's result (`name`, `status` of `passed`/`failed`/`n/a`, `value`, `rationale`) is also written into the
+pytest-json-report's per-test `metadata.scorers` via the `json_metadata` fixture, which `ui-api` surfaces so the UI
+can show the per-scorer breakdown for each golden.
 
 ### Scorers and how the data is retrieved
 
 The regression suite is the only consumer that runs the **LLM judges that need a reference answer or input
 variables**, because it has the golden dataset on hand.
 
-| Scorer                            | Type      | Gating test                                   |
-|-----------------------------------|-----------|-----------------------------------------------|
-| `decision_quality`                | LLM judge | `test_agent_reaches_evidence_backed_decision` |
-| `matches_golden`                  | LLM judge | `test_agent_matches_golden_decisions`         |
-| `ALL_DETERMINISTIC_SCORERS` (~14) | Code      | `test_agent_passes_deterministic_checks`      |
-| `evidence_citation`               | LLM judge | `test_agent_cites_gathered_evidence`          |
+| Scorer                            | Type      | Pass rule                                            |
+|-----------------------------------|-----------|------------------------------------------------------|
+| `decision_quality`                | LLM judge | verdict `yes`                                        |
+| `matches_golden`                  | LLM judge | verdict `yes`                                        |
+| `evidence_citation`               | LLM judge | score ≥ `REGRESSION_EVIDENCE_CITATION_THRESHOLD`     |
+| `ALL_DETERMINISTIC_SCORERS` (~14) | Code      | `true` / score 1.0 (`None` = not applicable)         |
 
-**How the scorer inputs are sourced — with no MLflow trace read.** `predict_fn` makes no `mlflow.*` call: a nested
-`mlflow.search_traces` inside a `predict_fn` corrupts MLflow's active-trace context and breaks assessment logging. So
-every value the deterministic scorers need is read straight off the Fluxnova engine's REST API instead of a trace:
+**How the scorer inputs are sourced — with no MLflow trace read.** Every value the scorers need is read straight off
+the Fluxnova engine's REST API rather than the run's MLflow trace, and passed to `evaluate()` as a static row:
 
 - `outputs` — the agent's *actual* final answer, read from the run's `_agentConversationHistory` process variable
   (`fluxnova_runner.agent_output`).
@@ -75,8 +71,8 @@ From the repo root, with the shared `.venv` active (see the root [README](../REA
 
 ```bash
 pytest regression -v
-# or a single test:
-pytest regression/test_mlflow_regression.py -v
+# or a single golden:
+pytest regression/test_mlflow_regression.py -v -k employed-high-fraud-reject
 ```
 
 **Prerequisites:** the full live stack must be up (Fluxnova engine, Postgres, OTel Collector, MLflow — see

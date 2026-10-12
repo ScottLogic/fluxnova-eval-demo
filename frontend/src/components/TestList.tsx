@@ -1,4 +1,5 @@
 import type { RegressionRunResult, RegressionTest, RegressionTestResult } from '../api'
+import ScorerResults from './ScorerResults'
 
 interface TestListProps {
   tests: RegressionTest[] | null
@@ -6,6 +7,11 @@ interface TestListProps {
 }
 
 function shortTestName(nodeId: string): string {
+  // Parametrized tests (one per golden) are named by their parameter id, i.e. the golden's scenario.
+  const param = nodeId.match(/\[(.+)\]$/)
+  if (param) {
+    return param[1]
+  }
   const index = nodeId.indexOf('::')
   return index === -1 ? nodeId : nodeId.slice(index + 2).replaceAll('_', ' ')
 }
@@ -30,7 +36,7 @@ function TestList({ tests, runResult }: TestListProps) {
     <table className="test-table">
       <thead>
         <tr>
-          <th>Test</th>
+          <th>Golden</th>
           <th>Status</th>
           <th>Duration</th>
         </tr>
@@ -43,6 +49,7 @@ function TestList({ tests, runResult }: TestListProps) {
               <td>
                 <span className="test-table-name">{shortTestName(name)}</span>
                 {description && <p className="test-table-description">{description}</p>}
+                {result?.scorers && <ScorerResults scorers={result.scorers} />}
               </td>
               <td>
                 {result?.outcome === 'running' ? (

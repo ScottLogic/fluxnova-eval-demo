@@ -2,7 +2,6 @@ import {useEffect} from 'react'
 import {useRegressionStore} from '../store/regressionStore'
 import TestList from '../components/TestList'
 import Goldens from '../components/Goldens'
-import GoldenRunProgress from '../components/GoldenRunProgress'
 
 // Default MLflow port from local-dev/.env's MLFLOW_PORT.
 const MLFLOW_URL = 'http://localhost:5000'
@@ -25,17 +24,6 @@ function RegressionPage() {
     }, [loadTests, loadGoldens])
 
     const running = starting || runResult?.status === 'running'
-    // Driven off the golden progress list itself, not `runResult.tests`: pytest
-    // prints a test's nodeid line (marking it "running" in TestList) the moment
-    // that test *starts*, before its fixture has driven any golden through the
-    // live agent — so gating on tests being empty hid this section almost
-    // immediately, well before the goldens were actually done.
-    const goldenProgress = runResult?.goldens ?? []
-    const goldensComplete =
-        goldens.length > 0 &&
-        goldenProgress.length >= goldens.length &&
-        goldenProgress.every((entry) => entry.status === 'done')
-    const showGoldenProgress = runResult?.status === 'running' && goldens.length > 0 && !goldensComplete
 
     const TextContent = () =>
         (
@@ -50,18 +38,13 @@ function RegressionPage() {
                     use cases then keep them as part of our baseline in future.
                 </p>
                 <h3>What the tests do</h3>
-                <p>For every golden scenario, a function drives the live agent end-to-end and uses MLFLow to evaluate
-                    the agent's actual output.</p>
+                <p>There is one test per golden scenario. Each test drives the live agent end-to-end once, then uses
+                    MLflow to evaluate the agent's actual output with every scorer in a single evaluation.</p>
                 <p>
-                    The test generate one "real" run per golden which is replayed across every gate.
-                    The output of the agent run is cached, the first call for a scenario actually drives the live agent,
-                    and every later call replays that
-                    same cached result rather than re-running the agent. This is a deliberate departure from calling the
-                    agent fresh each time.
-                    The agent is a live, non-deterministic call, and without caching, each non deterministic test would
-                    be judging a different actual output for the same golden.
-                    Caching guarantees every gate judges the same real output and reduces the overall cost of running
-                    the tests.
+                    The agent is a live, non-deterministic call, so running it once per golden and scoring that one
+                    output with every scorer guarantees they all judge the same real output.
+                    A golden passes only if every applicable scorer passes; expand a finished test to see each
+                    scorer's result and rationale.
                 </p>
                 <h3>How the output is collected</h3>
                 <p>
@@ -95,10 +78,6 @@ function RegressionPage() {
 
             {testsError && <p className="hint danger">{testsError}</p>}
             {!tests && !testsError && <p className="hint">Loading tests…</p>}
-
-            {showGoldenProgress && (
-                <GoldenRunProgress goldens={goldens} progress={goldenProgress}/>
-            )}
 
             <TestList tests={tests} runResult={runResult}/>
 

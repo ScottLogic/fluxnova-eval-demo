@@ -44,15 +44,19 @@ export interface RegressionRunStarted {
   runId: string
 }
 
+export interface RegressionScorerResult {
+  name: string
+  status: 'passed' | 'failed' | 'n/a'
+  value: boolean | number | string | null
+  rationale: string | null
+}
+
 export interface RegressionTestResult {
   nodeId: string
   outcome: string
   durationSeconds: number | null
-}
-
-export interface RegressionGoldenProgress {
-  name: string
-  status: 'running' | 'done'
+  // Only present once the run has finished, and only for tests that got as far as scoring.
+  scorers?: RegressionScorerResult[] | null
 }
 
 export interface RegressionRunResult {
@@ -61,7 +65,6 @@ export interface RegressionRunResult {
   exitCode?: number
   summary?: Record<string, number>
   tests?: RegressionTestResult[]
-  goldens?: RegressionGoldenProgress[]
   output?: string
 }
 

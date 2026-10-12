@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fluxnova_mlflow_dataset.scorers import (
     affordability_called_after_income_confirmed,
     cites_key_evidence_terms,
@@ -154,6 +155,20 @@ class TestDefinitiveDecisionStated:
 
     def test_handles_non_string_output(self):
         assert _value(definitive_decision_stated(outputs={"decision": "REJECT"})) is True
+
+    @pytest.mark.parametrize(
+        "output",
+        ["I recommend REJECTING the loan application.", "The loan is approved.", "Rejected."],
+    )
+    def test_pass_on_verb_inflections(self, output):
+        assert _value(definitive_decision_stated(outputs=output)) is True
+
+    @pytest.mark.parametrize(
+        "output",
+        ["Pending the loan approval process.", "Rejection risk is unclear; further review needed."],
+    )
+    def test_fail_on_noun_forms_alone(self, output):
+        assert _value(definitive_decision_stated(outputs=output)) is False
 
 
 class TestProfileForbiddenTools:

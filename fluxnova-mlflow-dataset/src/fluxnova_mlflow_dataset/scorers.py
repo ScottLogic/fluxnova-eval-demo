@@ -254,7 +254,9 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 # ---------------------------------------------------------------------------
 
 _ALWAYS_REQUIRED_TOOLS = ("Check Credit Score", "Run Fraud Screening", "Assess Affordability")
-_DECISION_KEYWORD_RE = re.compile(r"\b(APPROVE|REJECT)\b", re.IGNORECASE)
+# Verb forms only ("I recommend REJECTING..." is a decision), not the nouns
+# "approval"/"rejection", which also appear in neutral text like "loan approval process".
+_DECISION_KEYWORD_RE = re.compile(r"\b(APPROV(?:E|ED|ING)|REJECT(?:ED|ING)?)\b", re.IGNORECASE)
 _EVIDENCE_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
     "credit": re.compile(r"credit", re.IGNORECASE),
     "fraud": re.compile(r"fraud", re.IGNORECASE),
@@ -326,7 +328,8 @@ def no_tool_errors(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signatur
 @scorer
 def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
     """
-    Does the final output literally contain an APPROVE or REJECT keyword?
+    Does the final output literally contain an APPROVE or REJECT keyword (or its
+    -ED/-ING form, e.g. "I recommend REJECTING")?
     A hard syntactic check, complementing (not replacing)
     the decision_quality LLM judge's opinion on whether it's well-reasoned.
     """

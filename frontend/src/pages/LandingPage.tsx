@@ -1,4 +1,5 @@
 import FinosProjectsPanel from '../components/FinosProjectsPanel'
+import RepoQrCard from '../components/RepoQrCard'
 import TabContents from '../components/TabContents'
 
 function OverviewText() {
@@ -82,7 +83,8 @@ function LandingPage() {
                 <OverviewText/>
             </section>
 
-            <div className="goldens-panel">
+            <div className="goldens-panel landing-side">
+                <RepoQrCard/>
                 <FinosProjectsPanel/>
             </div>
         </>
