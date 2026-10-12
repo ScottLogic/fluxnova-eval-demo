@@ -82,34 +82,24 @@ def _docstrings_by_qualified_name(source_path: Path) -> dict[str, str]:
     return docstrings
 
 
-_DETERMINISTIC_CHECK_RE = re.compile(r"^test_agent_passes_deterministic_check\[(.+)\]$")
+_GOLDEN_TEST_RE = re.compile(r"^test_agent_passes_golden\[(.+)\]$")
 
 
-def _clean_docstring(doc: str | None) -> str:
-    if not doc:
-        return ""
-    return " ".join(line.strip() for line in doc.strip().splitlines()).strip()
+def _golden_description(scenario: str) -> str:
+    """The ``input`` prompt of the golden whose scenario name is ``scenario``.
 
-
-def _deterministic_scorer_docstring(scorer_name: str) -> str:
-    """Looks up one deterministic scorer's own docstring by name.
-
-    `test_agent_passes_deterministic_check` is parametrized once per scorer (see
-    `regression/test_mlflow_regression.py`) so each reports pass/fail as its own
-    line item, but they all share that one test function's docstring — this
-    returns the *scorer's* own docstring instead, so each parametrized entry
-    gets a description specific to what it actually checks (mirrors
-    `ui_api.eval_definitions._describe`'s same fallback for the eval services).
+    `test_agent_passes_golden` is parametrized once per golden (see
+    `regression/test_mlflow_regression.py`), but they all share that one test
+    function's docstring — this returns the *golden's* own prompt instead, so
+    each parametrized entry describes the scenario it actually runs.
     """
-    from fluxnova_mlflow_dataset.scorers import ALL_DETERMINISTIC_SCORERS
-
-    for scorer in ALL_DETERMINISTIC_SCORERS:
-        if scorer.name == scorer_name:
-            description = getattr(scorer, "description", None)
-            if description:
-                return description
-            original_func = getattr(scorer, "_original_func", None)
-            return _clean_docstring(getattr(original_func, "__doc__", None) if original_func else None)
+    try:
+        goldens = list_goldens()
+    except (OSError, ValueError):
+        return ""
+    for golden in goldens:
+        if (golden.get("additional_metadata") or {}).get("scenario") == scenario:
+            return golden.get("input", "")
     return ""
 
 
@@ -120,8 +110,8 @@ def list_tests() -> list[dict[str, str]]:
     structured/stable form the UI already used for run node ids elsewhere);
     ``description`` is that test's own docstring, read directly from the file's
     AST (see `_docstrings_by_qualified_name`) — except for the parametrized
-    `test_agent_passes_deterministic_check[<scorer>]` entries, which use that
-    scorer's own docstring instead (see `_deterministic_scorer_docstring`).
+    `test_agent_passes_golden[<scenario>]` entries, which use that golden's own
+    prompt instead (see `_golden_description`).
     """
     result = subprocess.run(
         [_python(), "-m", "pytest", "--collect-only", "-q", REGRESSION_TEST_FILE.name],
@@ -137,9 +127,9 @@ def list_tests() -> list[dict[str, str]]:
     tests = []
     for node_id in node_ids:
         qualified_name = node_id[len(prefix) :].replace("::", ".")
-        deterministic_match = _DETERMINISTIC_CHECK_RE.match(qualified_name)
-        if deterministic_match:
-            description = _deterministic_scorer_docstring(deterministic_match.group(1))
+        golden_match = _GOLDEN_TEST_RE.match(qualified_name)
+        if golden_match:
+            description = _golden_description(golden_match.group(1))
         else:
             description = docstrings.get(qualified_name, "")
         tests.append({"name": node_id, "description": description})
@@ -193,37 +183,6 @@ def start_run() -> str:
 _INLINE_RESULT_RE = re.compile(r"^(?P<nodeid>\S+\.py::\S+)\s+(?P<outcome>PASSED|FAILED|ERROR|SKIPPED)\b")
 _NODEID_ONLY_RE = re.compile(r"^(?P<nodeid>\S+\.py::\S+)\s*$")
 _OUTCOME_ONLY_RE = re.compile(r"^(?P<outcome>PASSED|FAILED|ERROR|SKIPPED)\b")
-
-# Matches the structured progress markers `evaluation_rows` logs (see
-# regression/test_mlflow_regression.py) for the upfront pass that drives each
-# golden through the live agent once, before any pytest test line appears.
-_GOLDEN_START_RE = re.compile(r"Golden run starting (?P<index>\d+)/(?P<total>\d+): (?P<name>.+)$")
-_GOLDEN_DONE_RE = re.compile(r"Golden run finished (?P<index>\d+)/(?P<total>\d+): (?P<name>.+)$")
-
-
-def _parse_golden_progress(output_text: str) -> list[dict[str, Any]]:
-    """Best-effort per-golden progress for the live-agent pass, parsed from the
-    same in-progress console output `_parse_partial_results` reads.
-
-    Returns one ``{name, status}`` entry per golden that's started, in the order
-    it started, with ``status`` "running" until its matching finish line shows up.
-    """
-    progress: dict[str, str] = {}
-    order: list[str] = []
-    for raw_line in output_text.splitlines():
-        line = raw_line.rstrip()
-        start_match = _GOLDEN_START_RE.search(line)
-        if start_match:
-            name = start_match.group("name")
-            if name not in progress:
-                order.append(name)
-            progress[name] = "running"
-            continue
-        done_match = _GOLDEN_DONE_RE.search(line)
-        if done_match:
-            progress[done_match.group("name")] = "done"
-
-    return [{"name": name, "status": progress[name]} for name in order]
 
 
 def _parse_partial_results(output_text: str, prefix: str) -> list[dict[str, Any]]:
@@ -290,7 +249,6 @@ def get_run(run_id: str) -> dict[str, Any] | None:
             "runId": run_id,
             "status": "running",
             "tests": _parse_partial_results(output, prefix),
-            "goldens": _parse_golden_progress(output),
         }
 
     if run.report_path.exists():
@@ -300,6 +258,9 @@ def get_run(run_id: str) -> dict[str, Any] | None:
                 "nodeId": test["nodeid"],
                 "outcome": test["outcome"],
                 "durationSeconds": test.get("call", {}).get("duration"),
+                # Per-scorer results the suite records via pytest-json-report's
+                # `json_metadata` fixture — absent if the test failed before scoring.
+                "scorers": test.get("metadata", {}).get("scorers"),
             }
             for test in report.get("tests", [])
         ]

@@ -44,55 +44,46 @@
   white-space: nowrap;
 }
 
-.golden-progress {
-  display: grid;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+.scorer-results {
+  margin-top: 0.5rem;
 }
 
-.golden-progress-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.15rem;
-}
-
-.golden-progress-item {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 0.2rem;
-  border-top: 1px solid rgba(232, 237, 244, 0.1);
-}
-
-.golden-progress-item:first-child {
-  border-top: 0;
-}
-
-.golden-progress-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
-  flex: 1;
-}
-
-.golden-progress-state {
+.scorer-results summary {
+  cursor: pointer;
   color: var(--paper-dim);
+  font-size: 0.82rem;
+}
+
+.scorer-results-failed {
+  color: #e07a7a;
+}
+
+.scorer-results-table {
+  width: 100%;
+  margin-top: 0.4rem;
+  border-collapse: collapse;
   font-size: 0.8rem;
 }
 
-.golden-progress-icon {
-  display: inline-flex;
-  width: 0.9rem;
-  justify-content: center;
+.scorer-results-table td {
+  padding: 0.3rem 0.5rem 0.3rem 0;
+  border-top: 1px solid rgba(232, 237, 244, 0.08);
+  vertical-align: top;
 }
 
-.golden-progress-done {
-  color: #6db892;
+.scorer-results-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
 }
 
-.golden-progress-pending {
+.scorer-results-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scorer-results-rationale {
   color: var(--paper-dim);
+  line-height: 1.4;
 }
 
 .spinner {

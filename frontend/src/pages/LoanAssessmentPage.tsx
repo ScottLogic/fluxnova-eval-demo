@@ -11,14 +11,10 @@ const DIAGRAMS = [
                 <p>
                     A multi-agent loan approval workflow that automates document intake, fraud detection, credit risk
                     assessment, decisioning, pricing, human review, agreement generation, e-signature, and disbursement.
-                </p>
-                <p>
                     Automates and optimizes evaluating, approving, pricing, documenting, and disbursing loans. A loan
                     approval orchestrator coordinates specialist agents for document intelligence, fraud detection,
                     compliance review, credit risk assessment, dynamic pricing, and document generation, with
                     deterministic policy gates and human review checkpoints.
-                </p>
-                <p>
                     This is the BPMN for the overall loans assessment process. It contains the AI Credit Risk Agent as a Call Activity
                     which calls out to a separate bpmn (loan Assessment)
                 </p>

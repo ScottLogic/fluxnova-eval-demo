@@ -39,10 +39,9 @@ def all_scorers() -> list[dict[str, Any]]:
       ``evidence_citation``/``matches_golden`` nor the tool-argument scorers,
       which need data the worker's trace-only inputs don't carry).
     - **usedInRegression** — `regression/test_mlflow_regression.py` is the one
-      place that exercises every scorer that exists (its own dedicated tests
-      for ``decision_quality``/``matches_golden``/``evidence_citation``, plus
-      one parametrized test per entry in ``ALL_DETERMINISTIC_SCORERS``), so
-      this is always ``True`` here — kept as an explicit field (rather than a
+      place that exercises every scorer that exists (each per-golden test runs
+      ``decision_quality``/``matches_golden``/``evidence_citation`` plus every
+      entry in ``ALL_DETERMINISTIC_SCORERS``), so this is always ``True`` here — kept as an explicit field (rather than a
       hardcoded ``True`` in the response) so a future reader sees *why*, and
       so this stays correct if that ever changes.
     """

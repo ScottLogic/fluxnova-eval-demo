@@ -75,3 +75,31 @@
   font-size: 0.84rem;
   line-height: 1.4;
 }
+
+.landing-side {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.repo-qr-card {
+  justify-items: center;
+  text-align: center;
+}
+
+.repo-qr-card .sample-preview-label {
+  justify-self: start;
+}
+
+.repo-qr-link {
+  display: block;
+  line-height: 0;
+  padding: 0.6rem;
+  background: #fff;
+  border-radius: 0.6rem;
+}
+
+.repo-qr-image {
+  width: 220px;
+  height: 220px;
+}

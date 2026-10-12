@@ -79,7 +79,7 @@ const NODES: Node[] = [
         id: 'regression',
         position: {x: -350, y: 500},
         data: {
-            label: 'regression suite',
+            label: 'Regression Suite',
             description: 'Uses MLFlow to run the regression tests against the golden data sets. Drives the live agent through the Runner for every golden and scores the result.'
         },
         ...nodeDefaults,
@@ -88,7 +88,7 @@ const NODES: Node[] = [
         id: 'grafana',
         position: {x: 400, y: 100},
         data: {
-            label: 'Grafana (Metrics)',
+            label: 'Grafana',
             description: 'Grafana and Prometheus instances for viewing the metrics out of the OTel Collector'
         },
         ...nodeDefaults,
@@ -97,7 +97,7 @@ const NODES: Node[] = [
         id: 'listener',
         position: {x: 850, y: 0},
         data: {
-            label: 'eval-trace-listener',
+            label: 'Eval Trace Listener',
             description: 'Listens to the MLflow trace store and runs evals against newly completed traces. Is configurable with a sample rate to run against every nth trace.'
         },
         ...nodeDefaults,
@@ -106,7 +106,7 @@ const NODES: Node[] = [
         id: 'worker',
         position: {x: -100, y: 400},
         data: {
-            label: 'eval-service-worker',
+            label: 'Eval Service Worker',
             description: 'Subscribes to a Fluxnova external-task topic and scores runs against MLflow in real time (See Loan Assessment BPMN).'
         },
         ...nodeDefaults,
@@ -142,7 +142,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'top',
         target: 'postgres',
         targetHandle: 'left',
-        label: 'datasource', ...edgeDefaults
+        label: 'Datasource', ...edgeDefaults
     },
     {
         id: 'e-postgres-mlflow',
@@ -150,7 +150,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'mlflow',
         targetHandle: 'ttop',
-        label: 'tracking store', ...edgeDefaults
+        label: 'Tracking Store', ...edgeDefaults
     },
     {
         id: 'e-fluxnova-otel',
@@ -158,7 +158,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'top',
         target: 'fluxnova',
         targetHandle: 'bottom',
-        label: 'OTLP export', ...edgeDefaults
+        label: 'OTLP Export', ...edgeDefaults
     },
     {
         id: 'e-otel-mlflow',
@@ -166,7 +166,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'mlflow',
         targetHandle: 'left',
-        label: 'forwards traces', ...edgeDefaults
+        label: 'Forwards Traces', ...edgeDefaults
     },
     {
         id: 'e-otel-grafana',
@@ -174,7 +174,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'grafana',
         targetHandle: 'left',
-        label: 'forwards traces', ...edgeDefaults
+        label: 'Forwards Traces', ...edgeDefaults
     },
     {
         id: 'e-regression-mlflow',
@@ -182,7 +182,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'mlflow',
         targetHandle: 'bottom',
-        label: 'evaluates', ...edgeDefaults
+        label: 'Evaluates', ...edgeDefaults
     },
     {
         id: 'e-listener-mlflow',
@@ -190,7 +190,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'listener',
         targetHandle: 'bottom',
-        label: 'tails traces', ...edgeDefaults
+        label: 'Tails Traces', ...edgeDefaults
     },
     {
         id: 'e-worker-fluxnova',
@@ -198,7 +198,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'top',
         target: 'fluxnova',
         targetHandle: 'bottom',
-        label: 'Handles task', ...edgeDefaults
+        label: 'Handles Task', ...edgeDefaults
     },
     {
         id: 'e-worker-mlflow',
@@ -206,7 +206,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'mlflow',
         targetHandle: 'left',
-        label: 'writes scores', ...edgeDefaults
+        label: 'Writes Scores', ...edgeDefaults
     },
 ]
 

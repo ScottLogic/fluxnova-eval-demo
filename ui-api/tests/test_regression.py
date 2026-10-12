@@ -1,16 +1,16 @@
+import json
 import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from fluxnova_mlflow_dataset import scorers as scorers_module
 
 from ui_api import regression_runner
 from ui_api.app import create_app
 
 _DUMMY_SUITE = '''
-def test_pass():
-    assert True
+def test_pass(json_metadata):
+    json_metadata["scorers"] = [{"name": "some_check", "status": "passed", "value": True, "rationale": "OK"}]
 
 
 def test_fail():
@@ -79,57 +79,58 @@ def test_parse_partial_results_ignores_unrelated_lines() -> None:
     ]
 
 
-class _FakeScorer:
-    def __init__(self, name: str, doc: str) -> None:
-        self.name = name
-        self.description = None
-
-        def _original(*args: object, **kwargs: object) -> None:
-            pass
-
-        _original.__doc__ = doc
-        self._original_func = _original
+def _write_goldens(path: Path, *goldens: dict) -> None:
+    path.write_text(json.dumps(list(goldens)), encoding="utf-8")
 
 
-def test_deterministic_scorer_docstring_reads_original_func_doc(
-    monkeypatch: pytest.MonkeyPatch,
+def test_golden_description_reads_matching_golden_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = _FakeScorer("some_check", "  Checks that something holds.\n  Multi-line.  ")
-    monkeypatch.setattr(scorers_module, "ALL_DETERMINISTIC_SCORERS", [fake])
-    description = regression_runner._deterministic_scorer_docstring("some_check")
-    assert description == "Checks that something holds. Multi-line."
+    goldens_path = tmp_path / "goldens.json"
+    _write_goldens(
+        goldens_path,
+        {"input": "First prompt.", "additional_metadata": {"scenario": "first"}},
+        {"input": "Second prompt.", "additional_metadata": {"scenario": "second"}},
+    )
+    monkeypatch.setattr(regression_runner, "GOLDENS_PATH", goldens_path)
+    assert regression_runner._golden_description("second") == "Second prompt."
+    assert regression_runner._golden_description("nonexistent") == ""
 
 
-def test_deterministic_scorer_docstring_unknown_scorer_returns_empty(
-    monkeypatch: pytest.MonkeyPatch,
+def test_golden_description_missing_goldens_file_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(scorers_module, "ALL_DETERMINISTIC_SCORERS", [])
-    assert regression_runner._deterministic_scorer_docstring("nonexistent") == ""
+    monkeypatch.setattr(regression_runner, "GOLDENS_PATH", tmp_path / "missing.json")
+    assert regression_runner._golden_description("anything") == ""
 
 
-def test_list_tests_uses_scorer_docstring_for_parametrized_deterministic_checks(
+def test_list_tests_uses_golden_input_for_parametrized_golden_tests(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     suite = tmp_path / "test_dummy_suite.py"
     suite.write_text(
         "import pytest\n"
         "\n"
-        '@pytest.mark.parametrize("scorer_name", ["some_check"])\n'
-        "def test_agent_passes_deterministic_check(scorer_name):\n"
-        '    """Shared generic docstring, should be overridden per scorer."""\n'
+        '@pytest.mark.parametrize("scenario", ["some-scenario"])\n'
+        "def test_agent_passes_golden(scenario):\n"
+        '    """Shared generic docstring, should be overridden per golden."""\n'
         "    assert True\n",
         encoding="utf-8",
     )
+    goldens_path = tmp_path / "goldens.json"
+    _write_goldens(
+        goldens_path,
+        {"input": "The scenario-specific prompt.", "additional_metadata": {"scenario": "some-scenario"}},
+    )
     monkeypatch.setattr(regression_runner, "REGRESSION_DIR", tmp_path)
     monkeypatch.setattr(regression_runner, "REGRESSION_TEST_FILE", suite)
-    fake = _FakeScorer("some_check", "The real, scorer-specific description.")
-    monkeypatch.setattr(scorers_module, "ALL_DETERMINISTIC_SCORERS", [fake])
+    monkeypatch.setattr(regression_runner, "GOLDENS_PATH", goldens_path)
 
     tests = regression_runner.list_tests()
     assert tests == [
         {
-            "name": "test_dummy_suite.py::test_agent_passes_deterministic_check[some_check]",
-            "description": "The real, scorer-specific description.",
+            "name": "test_dummy_suite.py::test_agent_passes_golden[some-scenario]",
+            "description": "The scenario-specific prompt.",
         }
     ]
 
@@ -153,4 +154,11 @@ def test_start_and_poll_run(client: TestClient) -> None:
     assert outcomes == {
         "test_dummy_suite.py::test_pass": "passed",
         "test_dummy_suite.py::test_fail": "failed",
+    }
+    scorers = {test["nodeId"]: test["scorers"] for test in result["tests"]}
+    assert scorers == {
+        "test_dummy_suite.py::test_pass": [
+            {"name": "some_check", "status": "passed", "value": True, "rationale": "OK"}
+        ],
+        "test_dummy_suite.py::test_fail": None,
     }
