@@ -7,6 +7,7 @@ drifts between call sites:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from typing import Any
@@ -125,6 +126,26 @@ _EXPECTED_TOOL_INPUTS: dict[str, list[str]] = {
 }
 
 
+def _parse_judge_json(content: str) -> tuple[float, str]:
+    if not isinstance(content, str):
+        raise ValueError("Judge content must be JSON text")
+    content = content.strip()
+    fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL | re.IGNORECASE)
+    if fence:
+        content = fence.group(1)
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise ValueError("Judge response must be an object")
+    score, rationale = parsed.get("score"), parsed.get("rationale")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        raise ValueError("Judge score must be numeric")
+    if not math.isfinite(score) or not 0 <= score <= 1:
+        raise ValueError("Judge score must be finite and in [0, 1]")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise ValueError("Judge rationale must be non-empty text")
+    return float(score), rationale
+
+
 def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL) -> Feedback:
     """Ask an LLM (OpenAI by default, Ollama as a local fallback — see
     ``LLM_JUDGE_PROVIDER``) to judge ``context`` against ``criteria``.
@@ -143,17 +164,16 @@ def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL
         "Respond with ONLY a JSON object of the form "
         '{"score": <0.0-1.0>, "rationale": "<one or two sentences>"}.'
     )
+    json_mode = {"format": "json"} if model.startswith("ollama/") else {"response_format": {"type": "json_object"}}
     response = litellm.completion(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        format="json",
+        **json_mode,
     )
     content = response["choices"][0]["message"]["content"]
     try:
-        parsed = json.loads(content)
-        score = float(parsed["score"])
-        rationale = str(parsed.get("rationale", ""))
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        score, rationale = _parse_judge_json(content)
+    except (TypeError, ValueError):
         score, rationale = 0.0, f"Could not parse judge response: {content!r}"
     return Feedback(value=score, rationale=rationale)
 

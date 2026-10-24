@@ -180,6 +180,9 @@ The expected raw verdict mean for this balanced calibration set is `0.5`; succes
 is **zero expectation mismatches**, not an all-positive verdict mean. The default
 semantic judge is `gpt-4.1-mini`, selected after `gpt-4o-mini` repeated a false-negative
 on the valid rejection example; golden matching/evidence citation remain separate.
+Auxiliary judges request structured JSON on OpenAI (native JSON mode on Ollama).
+A whole-response JSON code fence is accepted, but malformed payloads, non-finite/
+out-of-range scores and missing rationales still fail; thresholds are unchanged.
 Judge results/rationales, actual model and rubric version are saved in MLflow's
 separate `fluxnova-decision-quality-calibration-v2` experiment and locally under
 `local-dev/.mlflow/calibration/`; `--output` selects a local filename. Missing/error
