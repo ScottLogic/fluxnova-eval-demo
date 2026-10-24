@@ -25,7 +25,8 @@ This is the shared setup, demo and troubleshooting guide. Use the
   adjust for your machine. Local Ollama needs additional host memory for its models.
 - macOS Terminal (zsh is fine: scripts select Bash with their shebang), Windows
   **Git Bash**, or a Linux shell. No GNU Bash upgrade is required on macOS.
-- An OpenAI key for the default agent (`gpt-4o`) and judges (`gpt-4o-mini`).
+- An OpenAI key for the default agent (`gpt-4o`), decision-quality judge
+  (`gpt-4.1-mini`) and auxiliary judges (`gpt-4o-mini`).
   Ollama is an optional alternative, described below.
 - Copy `.env.example` to `.env` in this directory and set `OPENAI_API_KEY`.
   Keep values shell-compatible; quote values containing spaces or shell characters.
@@ -120,7 +121,7 @@ their actual scoring is part of the local validation walkthrough.
 
 For an older checkout/store, follow the [experiment upgrade](#upgrade-experiments-created-with-container-local-artifact-paths)
 before startup. Keep the `.env.example` image versions, `FLUXNOVA_PLATFORM=linux/amd64`,
-`LLM_JUDGE_PROVIDER=openai` and `EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4o-mini` for the
+`LLM_JUDGE_PROVIDER=openai` and `EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4.1-mini` for the
 default demo. Export `.env` as shown above in every host-tool terminal; `set +a`
 stops automatic exporting of new assignments without removing the variables just loaded.
 
@@ -404,10 +405,17 @@ the host artifact directory intact; pod scripts' `--delete-data` clears artifact
 ## BPMN agent LLM provider (OpenAI default, Ollama alternative)
 
 Default demo setup uses OpenAI for both the agent and evaluation services. The
-worker is configured by `.env` to call `openai:/gpt-4o-mini` directly, so no MLflow
+worker is configured by `.env` to call `openai:/gpt-4.1-mini` directly, so no MLflow
 AI Gateway endpoint or local model download is needed. The worker package's
 standalone default remains `gateway:/fluxnova-judge` for existing gateway users;
 the local startup scripts pass the configured model explicitly.
+
+Decision-quality judging defaults to `gpt-4.1-mini` after repeated calibration
+found false negatives with `gpt-4o-mini` on valid evidence-backed responses.
+`DECISION_QUALITY_MODEL` can override the host/listener semantic judge using a full
+MLflow model URI; an explicit `EVAL_SERVICE_JUDGE_MODEL` wins for the worker.
+Recreate/rebuild the evaluation pods after changing these settings. Golden matching
+and evidence-citation scoring use `gpt-4o-mini` independently.
 
 For native Ollama on a Mac:
 

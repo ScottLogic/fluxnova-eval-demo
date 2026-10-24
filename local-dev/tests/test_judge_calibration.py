@@ -7,6 +7,7 @@ from fluxnova_mlflow_dataset.scorers import (
     DECISION_QUALITY_GUIDELINES,
     DECISION_QUALITY_RUBRIC_VERSION,
     decision_quality_judge,
+    decision_quality_model_for,
     final_recommendation_format,
 )
 
@@ -47,6 +48,12 @@ def test_current_rubric_is_wired_to_every_built_judge():
     assert judge.guidelines == DECISION_QUALITY_GUIDELINES
     assert DECISION_QUALITY_RUBRIC_VERSION == "2"
     assert "need not be repeated" in " ".join(judge.guidelines)
+
+
+def test_semantic_judge_defaults_and_explicit_override():
+    assert decision_quality_model_for("openai") == "openai:/gpt-4.1-mini"
+    assert decision_quality_model_for("ollama") == "ollama:/gemma4:e2b"
+    assert decision_quality_model_for("openai", "gateway:/custom") == "gateway:/custom"
 
 
 @pytest.mark.parametrize("output, expected", [

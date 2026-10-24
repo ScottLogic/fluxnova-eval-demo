@@ -73,7 +73,7 @@ def decision_quality_judge(model: str) -> Guidelines:
 # provider toggle (`local-dev/default.yml`'s `spring.ai.model.chat`).
 LLM_JUDGE_PROVIDER = os.environ.get("LLM_JUDGE_PROVIDER", "openai").lower()
 
-# The judge intentionally uses a *different* model than the agent it's
+# Auxiliary judges intentionally use a *different* model than the agent they are
 # grading (the BPMN agent runs `gpt-4o` — see `bpmn/loan-assesment.bpmn` and
 # local-dev/README.md's provider-toggle section) to avoid self-preference
 # bias, while still being fast/cheap enough for many-judge-call regression
@@ -86,10 +86,18 @@ _OLLAMA_JUDGE_MODEL = "ollama/gemma4:e2b"
 # "<provider>/<model>" URI.
 _JUDGE_MODEL = _OPENAI_JUDGE_MODEL if LLM_JUDGE_PROVIDER == "openai" else _OLLAMA_JUDGE_MODEL
 
+# Semantic decision-quality judging uses the separately calibrated model below.
 # MLflow-native judges (e.g. Guidelines) use MLflow's own "<provider>:/<model>"
 # URI scheme, which differs from the litellm-style "<provider>/<model>" used by
 # the bespoke `_llm_judge()` helper above.
-_NATIVE_JUDGE_MODEL = "openai:/gpt-4o-mini" if LLM_JUDGE_PROVIDER == "openai" else "ollama:/gemma4:e2b"
+def decision_quality_model_for(provider: str, override: str | None = None) -> str:
+    """Choose the calibrated semantic judge, independently of the auxiliary judges."""
+    return override or ("openai:/gpt-4.1-mini" if provider == "openai" else "ollama:/gemma4:e2b")
+
+
+_NATIVE_JUDGE_MODEL = decision_quality_model_for(
+    LLM_JUDGE_PROVIDER, os.environ.get("DECISION_QUALITY_MODEL")
+)
 
 # Automatic (online) evaluation -- Scorer.register()/.start() -- requires a
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly

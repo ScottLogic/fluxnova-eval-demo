@@ -132,7 +132,7 @@ def test_worker_host_fallback_can_reach_engine_and_mlflow(run_script):
     run = next(c for c in commands if c[:1] == ["run"])
     assert "EVAL_SERVICE_FLUXNOVA_URL=http://localhost:18080/engine-rest" in run
     assert "EVAL_SERVICE_TRACKING_URI=http://localhost:15000" in run
-    assert "EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4o-mini" in run
+    assert "EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4.1-mini" in run
 
 
 def test_mlflow_mounts_shared_bootstrap_and_runtime(run_script):
@@ -321,3 +321,10 @@ def test_fixture_ignores_exported_developer_settings(run_script, monkeypatch, se
         run = next(command for command in commands if command[0] == "run")
         assert "EVAL_LISTENER_TRACKING_URI=http://mlflow-local:5000" in run
         assert "OLLAMA_API_BASE=http://host.containers.internal:11434" in run
+
+
+def test_explicit_semantic_judge_override_reaches_listener(run_script):
+    result, commands = run_script("eval-listener", extra={"DECISION_QUALITY_MODEL": "openai:/candidate"})
+    assert result.returncode == 0, result.stderr
+    run = next(command for command in commands if command[0] == "run")
+    assert "DECISION_QUALITY_MODEL=openai:/candidate" in run

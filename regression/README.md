@@ -176,6 +176,10 @@ Judge mode uses model calls, but never starts/deploys a workflow. The built-in s
 has four expected `yes` and four deliberately invalid expected `no` responses; an
 all-yes judge fails calibration. Report replay expects `yes` for each recorded
 workflow output. `--model` selects an explicit candidate without changing the agent.
+The expected raw verdict mean for this balanced calibration set is `0.5`; success
+is **zero expectation mismatches**, not an all-positive verdict mean. The default
+semantic judge is `gpt-4.1-mini`, selected after `gpt-4o-mini` repeated a false-negative
+on the valid rejection example; golden matching/evidence citation remain separate.
 Judge results/rationales, actual model and rubric version are saved in MLflow's
 separate `fluxnova-decision-quality-calibration-v2` experiment and locally under
 `local-dev/.mlflow/calibration/`; `--output` selects a local filename. Missing/error
@@ -218,8 +222,9 @@ is always respected.
 | `REGRESSION_ACTIVITY_TIMEOUT`             | `600` (seconds)                                 | `test_mlflow_regression.py`         | Max time to wait for one golden's agentic subprocess run to finish                                                                                                                                      |
 | `REGRESSION_GOLDEN_MATCH_THRESHOLD`       | `0.7`                                           | `fluxnova_mlflow_dataset.scorers`   | Min `matches_golden` judge score (0.0–1.0) counted as a "yes" verdict                                                                                                                                   |
 | `REGRESSION_EVIDENCE_CITATION_THRESHOLD`  | `0.7`                                           | `test_mlflow_regression.py`         | Min `evidence_citation` judge score (0.0–1.0) counted as a pass                                                                                                                                         |
-| `LLM_JUDGE_PROVIDER`                      | `openai` (model `gpt-4o-mini`)                  | `fluxnova_mlflow_dataset.scorers`   | Judge provider for `decision_quality`/`matches_golden`/`evidence_citation`; set to `ollama` (model `gemma4:e2b`) for a fully local fallback                                                             |
-| `OPENAI_API_KEY`                          | none                                            | read by `litellm`/MLflow            | Required while `LLM_JUDGE_PROVIDER=openai` (the default) — same key as the BPMN agent's, but a separate model (`gpt-4o-mini` vs. the agent's `gpt-4o`) so the judge never grades a model judging itself |
+| `LLM_JUDGE_PROVIDER`                      | `openai`                                       | `fluxnova_mlflow_dataset.scorers`   | Provider for semantic/auxiliary judges; Ollama defaults to `gemma4:e2b` |
+| `DECISION_QUALITY_MODEL`                  | `openai:/gpt-4.1-mini` for OpenAI               | `fluxnova_mlflow_dataset.scorers`   | Full URI override for regression/listener semantic judging; worker has its own explicit `EVAL_SERVICE_JUDGE_MODEL` |
+| `OPENAI_API_KEY`                          | none                                            | read by `litellm`/MLflow            | Required for OpenAI; semantic judge is `gpt-4.1-mini`, auxiliary judges `gpt-4o-mini`, agent `gpt-4o` |
 | `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` with `LLM_JUDGE_PROVIDER=ollama`, else `10` | `conftest.py`                       | Judge-call concurrency; capped to 1 only for the single-instance local Ollama judge                                                                                                                     |
 | `MLFLOW_TRACKING_URI`                     | `http://localhost:5001` (`default_server_tracking_uri`) | `conftest.py`                 | HTTP tracking server; avoids direct database/schema and container-local artifact access |
 | `MLFLOW_HOST` / `MLFLOW_PORT`             | `localhost` / `5001`                            | `default_server_tracking_uri`       | Host endpoint used when no explicit tracking URI is exported |

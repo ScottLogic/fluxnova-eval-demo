@@ -31,6 +31,7 @@ if ! start_existing_pod "$POD_NAME" eval-service-worker; then
     -e OPENAI_API_KEY="$OPENAI_API_KEY" \
     -e OLLAMA_API_BASE="$OLLAMA_CONTAINER_URL" \
     -e LLM_JUDGE_PROVIDER="$LLM_JUDGE_PROVIDER" \
+    -e DECISION_QUALITY_MODEL="$DECISION_QUALITY_MODEL" \
     "$IMAGE_NAME"
   finish_pod_creation
 fi

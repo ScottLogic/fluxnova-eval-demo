@@ -228,7 +228,8 @@ Notes:
   it, so `W`/`L` cannot.
 - `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
   context (it isn't on the MLflow trace), so it can run trace-side in `L`.
-- Local demo judges default to OpenAI `gpt-4o-mini`; select Ollama with the shared
+- Local demo judging uses OpenAI `gpt-4.1-mini` for decision quality and `gpt-4o-mini`
+  for golden matching/evidence citation; select Ollama with the shared
   provider configuration. The demo worker calls the configured model directly.
   Gateway-backed automatic sampling remains available as an optional setup.
 
@@ -551,4 +552,4 @@ Examples:
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
 | LLM agent            | OpenAI / gpt-4o (default, runs inside Fluxnova) — see [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative) for using Ollama / gemma4:e2b instead |
 | Evaluation framework | [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/)                                                                         |
-| Judge model          | OpenAI / gpt-4o-mini by default; optional native Ollama / gemma4:e2b; AI Gateway available for automatic sampling |
+| Judge models         | OpenAI / gpt-4.1-mini (decision quality), gpt-4o-mini (golden matching/evidence); optional Ollama / gemma4:e2b and AI Gateway |
