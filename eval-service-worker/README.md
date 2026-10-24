@@ -95,6 +95,11 @@ eval-service-worker --fluxnova-url http://fluxnova-local:8080/engine-rest --trac
 Subscribes to the configured topic against the configured `fluxnova_url`, and blocks until interrupted (Ctrl+C).
 Requires `FLUXNOVA_USERNAME`/`FLUXNOVA_PASSWORD` env vars only if the engine has auth enabled.
 
+Idle fetch long polling is capped at ten seconds, independently of the ten-minute
+task lease used for judging. A stopped worker's existing lease can still remain;
+use the [controlled review-route check](../local-dev/README.md#controlled-human-review-routing)
+for a targeted validation handoff instead of trying to lock an already-owned task.
+
 ## Score a single completed run manually (no BPMN task needed)
 
 Useful for one-off re-scoring, or for testing without waiting on a live BPMN run:

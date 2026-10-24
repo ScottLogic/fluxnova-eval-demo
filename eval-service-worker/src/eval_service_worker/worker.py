@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 # task and leaving it for manual/BPMN-level intervention.
 _MAX_RETRIES = 1
 _RETRY_TIMEOUT_MS = 5_000
+# Idle fetch wait is separate from the task lease needed for slow judging.
+# A ten-minute long poll can acquire a new task long after its client shuts down.
+_ASYNC_RESPONSE_TIMEOUT_MS = 10_000
 
 
 def _now() -> str:
@@ -147,7 +150,7 @@ def run(config: EvalServiceConfig, username: str | None = None, password: str | 
     worker_config: dict[str, Any] = {
         "maxTasks": 1,
         "lockDuration": config.lock_duration_ms,
-        "asyncResponseTimeout": config.lock_duration_ms,
+        "asyncResponseTimeout": _ASYNC_RESPONSE_TIMEOUT_MS,
         "retries": _MAX_RETRIES,
         "retryTimeout": _RETRY_TIMEOUT_MS,
         "sleepSeconds": 2,
