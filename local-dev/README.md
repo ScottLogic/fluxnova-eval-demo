@@ -213,6 +213,26 @@ creating an incident, and inspect the corresponding MLflow assessments.
 The separate mock-worker terminal keeps reporting tools alive after the runner
 returns. Stop it with **Ctrl+C** after checking the process and before regression.
 
+#### Controlled human-review routing
+
+To test the failure gateway, stop the eval worker (`podman stop eval-service-worker`)
+and any host copy, keep the separate mock workers running, and start a new eval
+workflow. Pass the **parent** instance ID printed by the runner to:
+
+```bash
+python -m regression.check_review_route <parent-process-instance-id>
+podman start eval-service-worker
+```
+
+Expected: `UserTask_ReviewFailedEval`. This deliberately sets `evalPassed=false`
+to validate BPMN routing; the frozen judge calibration separately checks invalid
+model outputs. A worker's lock can remain after shutdown, and an outstanding long
+poll may acquire a newly-created task. The helper checks the container is stopped,
+reclaims only the selected parent's known eval/validation-worker lock, and includes
+the server response body on errors. It refuses unrelated tasks/owners and is
+read-only if the process is already at review. Restart the eval worker even if a
+check fails, then stop the standalone mock workers before running regression.
+
 ### 5. Validate regression and persistence
 
 Follow the [regression validation sequence](../regression/README.md#validation-sequence)

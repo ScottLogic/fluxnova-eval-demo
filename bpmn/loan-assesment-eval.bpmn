@@ -14,7 +14,7 @@
     </callActivity>
     <sequenceFlow id="Flow_Start_To_Validate" sourceRef="StartEvent_ApplicationReceived" targetRef="CallActivity_LoanAssessmentAgent" />
     <serviceTask id="ServiceTask_EvaluateAgentOutput" name="Evaluate Agent Output" camunda:type="external" camunda:topic="agent-output-eval">
-      <documentation>Scores the just-completed agent run against the decision_quality MLflow judge (see eval-service-worker/ and EVAL-SERVICE-WORKER-PLAN.md). Reads trace data only — no input variables needed. Sets evalPassed (Boolean) and evalRationale (String) process variables used by the following gateway.</documentation>
+      <documentation>Scores the just-completed agent trace with the decision_quality MLflow judge and shared deterministic checks (see eval-service-worker/README.md). Scorer inputs come from the trace. Sets evalPassed (Boolean) and evalRationale (String) for the evaluation gateway; a failed result routes to Review Failed Evaluation.</documentation>
       <incoming>Flow_0s3blcw</incoming>
       <outgoing>Flow_Eval_ToGateway</outgoing>
     </serviceTask>
