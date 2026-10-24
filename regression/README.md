@@ -206,6 +206,9 @@ round permits a fifth call. Five calls without collateral, or six with collatera
 still fail. The BPMN prompt explicitly requests this batching and keeps every
 required check and the income-before-affordability dependency. Redeploy the BPMN
 (the regression fixture does this) before validating the new instructions.
+The prompt also enumerates required tool argument names and requires exact context
+identifiers and the numeric requested amount. A captured empty `{}` remains a real
+argument failure, even if engine-bound variables let a mock service task complete.
 
 - `pytest.ini` here enables MLflow's pytest plugin (`-p mlflow.pytest.plugin`) and live console logging.
 - `conftest.py` selects the HTTP tracking server and regression experiment before

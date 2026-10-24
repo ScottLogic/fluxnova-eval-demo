@@ -215,6 +215,12 @@ class TestAffordabilityAfterIncome:
 
 
 class TestToolArgumentCorrectness:
+    def test_empty_captured_objects_are_failures_not_missing_capture(self):
+        calls = [{**call, "arguments": {}} for call in _full_employed_calls()]
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
+        assert _value(tool_argument_correctness(inputs=inputs)) == 0.0
+        assert _value(requested_amount_passed_to_affordability(inputs=inputs)) is False
+
     def test_none_when_no_arguments_captured(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=_full_employed_calls())
         assert tool_argument_correctness(inputs=inputs) is None
@@ -233,6 +239,11 @@ class TestToolArgumentCorrectness:
 
 
 class TestCollateralValuationCalledCorrectly:
+    def test_empty_captured_arguments_fail(self):
+        variables = {**_EMPLOYED_NO_COLLATERAL, "hasCollateral": True}
+        inputs = _inputs(variables=variables, tool_calls=[_tool("Value Collateral", arguments={})])
+        assert _value(collateral_valuation_called_correctly_when_required(inputs=inputs)) == 0.0
+
     def test_none_when_no_collateral(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=[])
         assert collateral_valuation_called_correctly_when_required(inputs=inputs) is None
