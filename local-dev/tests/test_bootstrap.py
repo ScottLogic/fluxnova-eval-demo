@@ -19,7 +19,7 @@ spec.loader.exec_module(bootstrap)
 def test_existing_experiment_is_reused(monkeypatch):
     request = Mock(
         return_value={
-            "experiment": {"experiment_id": "42", "lifecycle_stage": "active"}
+            "experiment": {"experiment_id": "42", "lifecycle_stage": "active", "artifact_location": "mlflow-artifacts:/42"}
         }
     )
     monkeypatch.setattr(bootstrap, "request", request)
@@ -76,3 +76,11 @@ def test_invalid_request_fails_without_publishing(monkeypatch, tmp_path):
     with pytest.raises(urllib.error.HTTPError):
         bootstrap.main()
     assert not output.exists()
+
+
+def test_old_container_local_experiment_requires_fresh_name(monkeypatch):
+    monkeypatch.setattr(bootstrap, "request", Mock(return_value={"experiment": {
+        "experiment_id": "2", "artifact_location": "/mlflow-artifacts/2", "lifecycle_stage": "active"
+    }}))
+    with pytest.raises(ValueError, match="fresh name"):
+        bootstrap.ensure_experiment("http://mlflow:5000", "old-demo")

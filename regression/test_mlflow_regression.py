@@ -33,6 +33,7 @@ from fluxnova_mlflow_dataset import (
     experiment_name_for,
     matches_golden,
 )
+from fluxnova_mlflow_dataset.experiments import require_remote_artifacts
 from fluxnova_mlflow_dataset.goldens import load_goldens
 from fluxnova_runner.agent_output import agent_final_output
 from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
@@ -45,7 +46,9 @@ _CONFIG_PATH = _REPO_ROOT / "fluxnova-runner" / "config" / "loan-assesment.yml"
 _GOLDENS_PATH = _REPO_ROOT / "datasets" / "loan-assessment" / "goldens.json"
 
 # Regression runs/assessments are logged under a dedicated experiment so they don't clutter it.
-_REGRESSION_EXPERIMENT = experiment_name_for("loanAssessmentProcess-regression")
+_REGRESSION_EXPERIMENT = os.environ.get(
+    "MLFLOW_EXPERIMENT_NAME", experiment_name_for("loanAssessmentProcess-regression")
+)
 
 # How long to allow one golden's full agentic subprocess run to finish before
 # giving up. Overridable via env.
@@ -140,11 +143,12 @@ def regression_experiment() -> str:
     ``evaluate()``.
     """
     try:
-        mlflow.set_experiment(_REGRESSION_EXPERIMENT)
+        experiment = mlflow.set_experiment(_REGRESSION_EXPERIMENT)
     except Exception as exc:  # noqa: BLE001 - any connect/store failure => skip
         pytest.skip(
             f"MLflow tracking store not reachable at {mlflow.get_tracking_uri()}: {exc}"
         )
+    require_remote_artifacts(experiment)
     return _REGRESSION_EXPERIMENT
 
 

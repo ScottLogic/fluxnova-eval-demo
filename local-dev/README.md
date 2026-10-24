@@ -134,6 +134,30 @@ script creates the `mlflow` and `fluxnova` roles/databases. Credentials in `.env
 are applied on the first startup of an empty volume; later password changes require
 SQL role updates or deliberate data reinitialization.
 MLflow artifacts use the host bind mount `local-dev/.mlflow/artifacts`.
+The server advertises `mlflow-artifacts:/` URIs and proxies uploads/downloads over
+HTTP; `/mlflow-artifacts` is the server's storage destination, never a host client path.
+
+### Upgrade experiments created with container-local artifact paths
+
+Server flags do not rewrite old experiment/run artifact locations. Preserve the old
+experiments and set fresh names in your existing `.env`, for example:
+
+```dotenv
+EVAL_SERVICE_EXPERIMENT_NAME=fluxnova-loanAssessmentEvalProcess-v2
+MLFLOW_EXPERIMENT_NAME=fluxnova-loanAssessmentProcess-regression-v2
+```
+
+Recreate the stack with `pods-down.sh` / `pods-up.sh` (without `--delete-data`), then
+reload `.env` in host terminals. Startup refuses to reuse a container-local trace
+experiment; regression similarly rejects local artifact paths with upgrade guidance.
+Validate the host proxy before running model-driven tests:
+
+```bash
+python local-dev/mlflow/check_artifacts.py
+```
+
+The isolated integration test needs no Podman, credentials or model calls:
+`RUN_MLFLOW_PROXY_TEST=1 python -m pytest local-dev/tests/test_artifact_proxy.py -q`.
 
 ```bash
 ./local-dev/pods-down.sh                  # removes pods, preserves DB/artifacts

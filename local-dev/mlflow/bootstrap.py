@@ -43,6 +43,14 @@ def ensure_experiment(base_url: str, name: str) -> str:
         )
     if experiment.get("lifecycle_stage") == "deleted":
         raise ValueError(f"Experiment {name!r} is deleted; restore it in MLflow first.")
+    location = experiment.get("artifact_location", "")
+    scheme = urllib.parse.urlparse(location).scheme
+    if scheme in ("", "file") or len(scheme) == 1:
+        raise ValueError(
+            f"Experiment {name!r} uses container-local artifact storage {location!r}. "
+            "Set EVAL_SERVICE_EXPERIMENT_NAME to a fresh name (for example with '-v2') "
+            "and recreate the stack. Existing experiments and files are preserved."
+        )
     return str(experiment["experiment_id"])
 
 

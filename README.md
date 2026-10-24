@@ -430,7 +430,7 @@ running)
 and leave it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
-python -m mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 0.0.0.0 --port 5001
+python -m mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --serve-artifacts --artifacts-destination local-dev/.mlflow/artifacts --default-artifact-root mlflow-artifacts:/ --host 0.0.0.0 --port 5001
 ```
 
 This single server also serves the browsable UI at [http://localhost:5001](http://localhost:5001), so once it's running
@@ -450,7 +450,7 @@ for the demo and debug the editable Python services on the host.
    `.venv/Scripts/mlflow.exe` (Windows) / `.venv/bin/mlflow` (macOS/Linux).
 4. **Parameters:**
    ```
-    server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 0.0.0.0 --port 5001
+    server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --serve-artifacts --artifacts-destination local-dev/.mlflow/artifacts --default-artifact-root mlflow-artifacts:/ --host 0.0.0.0 --port 5001
    ```
 5. **Working directory:** `<repo root>`
 6. **Python interpreter:** the repo-root `.venv` interpreter (add it via **Add Interpreter → Existing** if not already

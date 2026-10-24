@@ -6,7 +6,8 @@ rm -f /mlflow-runtime/headers.yaml
 pip install --quiet psycopg2-binary
 mlflow db upgrade "$MLFLOW_BACKEND_STORE_URI"
 mlflow server --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" \
-  --default-artifact-root /mlflow-artifacts \
+  --serve-artifacts --artifacts-destination /mlflow-artifacts \
+  --default-artifact-root mlflow-artifacts:/ \
   --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*' &
 server_pid=$!
 trap 'kill "$server_pid" 2>/dev/null || true' EXIT
