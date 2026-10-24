@@ -87,6 +87,17 @@ instead to judge fully locally (Ollama must then be running with `gemma4:e2b` pu
 
 ## Configuration
 
+Every gate now writes `regression/<gate>.json` to its MLflow run and a local copy
+under `local-dev/.mlflow/reports/<run-id>/` (`REGRESSION_REPORT_DIR` overrides the
+root). Reports contain scenario labels, engine process instance IDs, cached actual
+outputs, expectations, tool calls, total inference counts and scorer verdicts/errors/
+rationales. Failures list every affected scenario/scorer, rather than stopping at
+the first deterministic scorer. Profile-driven not-applicable checks remain skips;
+missing applicable verdicts, missing rows and scorer errors fail the gate.
+
+The four gates still reuse one live agent result per golden. Saved reports can be
+used for judge calibration/replay without another agent execution.
+
 - `pytest.ini` here enables MLflow's pytest plugin (`-p mlflow.pytest.plugin`) and live console logging.
 - `conftest.py` points `MLFLOW_TRACKING_URI` / `MLFLOW_EXPERIMENT_NAME` at the shared store + regression experiment
   before any run opens, caps noisy third-party loggers, and serialises judge calls (`MLFLOW_GENAI_EVAL_MAX_WORKERS=1`).

@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+import runpy
 import signal
 import socket
 import subprocess
@@ -10,12 +11,13 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 
 @pytest.mark.skipif(os.environ.get("RUN_MLFLOW_PROXY_TEST") != "1", reason="opt-in isolated MLflow server test")
-def test_host_artifact_round_trip(tmp_path):
+def test_host_artifact_round_trip(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("check_artifacts", Path(__file__).parents[1] / "mlflow/check_artifacts.py")
     check = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(check)
@@ -48,6 +50,29 @@ def test_host_artifact_round_trip(tmp_path):
             run = check.MlflowClient(tracking_uri=uri).get_run(run_id)
             assert run.info.artifact_uri.startswith("mlflow-artifacts:/")
             assert run.info.status == "FINISHED"
+            # Exercise reporting with MLflow's real dataframe conversion and HTTP
+            # log_dict/download APIs, without invoking a model or the workflow.
+            import json
+
+            import mlflow
+            import pandas as pd
+            from mlflow.entities import Feedback
+            from mlflow.genai.evaluation.entities import EvalItem, EvalResult
+
+            inputs = {"scenario": "proxy-smoke", "process_instance_id": "frozen-process"}
+            item = EvalItem(request_id="smoke", inputs=inputs, outputs="APPROVE", expectations={})
+            table = pd.DataFrame([EvalResult(item, [Feedback(name="score", value=True)]).to_pd_series()])
+            module = runpy.run_path(str(Path(__file__).parents[2] / "regression/test_mlflow_regression.py"))
+            monkeypatch.setenv("REGRESSION_REPORT_DIR", str(tmp_path / "reports"))
+            previous_uri = mlflow.get_tracking_uri()
+            mlflow.set_tracking_uri(uri)
+            try:
+                module["_report_gate"](SimpleNamespace(tables={"eval_results": table}, run_id=run_id),
+                                       [{"inputs": inputs}], ["score"], "smoke")
+            finally:
+                mlflow.set_tracking_uri(previous_uri)
+            report_path = check.MlflowClient(tracking_uri=uri).download_artifacts(run_id, "regression/smoke.json", str(tmp_path))
+            assert json.loads(Path(report_path).read_text())["cases"][0]["scenario"] == "proxy-smoke"
         finally:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/PID", str(server.pid), "/T", "/F"], check=False, capture_output=True)

@@ -26,7 +26,6 @@ import pytest
 import requests
 from fluxnova_mlflow_dataset import (
     ALL_DETERMINISTIC_SCORERS,
-    GOLDEN_MATCH_THRESHOLD,
     BpmnLookup,
     decision_quality,
     evidence_citation,
@@ -40,6 +39,8 @@ from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
 from fluxnova_runner.client import Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
+
+from regression.reporting import build_report, failure_message, write_report
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _REPO_ROOT / "fluxnova-runner" / "config" / "loan-assesment.yml"
@@ -96,8 +97,8 @@ def _cache_key(variables: dict) -> str:
     return json.dumps(variables, sort_keys=True, default=str)
 
 
-def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str, dict]:
-    """Drive one live agent run and return its final output plus raw process variables.
+def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str, dict, str]:
+    """Drive one live agent run and return output, raw variables and process ID.
 
     Starts a process instance, waits for the agentic subprocess to finish, then
     reads the run's process variables back — deliberately not from the MLflow
@@ -110,7 +111,7 @@ def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str,
     run_variables = client.get_variables(instance_id)
     final_output = agent_final_output(run_variables)
     assert final_output, f"No agent final output found for instance {instance_id}"
-    return final_output, run_variables
+    return final_output, run_variables, instance_id
 
 
 @pytest.fixture(scope="session")
@@ -189,7 +190,7 @@ def tool_names(cfg: RunnerConfig) -> dict[str, str | None]:
 
 @pytest.fixture(scope="session")
 def _run_cache() -> dict[str, dict]:
-    """Session-wide cache: scenario key -> ``{"output", "scorer_inputs"}``.
+    """Session cache: scenario key -> output, scorer inputs and process instance ID.
 
     Populated by ``predict_fn`` the first time each scenario is requested (by
     ``evaluation_rows``, eagerly, before any ``evaluate()`` call), then just
@@ -224,11 +225,12 @@ def predict_fn(cfg: RunnerConfig, loan_agent: Client, tool_names: dict, _run_cac
         if cached is not None:
             return cached["output"]
         started = time.perf_counter()
-        output, run_variables = _run_agent(loan_agent, cfg, input_variables)
+        output, run_variables, instance_id = _run_agent(loan_agent, cfg, input_variables)
         elapsed = time.perf_counter() - started
         _log.info("Ran live agent scenario in %.1fs (%d chars of output)", elapsed, len(output))
         _run_cache[cache_key] = {
             "output": output,
+            "process_instance_id": instance_id,
             "scorer_inputs": scorer_inputs_from_variables(input_variables, run_variables, tool_names),
         }
         return output
@@ -251,10 +253,15 @@ def evaluation_rows(cfg: RunnerConfig, predict_fn, _run_cache: dict) -> list[dic
     goldens = load_goldens(_GOLDENS_PATH)
     assert goldens, f"No goldens found at {_GOLDENS_PATH}"
     rows = []
-    for golden in goldens:
+    for index, golden in enumerate(goldens):
         variables = _golden_to_variables(cfg, golden)
         predict_fn(variables)
-        scorer_inputs = _run_cache[_cache_key(variables)]["scorer_inputs"]
+        cached = _run_cache[_cache_key(variables)]
+        scorer_inputs = {
+            **cached["scorer_inputs"],
+            "scenario": golden.get("additional_metadata", {}).get("scenario", f"scenario-{index + 1}"),
+            "process_instance_id": cached["process_instance_id"],
+        }
         rows.append(
             {
                 "inputs": scorer_inputs,
@@ -262,6 +269,18 @@ def evaluation_rows(cfg: RunnerConfig, predict_fn, _run_cache: dict) -> list[dic
             }
         )
     return rows
+
+
+def _report_gate(result, rows: list[dict], names: list[str], gate: str, thresholds=None) -> None:
+    report = build_report(result.tables["eval_results"], rows, names, gate, thresholds)
+    run_id = result.run_id
+    report["run_id"] = run_id
+    directory = Path(os.environ.get("REGRESSION_REPORT_DIR", str(_REPO_ROOT / "local-dev/.mlflow/reports")))
+    path = directory / run_id / f"{gate}.json"
+    write_report(report, path)
+    mlflow.log_dict(report, f"regression/{gate}.json", run_id=run_id)
+    _log.info("%s: %d scenarios; report %s", gate, len(report["cases"]), path)
+    assert not report["failures"], failure_message(report)
 
 
 @mlflow.test
@@ -286,23 +305,7 @@ def test_agent_reaches_evidence_backed_decision(evaluation_rows: list[dict], pre
         data=evaluation_rows, predict_fn=predict_fn, scorers=[decision_quality]
     )
 
-    # Guard against every scorer silently erroring (which leaves zero recorded
-    # assessments and makes result.passed default to truthy): require a real
-    # decision_quality verdict for every row before trusting the pass/fail.
-    verdicts = result.tables["eval_results"]["decision_quality/value"]
-    _log.info("decision_quality verdicts: %s", verdicts.tolist())
-    assert verdicts.notna().all(), (
-        "decision_quality did not produce a verdict for every golden — scoring "
-        f"errored. Verdicts: {verdicts.tolist()}"
-    )
-    # Assert on the actual decision_quality verdicts rather than result.passed:
-    # result.passed also inspects the expected_output expectation column (whose
-    # value is the golden's free-text recommendation, not a yes/no rating), so it
-    # reports false failures even when every scorer verdict is "yes".
-    failed = verdicts[verdicts.str.lower() != "yes"]
-    assert failed.empty, (
-        f"decision_quality failed for {len(failed)} golden(s): {failed.tolist()}"
-    )
+    _report_gate(result, evaluation_rows, [decision_quality.name], "decision_quality")
 
 
 @mlflow.test
@@ -324,54 +327,7 @@ def test_agent_matches_golden_decisions(evaluation_rows: list[dict], predict_fn)
         data=evaluation_rows, predict_fn=predict_fn, scorers=[matches_golden]
     )
 
-    # matches_golden returns None (recorded as NaN) when a golden lacks an
-    # expected_output; every golden must have one for this gate to be meaningful.
-    verdicts = result.tables["eval_results"]["matches_golden/value"]
-    _log.info("matches_golden verdicts: %s", verdicts.tolist())
-    assert verdicts.notna().all(), (
-        "matches_golden did not produce a verdict for every golden — scoring "
-        f"errored or a golden is missing expected_output. Verdicts: {verdicts.tolist()}"
-    )
-    # matches_golden now returns a "yes"/"no" pass/fail verdict (thresholded at
-    # GOLDEN_MATCH_THRESHOLD inside the scorer, with the raw 0.0-1.0 score kept in
-    # the feedback metadata), so gate on the verdict rather than a numeric score.
-    failed = verdicts[verdicts.str.lower() != "yes"]
-    assert failed.empty, (
-        f"matches_golden scored below the {GOLDEN_MATCH_THRESHOLD} threshold for "
-        f"{len(failed)} golden(s): {failed.tolist()}"
-    )
-
-
-def _assert_deterministic_scorer_passed(table, scorer_name: str) -> None:
-    """Gate one deterministic scorer's column in an ``eval_results`` table.
-
-    Handles every value shape ``fluxnova_mlflow_dataset.scorers`` returns for
-    these scorers: plain booleans (possibly surfaced as their string form,
-    e.g. ``"true"``/``"yes"``, depending on the store), graded 0.0-1.0 scores
-    (``tool_correctness`` and friends — treated as a hard gate here, requiring
-    the full 1.0, since this is a regression *gate* not a benchmark), and
-    ``None``/``NaN`` for scorers that report "not applicable" for a given row
-    (e.g. ``no_collateral_check_when_no_collateral`` when the applicant has no
-    collateral) — never a failure.
-    """
-    column = f"{scorer_name}/value"
-    if column not in table.columns:
-        return  # scorer produced no column at all (shouldn't happen, but not this helper's job)
-    values = table[column]
-
-    def _passed(value: object) -> bool:
-        if value is None or (isinstance(value, float) and value != value):  # NaN != itself
-            return True  # not applicable for this row
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return float(value) >= 1.0
-        return str(value).strip().lower() in {"true", "yes", "1"}
-
-    failed = values[~values.apply(_passed)]
-    assert failed.empty, (
-        f"{scorer_name} failed for {len(failed)} golden(s): {failed.tolist()}"
-    )
+    _report_gate(result, evaluation_rows, [matches_golden.name], "matches_golden")
 
 
 @mlflow.test
@@ -400,9 +356,7 @@ def test_agent_passes_deterministic_checks(evaluation_rows: list[dict], predict_
         data=evaluation_rows, predict_fn=predict_fn, scorers=ALL_DETERMINISTIC_SCORERS
     )
 
-    table = result.tables["eval_results"]
-    for scorer in ALL_DETERMINISTIC_SCORERS:
-        _assert_deterministic_scorer_passed(table, scorer.name)
+    _report_gate(result, evaluation_rows, [s.name for s in ALL_DETERMINISTIC_SCORERS], "deterministic")
 
 
 @mlflow.test
@@ -429,14 +383,5 @@ def test_agent_cites_gathered_evidence(evaluation_rows: list[dict], predict_fn) 
         data=evaluation_rows, predict_fn=predict_fn, scorers=[evidence_citation]
     )
 
-    scores = result.tables["eval_results"]["evidence_citation/value"]
-    _log.info("evidence_citation scores: %s", scores.tolist())
-    assert scores.notna().all(), (
-        "evidence_citation did not produce a score for every golden — scoring "
-        f"errored. Scores: {scores.tolist()}"
-    )
-    failed = scores[scores < _EVIDENCE_CITATION_THRESHOLD]
-    assert failed.empty, (
-        f"evidence_citation scored below the {_EVIDENCE_CITATION_THRESHOLD} "
-        f"threshold for {len(failed)} golden(s): {failed.tolist()}"
-    )
+    _report_gate(result, evaluation_rows, [evidence_citation.name], "evidence_citation",
+                 {evidence_citation.name: _EVIDENCE_CITATION_THRESHOLD})
