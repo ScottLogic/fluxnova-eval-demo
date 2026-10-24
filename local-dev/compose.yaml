@@ -94,6 +94,14 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
       - ./default.yml:/fluxnova/configuration/default.yml:ro
+    # The published image does not define HEALTHCHECK. Gate dependent workers on
+    # the actual REST endpoint, including slow first boots under x86 emulation.
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, --max-time, "3", "http://localhost:8080/engine-rest/engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
 
   eval-service-worker-local:
     profiles: [eval]

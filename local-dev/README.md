@@ -399,7 +399,7 @@ podman compose --profile eval --profile grafana down
 Services are named `<container>-local`. The collector's network namespace has the
 `fluxnova-local` DNS alias and publishes Fluxnova's port; the engine shares that
 namespace. MLflow's healthcheck gates collector startup, and the eval worker waits
-for the engine's image healthcheck. `down -v` also deletes named volumes but leaves
+for Compose's explicit engine REST healthcheck (the image has none). `down -v` also deletes named volumes but leaves
 the host artifact directory intact; pod scripts' `--delete-data` clears artifacts too.
 
 ## BPMN agent LLM provider (OpenAI default, Ollama alternative)
