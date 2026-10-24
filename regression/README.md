@@ -98,6 +98,17 @@ missing applicable verdicts, missing rows and scorer errors fail the gate.
 The four gates still reuse one live agent result per golden. Saved reports can be
 used for judge calibration/replay without another agent execution.
 
+### Efficiency contract
+
+`iterations` means total LLM inference calls **including the final response** in
+both engine-variable and trace consumers. The normal budget is four calls:
+fraud+credit together, income verification, affordability after income, final answer.
+Collateral should be batched with income where possible; a separate collateral
+round permits a fifth call. Five calls without collateral, or six with collateral,
+still fail. The BPMN prompt explicitly requests this batching and keeps every
+required check and the income-before-affordability dependency. Redeploy the BPMN
+(the regression fixture does this) before validating the new instructions.
+
 - `pytest.ini` here enables MLflow's pytest plugin (`-p mlflow.pytest.plugin`) and live console logging.
 - `conftest.py` points `MLFLOW_TRACKING_URI` / `MLFLOW_EXPERIMENT_NAME` at the shared store + regression experiment
   before any run opens, caps noisy third-party loggers, and serialises judge calls (`MLFLOW_GENAI_EVAL_MAX_WORKERS=1`).

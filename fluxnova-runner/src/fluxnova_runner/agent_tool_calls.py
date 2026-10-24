@@ -98,7 +98,7 @@ def tool_calls_from_variables(
 
 
 def iterations_from_variables(variables: dict[str, Any]) -> int | None:
-    """Return the agent loop's iteration count, or ``None`` if the run has none."""
+    """Return total LLM calls, including the final answer; never subtract a turn."""
     return variables.get(LOOP_INDEX_VAR)
 
 

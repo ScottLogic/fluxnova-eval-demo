@@ -16,6 +16,11 @@ from mlflow.genai.scorers import Guidelines, scorer
 
 DECISION_QUALITY_NAME = "decision_quality"
 
+# Three tool rounds (batched fraud/credit, income, affordability) plus the final
+# answer. A separate collateral round is allowed when it cannot be batched.
+BASE_INFERENCE_BUDGET = 4
+COLLATERAL_INFERENCE_ALLOWANCE = 1
+
 DECISION_QUALITY_GUIDELINES = [
     "The final output must reach a definitive APPROVE or REJECT lending recommendation. "
     "Vague conclusions or deferred decisions such as 'next steps required' do not satisfy "
@@ -425,21 +430,21 @@ def no_verify_employment_for_self_employed_applicant(inputs) -> Feedback | None:
 def step_efficiency(inputs) -> Feedback | None:  # noqa: ANN001 - MLflow scorer signature
     """Agent must complete its assessment within a reasonable number of loop iterations.
 
-    The base budget is 3 LLM inference calls (fraud, credit, and either
-    employment-verification or bank-statement-analysis, then affordability);
-    an extra iteration is allowed when collateral valuation is also required.
+    Counts all inference calls, including the final response (not just tool
+    rounds). The baseline is four: batched fraud/credit, income verification,
+    affordability after income, then the final answer. A separate collateral
+    round may add one call. Variable and trace consumers use the same semantics.
     Returns ``None`` when the caller supplied no iteration count to check.
     """
     iterations = (inputs or {}).get("iterations")
     if iterations is None:
         return None
-    max_iterations = 3 + (1 if _input_variables(inputs).get("hasCollateral") else 0)
+    max_iterations = BASE_INFERENCE_BUDGET + (
+        COLLATERAL_INFERENCE_ALLOWANCE if _input_variables(inputs).get("hasCollateral") else 0
+    )
     return Feedback(
         value=iterations <= max_iterations,
-        rationale=(
-            "OK" if iterations <= max_iterations
-            else f"Agent used {iterations} iterations; expected <= {max_iterations}"
-        ),
+        rationale=f"Agent used {iterations} total LLM calls (including final response); budget <= {max_iterations}",
     )
 
 

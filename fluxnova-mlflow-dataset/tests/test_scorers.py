@@ -173,7 +173,7 @@ class TestProfileForbiddenTools:
 
 class TestStepEfficiency:
     def test_pass_within_budget(self):
-        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, iterations=3)
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, iterations=4)
         assert _value(step_efficiency(inputs=inputs)) is True
 
     def test_fail_over_budget(self):
@@ -182,8 +182,16 @@ class TestStepEfficiency:
 
     def test_collateral_adds_one_to_budget(self):
         variables = {**_EMPLOYED_NO_COLLATERAL, "hasCollateral": True}
-        inputs = _inputs(variables=variables, iterations=4)
+        inputs = _inputs(variables=variables, iterations=5)
         assert _value(step_efficiency(inputs=inputs)) is True
+
+    def test_collateral_still_rejects_excess_calls(self):
+        variables = {**_EMPLOYED_NO_COLLATERAL, "hasCollateral": True}
+        assert _value(step_efficiency(inputs=_inputs(variables=variables, iterations=6))) is False
+
+    def test_report_explains_that_final_response_is_counted(self):
+        result = step_efficiency(inputs=_inputs(variables=_EMPLOYED_NO_COLLATERAL, iterations=4))
+        assert "including final response" in result.rationale
 
     def test_none_when_no_inference_count(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL)
