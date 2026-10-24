@@ -93,7 +93,7 @@ _NATIVE_JUDGE_MODEL = "openai:/gpt-4o-mini" if LLM_JUDGE_PROVIDER == "openai" el
 
 # Automatic (online) evaluation -- Scorer.register()/.start() -- requires a
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly
-# (see Phase 0 in EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), so the judges used
+# (see local-dev/README.md's AI Gateway section), so the judges used
 # there are separate instances built on demand by `automatic_judges` (used by
 # `fluxnova_mlflow_dataset.judges`, the start/stop toggle CLI).
 GATEWAY_JUDGE_MODEL = "gateway:/fluxnova-judge"
@@ -234,7 +234,7 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 # hardcoded mirror of `fluxnova-runner/config/loan-assesment-eval.yml`'s
 # `expected_tools` list, kept in sync manually. This keeps callers free of any
 # BPMN/YAML config read at runtime, at the cost of needing a manual update here
-# if that BPMN's tool set/rules ever change. See EVAL-SERVICE-WORKER-PLAN.md.
+# if that BPMN's tool set/rules ever change. See this package's README.
 #
 # They know nothing about tracing: each reads plain values from MLflow's
 # standard `inputs`/`outputs`/`expectations` columns. The caller is responsible

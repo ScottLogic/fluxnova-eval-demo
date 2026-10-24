@@ -4,16 +4,24 @@ The stack contains PostgreSQL, MLflow, Fluxnova + an OTel Collector, two evaluat
 services, and optional Prometheus/Grafana dashboards. Host Python packages run from
 one editable `.venv`; infrastructure runs in Podman.
 
-**For a complete Mac walkthrough, including expected validation results, see
-[RUNNING-MACOS.md](../RUNNING-MACOS.md).** Work is tracked in
-[issue #21](https://github.com/ScottLogic/fluxnova-eval-demo/issues/21).
+This is the shared setup, demo and troubleshooting guide. Use the
+[regression guide](../regression/README.md) for gates, calibration and frozen replay.
+
+- [Platform setup](#platform-setup)
+- [Quick start](#quick-start-pods)
+- [Demo walkthrough](#demo-walkthrough)
+- [Networking](#network-topology-and-windows-fallback)
+- [Experiment upgrades and persistence](#mlflow-experiment-initialization-and-persistence)
+- [Compose](#alternative-a-single-podman-compose-file)
+- [Model providers](#bpmn-agent-llm-provider-openai-default-ollama-alternative)
+- [Host debugging](#host-debugging-and-rebuilds)
+- [Troubleshooting](#troubleshooting)
 
 ## Prerequisites
 
 - Python 3.11+ (3.11 is the container baseline).
 - Podman; on macOS/Windows start a Podman machine. The portability changes were
-  developed with Podman 5.8.1 and macOS Bash 3.2; full-stack platform validation is
-  described in the Mac guide. Start with 4 CPUs / 8 GiB VM memory for the OpenAI demo;
+  developed with Podman 5.8.1 and macOS Bash 3.2. Start with 4 CPUs / 8 GiB VM memory for the OpenAI demo;
   adjust for your machine. Local Ollama needs additional host memory for its models.
 - macOS Terminal (zsh is fine: scripts select Bash with their shebang), Windows
   **Git Bash**, or a Linux shell. No GNU Bash upgrade is required on macOS.
@@ -22,6 +30,61 @@ one editable `.venv`; infrastructure runs in Podman.
 - Copy `.env.example` to `.env` in this directory and set `OPENAI_API_KEY`.
   Keep values shell-compatible; quote values containing spaces or shell characters.
   The scripts source this file; Compose and host tooling read the same settings.
+
+## Platform setup
+
+### macOS
+
+Install Podman and Python 3.11+ (Podman Desktop is optional). With Homebrew:
+
+```bash
+brew install podman python@3.11
+podman machine list
+podman machine start                 # start an existing machine
+podman info --format '{{.Host.Arch}}'
+```
+
+For a new Apple Silicon VM, AppleHV supports Rosetta for the AMD64 engine image.
+Install Rosetta if needed (`softwareupdate --install-rosetta`), then initialize once:
+
+```bash
+export CONTAINERS_MACHINE_PROVIDER=applehv
+podman machine init --cpus 4 --memory 8192 --disk-size 60
+podman machine start
+```
+
+Use the selected provider environment in subsequent terminals when managing that VM.
+An existing VM can be reused if its x86 execution works. On Intel Macs use the normal
+machine defaults. The resource allocation above is a starting point, not a measured minimum.
+
+Verify Apple Silicon emulation before starting Fluxnova:
+
+```bash
+podman run --rm --platform linux/amd64 docker.io/library/alpine:3.21 uname -m
+podman pull --platform linux/amd64 ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0
+```
+
+Expected: `x86_64` and a successful pull. An `exec format error` means the VM's x86
+execution/provider configuration needs attention. Other demo images support native ARM64.
+
+### Windows Git Bash
+
+Install Podman (or Podman Desktop), Python 3.11+, and Git Bash. Initialize a machine
+once with `podman machine init`, then run `podman machine start`. Use forward-slash
+paths and `source .venv/Scripts/activate`. The scripts retain MSYS path handling
+and default to the host-network workaround described below.
+
+### Linux and WSL
+
+Install Podman and Python inside the Linux/WSL distro. Rootless Podman runs directly
+there: no `podman machine init/start` is needed. Use `.venv/bin/activate` and the
+same quick-start commands below. Linux/WSL defaults to bridge networking. If Ollama
+runs outside the distro, configure a reachable `OLLAMA_CONTAINER_URL`; Windows and
+WSL loopback addresses are not interchangeable.
+
+Apple Silicon startup, artifact proxying, frozen judge calibration and all four live
+regression gates have passed local validation with Python 3.11.13, Podman 5.8.1 and
+MLflow 3.16.0. Use the same walkthrough when validating other platforms.
 
 ## Quick start: pods
 
@@ -33,6 +96,10 @@ source .venv/bin/activate             # macOS/Linux
 # source .venv/Scripts/activate       # Windows Git Bash
 cp local-dev/.env.example local-dev/.env  # first time only; edit the key next
 ```
+
+Select a specific interpreter with `PYTHON=python3.11 ./setup.sh` (or its full
+path). `fluxnova-run --help`, `eval-service-worker --help`, `eval-trace-listener
+--help` and `mlflow-judges --help` verify the editable CLI installation.
 
 After editing `.env`:
 
@@ -51,6 +118,12 @@ for PostgreSQL/MLflow/Fluxnova and the dashboard HTTP endpoints; readiness failu
 return non-zero with diagnostics. Worker/listener startup confirms container creation;
 their actual scoring is part of the local validation walkthrough.
 
+For an older checkout/store, follow the [experiment upgrade](#upgrade-experiments-created-with-container-local-artifact-paths)
+before startup. Keep the `.env.example` image versions, `FLUXNOVA_PLATFORM=linux/amd64`,
+`LLM_JUDGE_PROVIDER=openai` and `EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4o-mini` for the
+default demo. Export `.env` as shown above in every host-tool terminal; `set +a`
+stops automatic exporting of new assignments without removing the variables just loaded.
+
 | Service | Host endpoint | Container/pod endpoint (bridge mode) |
 | --- | --- | --- |
 | PostgreSQL | `localhost:5432` | `postgres-local:5432` |
@@ -64,6 +137,99 @@ their actual scoring is part of the local validation walkthrough.
 Fluxnova login is `demo` / `demo`; Grafana allows anonymous viewing and uses
 `admin` / `admin` for editing. The provisioned dashboard is **Fluxnova → Fluxnova
 GenAI Metrics**. Prometheus/Grafana storage is ephemeral.
+
+## Demo walkthrough
+
+### 1. Check infrastructure and artifact storage
+
+With the quick start complete and `.env` exported:
+
+```bash
+podman pod ps
+podman ps
+curl -fsS "http://localhost:${MLFLOW_PORT:-5001}/version"
+curl -fsS "${FLUXNOVA_URL}/engine"
+podman exec mlflow python -c "from pathlib import Path; print(Path('/mlflow-runtime/headers.yaml').read_text())"
+python local-dev/mlflow/check_artifacts.py
+```
+
+Expected: running services, MLflow `3.16.0`, an engine list containing `default`,
+and a generated numeric experiment ID (not a fixed value). The artifact smoke
+command uploads/downloads a small file and prints a `mlflow-artifacts:/...` URI.
+It makes no model calls. The worker/listener containers must remain running;
+their first startup builds the images. Logs: `podman logs <container-name>`.
+
+### 2. Run the loan assessment
+
+```bash
+fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
+```
+
+Expected: deployment, a printed process instance ID, and process completion. Save
+the ID. The downstream tools are mocked, but the agent makes real model calls.
+Inspect the completed process in Fluxnova Cockpit (`demo` / `demo`).
+
+### 3. Verify traces, assessments and metrics
+
+In MLflow, open the experiment named by `EVAL_SERVICE_EXPERIMENT_NAME` (including
+any `-v2` suffix), then **Traces**. After export and listener polling, find the
+completed trace with `invoke_agent`, `chat` and `execute_tool` spans. Confirm
+`decision_quality`, `evidence_citation` and deterministic assessments appear.
+
+```bash
+podman logs --tail 80 eval-trace-listener
+curl -fsS "http://localhost:${OTEL_METRICS_PORT:-8889}/metrics" | grep '^gen_ai_'
+```
+
+Expected: GenAI samples after a run, the collector target **UP** at Prometheus's
+`/targets` page, and token/latency/tool-call data in Grafana's provisioned dashboard.
+Allow an export/scrape cycle. If the workflow completes without traces, inspect
+collector/engine logs and the generated experiment header; HTTP health alone does
+not establish end-to-end telemetry delivery.
+
+### 4. Run the in-process evaluation workflow
+
+In a second terminal, activate `.venv` and export `.env` as in the quick start, then
+leave persistent mock workers running:
+
+```bash
+fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment-eval.yml
+```
+
+In the original terminal:
+
+```bash
+fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml
+podman logs --tail 80 eval-service-worker
+```
+
+The runner returns when the agent Call Activity finishes; trace export and judging
+continue asynchronously. In Cockpit, confirm the parent process receives `evalPassed`
+and `evalRationale` and advances through the evaluation gateway. A failed evaluation
+routes to human review; a pass proceeds through reporting/approval review. Waiting
+at a human task is expected. Check that the worker completed the task rather than
+creating an incident, and inspect the corresponding MLflow assessments.
+
+The separate mock-worker terminal keeps reporting tools alive after the runner
+returns. Stop it with **Ctrl+C** after checking the process and before regression.
+
+### 5. Validate regression and persistence
+
+Follow the [regression validation sequence](../regression/README.md#validation-sequence)
+for frozen judge calibration, all four live gates and report replay.
+
+Record a trace ID, then recreate the services:
+
+```bash
+./local-dev/pods-down.sh
+./local-dev/pods-up.sh
+```
+
+Expected: the previous experiment, trace and assessments remain; another workflow
+still exports successfully. The experiment ID is reused. Prometheus/Grafana storage
+is ephemeral, while the datasource/dashboard are provisioned again. Finish with
+`./local-dev/pods-down.sh` and, on macOS/Windows, `podman machine stop` if desired.
+Normal teardown preserves data; `--delete-data` deliberately resets databases/artifacts.
 
 ## Network topology and Windows fallback
 
@@ -102,7 +268,7 @@ The public engine image is
 `ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0`. Its manifest is **AMD64-only**,
 so the scripts and Compose explicitly set `FLUXNOVA_PLATFORM=linux/amd64` for
 Fluxnova. An Apple Silicon Podman machine must support x86 execution (for example
-AppleHV + Rosetta). See the Mac guide for a smoke command before starting the stack.
+AppleHV + Rosetta). See [macOS setup](#macos) for the emulation smoke command.
 
 The pinned PostgreSQL, MLflow, collector, Prometheus, Grafana and Python base images
 have both Linux ARM64 and AMD64 manifests; evaluation images build for the VM's
@@ -189,7 +355,7 @@ up; volumes and artifacts remain. Existing incomplete pods get a recovery comman
 Port-binding errors report the applicable configuration, and an existing MLflow
 pod with a different published port must be recreated before it is started.
 Once containers are successfully created, readiness failures keep them for log
-inspection. The [Mac troubleshooting guide](../RUNNING-MACOS.md#troubleshooting)
+inspection. The [troubleshooting section](#troubleshooting)
 includes a direct-VM pull workaround using the active rootful/rootless store.
 These helpers apply to the pod scripts; Compose uses its provider's pull/start behavior.
 
@@ -329,5 +495,46 @@ python -m pytest local-dev/tests -q
 ```
 
 The startup tests use a fake Podman and test bootstrap responses; they do not start
-a VM or replace end-to-end validation. Follow the Mac walkthrough to check actual
+a VM or replace end-to-end validation. Follow the demo walkthrough to check actual
 trace delivery, scoring, regression gates and restart persistence.
+
+## Troubleshooting
+
+### Image pull fails with unexpected EOF
+
+`failed to decode message from stream: unexpected EOF` is a Podman remote pull
+failure before the application starts. The scripts retry complete pull commands
+before creating pods. If it persists, bypass that API by pulling inside the VM.
+Use `podman machine list` for its name and
+`podman info --format '{{.Host.Security.Rootless}}'` for the active storage mode.
+Run the appropriate command (replace the default machine name if needed):
+
+```bash
+# Rootless=false: rootful store
+podman machine ssh podman-machine-default sudo podman --remote=false pull ghcr.io/mlflow/mlflow:v3.16.0
+# Rootless=true: rootless store
+podman machine ssh podman-machine-default podman --remote=false pull ghcr.io/mlflow/mlflow:v3.16.0
+```
+
+Match the client's machine and storage mode, confirm `podman image inspect
+ghcr.io/mlflow/mlflow:v3.16.0` succeeds from the host, then retry startup. A partial
+pod left by older scripts can be recreated with `podman pod rm --force mlflow-local`
+followed by `./local-dev/pods-up.sh postgres mlflow fluxnova`. This preserves volumes
+and artifact files. If Podman disconnects, check `podman machine list` before restarting it.
+
+### Port already in use
+
+MLflow's host default is `5001`; containers still use `5000`. For a conflict, choose
+a free `MLFLOW_PORT` in `.env`. On a Mac, `lsof -nP -iTCP:5001 -sTCP:LISTEN` identifies
+the listener. Port `5000` is commonly occupied by AirPlay Receiver. Recreate the
+MLflow pod after editing the port; restart alone cannot change published mappings.
+
+### MLflow exits or reports container state improper
+
+Run `podman logs --tail 80 mlflow`. If bootstrap names a container-local artifact
+experiment, follow the [experiment upgrade](#upgrade-experiments-created-with-container-local-artifact-paths).
+An old container can retain the legacy name even after `.env` is corrected. The
+scripts detect that drift and show a recreation command. They also stop immediately
+with exit status and logs if a container exits during readiness, rather than repeating
+`podman exec` against a stopped container. Recreate evaluation pods after experiment
+changes too; use the rebuild commands above to pick up changed Python scorers.

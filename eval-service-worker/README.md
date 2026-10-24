@@ -2,8 +2,10 @@
 
 A standalone BPMN external-task worker that scores a just-completed agentic subprocess run against the
 `decision_quality` MLflow judge plus a set of trace-only deterministic scorers, reading data purely from MLflow's
-trace store — no BPMN parsing, no Fluxnova REST history calls. See `EVAL-SERVICE-WORKER-PLAN.md` at the repo root for
-the full background/scope and `local-dev/README.md`'s "eval-service-worker" section for how to run it as a Podman pod.
+trace store, without BPMN parsing or using process variables as scorer inputs.
+The Fluxnova history API is used only to resolve a Call Activity's child instance
+before reading its trace. See the [local demo walkthrough](../local-dev/README.md#demo-walkthrough)
+for container startup and expected results.
 
 **Scorers run per task:** `decision_quality` (the non-deterministic `Guidelines` LLM judge) plus the full
 `DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`

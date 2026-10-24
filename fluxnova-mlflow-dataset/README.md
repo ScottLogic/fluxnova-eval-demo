@@ -79,8 +79,9 @@ CI-style `if` condition evaluated against a run's input variables:
 Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See the repo root README's
 "`expected_tools` rule syntax" section for the full reference table.
 
-> **Note:** `fluxnova-runner`'s `RunnerConfig` and the eval scorers both build on this `ExpectedToolRule`
-> (imported from `fluxnova_mlflow_dataset.tools`), so the rule parsing/evaluation lives in a single place.
+> **Note:** these rules are used by record shaping. The standalone runner ignores
+> evaluation-only YAML fields; trace-based scorers use the explicit applicant-profile
+> rules described below, rather than loading the runner's YAML at scoring time.
 
 ## Shared judge/scorer definitions: `scorers.py`
 

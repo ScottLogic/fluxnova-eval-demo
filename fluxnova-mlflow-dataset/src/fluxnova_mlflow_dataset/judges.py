@@ -7,8 +7,7 @@ that: it registers the gateway-backed judges from ``fluxnova_mlflow_dataset.scor
 (see ``automatic_judges()``) against a target experiment, then starts or stops
 automatic sampling for them.
 
-Automatic judges require a `gateway:/<endpoint>` model URI (see Phase 0 in
-EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), which in turn requires the tracking URI
+Automatic judges require a `gateway:/<endpoint>` model URI, which requires the tracking URI
 to be the *running MLflow server's* HTTP(S) address (e.g.
 ``http://localhost:5001``) rather than a direct ``postgresql://...`` path — the
 gateway routes judge calls through that server process. This is different

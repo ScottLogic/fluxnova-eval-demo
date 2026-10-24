@@ -3,8 +3,8 @@ the nondeterministic ``decision_quality`` LLM judge plus deterministic checks
 (required tool calls, no tool errors, a definitive decision keyword). It reads
 the run's MLflow trace and extracts the plain values the scorers need (via
 ``fluxnova_mlflow_dataset.scorer_inputs_from_trace`` — the scorers themselves
-know nothing about tracing); no BPMN parsing, no Fluxnova REST API calls. See
-EVAL-SERVICE-WORKER-PLAN.md.
+know nothing about tracing); no BPMN parsing or process-variable reads for scoring.
+See this package's README for the worker's separate child-instance lookup.
 
 Uses ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
 "outputs": ...}], scorers=[...])`` (rather than a bare ``mlflow.log_feedback``

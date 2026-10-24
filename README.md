@@ -2,9 +2,9 @@
 
 A set of tooling and evals to demonstrate the use of agentic evaluation with Fluxnova workflows.
 
-**Run locally on macOS:** follow [RUNNING-MACOS.md](RUNNING-MACOS.md) for setup,
-demo execution and step-by-step validation. Windows Git Bash and macOS share the
-Python environment and Podman service configuration.
+Start with the [local development guide](local-dev/README.md) for macOS, Windows
+Git Bash and Linux/WSL setup, demo execution and troubleshooting. Use the
+[regression guide](regression/README.md) for testing, judge calibration and report replay.
 
 Goals of this project are:
 
@@ -50,7 +50,7 @@ Goals of this project are:
 
 ## Overview
 
-This project is split into two several Python packages which are designed to run locally in podman. There are two main
+This project has four Python packages and backing services designed to run locally with Podman. There are two main
 flows which make up the standard use-cases.
 
 1. Production demo.
@@ -193,7 +193,8 @@ They are grouped into reusable bundles:
   text (no captured arguments).
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
-  `Feedback(None)` otherwise). Not run by any consumer by default.
+  `Feedback(None)` otherwise). Regression includes them by default; the worker and
+  trace listener use the trace-only bundle.
 - `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
 
 **Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
@@ -202,20 +203,20 @@ service's README for exactly how it sources the scorer inputs.
 
 | Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
 |-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
-| `required_tools_called`                               | Code      | DETERMINISTIC | Every tool the scenario requires was called                                       | W · L     |
-| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | W · L     |
+| `required_tools_called`                               | Code      | DETERMINISTIC | Every tool the scenario requires was called                                       | R · W · L |
+| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | R · W · L |
 | `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
 | `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · L |
-| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | W · L     |
-| `all_tool_calls_completed`                            | Code      | DETERMINISTIC | Every initiated tool call reached a completed status                              | W · L     |
-| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | W · L     |
-| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | W · L     |
-| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | W · L     |
-| `step_efficiency`                                     | Code      | DETERMINISTIC | Agent completes within a budget of loop iterations (+1 if collateral)             | W · L     |
-| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | W · L     |
-| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | —         |
-| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | —         |
-| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | —         |
+| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | R · W · L |
+| `all_tool_calls_completed`                            | Code      | DETERMINISTIC | Every initiated tool call reached a completed status                              | R · W · L |
+| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | R · W · L |
+| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | R · W · L |
+| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | R · W · L |
+| `step_efficiency`                                     | Code      | DETERMINISTIC | At most four total LLM calls including the final answer (+1 for collateral)       | R · W · L |
+| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | R · W · L |
+| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | R         |
+| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | R         |
+| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | R         |
 | `decision_quality`                                    | LLM judge | —             | Final output is a clear, justified APPROVE/REJECT recommendation                  | R · W · L |
 | `evidence_citation`                                   | LLM judge | —             | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)          | R · L     |
 | `matches_golden`                                      | LLM judge | —             | Output reaches the same decision as the matching golden (needs `expected_output`) | R         |
@@ -289,7 +290,7 @@ data). Enable it via the Spring Boot property
 Use **macOS Terminal**, **Windows Git Bash**, or a Linux shell. Commands use forward
 slashes on every OS. Install Python 3.11+ and [Podman](https://podman.io/docs/installation)
 with a running VM on macOS/Windows. Apple Silicon also needs x86 execution support
-for the current AMD64-only Fluxnova image; see the [Mac guide](RUNNING-MACOS.md).
+for the current AMD64-only Fluxnova image; see [platform setup](local-dev/README.md#platform-setup).
 
 From the repository root:
 
@@ -368,12 +369,23 @@ process:
 wait_for_activity: CallActivity_LoanAssessmentAgent   # omit to wait for the entire process
 ```
 
+In another activated terminal with `.env` exported, keep mock workers running:
+
 ```bash
-fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml --with-mock-workers
+fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment-eval.yml
+```
+
+In the original terminal:
+
+```bash
+fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml
 ```
 
 The `--wait-for-activity ACTIVITY_ID` CLI flag overrides the config field for a single run. Scoring of the agent run is
 handled asynchronously by the **eval-service-worker** (see `local-dev/README.md`), not by the runner.
+Keep the separate mock workers alive until reporting finishes, then stop them with
+Ctrl+C. The [demo walkthrough](local-dev/README.md#demo-walkthrough) describes the
+expected traces, assessments, human-review tasks and dashboards.
 
 ## Evaluating agent runs
 
@@ -465,11 +477,16 @@ See [`local-dev/README.md`](local-dev/README.md) for the full details on running
 OTel Collector, MLflow, and the `eval-service-worker` as Podman pods for local development — including troubleshooting
 notes and the MLflow AI Gateway judge-endpoint setup.
 
-For walkthroughs see [macOS](RUNNING-MACOS.md) and [WSL](RUNNING-WSL.md).
+Use its [platform setup](local-dev/README.md#platform-setup),
+[demo walkthrough](local-dev/README.md#demo-walkthrough) and
+[troubleshooting](local-dev/README.md#troubleshooting) sections, followed by the
+[regression validation sequence](regression/README.md#validation-sequence).
 
 ## Config file
 
-All runner and evaluation behaviour is driven by a single YAML file.
+Runner deployment, process variables and mock workers are configured in workflow YAML.
+The evaluation worker uses CLI/environment settings, and the trace listener has
+its own YAML plus CLI/environment overrides; see their package READMEs.
 
 [Example](fluxnova-runner/config/loan-assesment.yml)
 

@@ -4,8 +4,8 @@ Deliberately **not** read from the runner's workflow YAML config
 (``fluxnova-runner/config/loan-assesment.yml``) — this worker is meant to be a slim,
 independently deployable service (its own Podman pod/container), and depending
 on another service's config file for its own connection settings would
-recreate exactly the coupling that was avoided everywhere else (no BPMN
-parsing, no Fluxnova REST calls — see ``EVAL-SERVICE-WORKER-PLAN.md``).
+recreate coupling between deployment and scoring. Scorer inputs come from MLflow;
+the worker uses Fluxnova history separately to resolve Call Activity child instances.
 
 Instead, all settings are simple hardcoded defaults below, overridable via CLI
 flags or environment variables (see ``main.py``) — there's only ever one
@@ -41,8 +41,7 @@ DEFAULT_JUDGE_MODEL = "gateway:/fluxnova-judge"
 
 # Judge calls routed through the gateway to a local Ollama model have been
 # observed taking 90+ seconds in this environment — and much longer (several
-# minutes) on CPU-only boxes under memory pressure (see
-# EDD-AND-PRODUCTION-EVAL-ANALYSIS.md / EVAL-SERVICE-WORKER-PLAN.md) — the lock
+# minutes) on CPU-only boxes under memory pressure — the lock
 # duration must comfortably exceed that so Fluxnova doesn't reassign the task
 # to another worker mid-scoring. Override per-environment with
 # EVAL_SERVICE_LOCK_DURATION_MS.

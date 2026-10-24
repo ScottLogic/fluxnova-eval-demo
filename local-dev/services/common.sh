@@ -69,7 +69,7 @@ ensure_image() {
     podman info --format '{{.Host.Arch}}' >/dev/null 2>&1 || die "Podman disconnected while pulling $image. Check 'podman machine list' and restart the machine if needed."
     if [ "$attempt" -lt "$attempts" ]; then sleep "$delay"; fi
   done
-  die "Could not pull $image after $attempts attempts. No pod was created. Retry 'podman pull $image'; for repeated 'unexpected EOF', see RUNNING-MACOS.md#image-pull-fails-with-unexpected-eof for a direct-VM pull using the same rootful/rootless storage."
+  die "Could not pull $image after $attempts attempts. No pod was created. Retry 'podman pull $image'; for repeated 'unexpected EOF', see local-dev/README.md#image-pull-fails-with-unexpected-eof for a direct-VM pull using the same rootful/rootless storage."
 }
 
 fail_pod() {

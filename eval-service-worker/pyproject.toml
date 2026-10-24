@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eval-service-worker"
 version = "0.1.0"
-description = "Standalone service: subscribes to a Camunda/Fluxnova external-task topic and scores a just-completed agentic subprocess run on demand, using MLflow, reading trace data only (no BPMN/Fluxnova REST calls). See EVAL-SERVICE-WORKER-PLAN.md."
+description = "Standalone BPMN external-task worker that resolves agent subprocess instances and scores their MLflow traces with shared judges and deterministic checks."
 requires-python = ">=3.11"
 dependencies = [
     "mlflow[genai]==3.16.0",

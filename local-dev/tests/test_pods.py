@@ -185,7 +185,7 @@ def test_failed_pull_creates_no_pod_or_container(run_script, service):
     assert len([c for c in commands if c[0] == "pull"]) == 3
     assert not any(c[:2] == ["pod", "create"] or c[0] == "run" for c in commands)
     assert "unexpected EOF" in result.stderr
-    assert "RUNNING-MACOS.md" in result.stderr
+    assert "local-dev/README.md#image-pull-fails-with-unexpected-eof" in result.stderr
 
 
 def test_interrupted_pull_retries_before_creating_pod(run_script):
