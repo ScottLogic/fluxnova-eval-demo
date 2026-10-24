@@ -215,6 +215,10 @@ the Call Activity boundary.
 
 ## 10. Run unit tests and the live regression gates
 
+If upgrading a store created before artifact proxying, follow
+[regression/VALIDATION.md](regression/VALIDATION.md) first: use fresh experiment
+names, check artifact upload/download, and run the frozen judge calibration suite.
+
 Run the package suites separately:
 
 ```bash

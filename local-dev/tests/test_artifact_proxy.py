@@ -50,29 +50,47 @@ def test_host_artifact_round_trip(tmp_path, monkeypatch):
             run = check.MlflowClient(tracking_uri=uri).get_run(run_id)
             assert run.info.artifact_uri.startswith("mlflow-artifacts:/")
             assert run.info.status == "FINISHED"
-            # Exercise reporting with MLflow's real dataframe conversion and HTTP
-            # log_dict/download APIs, without invoking a model or the workflow.
+            # Exercise the full evaluate result schema and HTTP report transport
+            # with a code-only scorer, without a model or workflow.
             import json
 
             import mlflow
-            import pandas as pd
-            from mlflow.entities import Feedback
-            from mlflow.genai.evaluation.entities import EvalItem, EvalResult
+            from mlflow.genai.scorers import scorer
 
-            inputs = {"scenario": "proxy-smoke", "process_instance_id": "frozen-process"}
-            item = EvalItem(request_id="smoke", inputs=inputs, outputs="APPROVE", expectations={})
-            table = pd.DataFrame([EvalResult(item, [Feedback(name="score", value=True)]).to_pd_series()])
+            inputs = {"input_variables": {}, "scenario": "proxy-smoke", "process_instance_id": "frozen-process"}
+            @scorer
+            def score(inputs, outputs) -> bool:
+                return outputs == "APPROVE"
+
+            def predict(input_variables, **_scorer_only_fields):
+                return "APPROVE"
             module = runpy.run_path(str(Path(__file__).parents[2] / "regression/test_mlflow_regression.py"))
             monkeypatch.setenv("REGRESSION_REPORT_DIR", str(tmp_path / "reports"))
             previous_uri = mlflow.get_tracking_uri()
             mlflow.set_tracking_uri(uri)
             try:
-                module["_report_gate"](SimpleNamespace(tables={"eval_results": table}, run_id=run_id),
+                report_experiment = mlflow.set_experiment("report-smoke")
+                with mlflow.start_run(experiment_id=report_experiment.experiment_id):
+                    scored = mlflow.genai.evaluate(data=[{"inputs": inputs}], predict_fn=predict, scorers=[score])
+                table = scored.tables["eval_results"]
+                assert {"request", "response", "assessments"} <= set(table.columns)
+                module["_report_gate"](SimpleNamespace(tables={"eval_results": table}, run_id=scored.run_id),
                                        [{"inputs": inputs}], ["score"], "smoke")
             finally:
                 mlflow.set_tracking_uri(previous_uri)
-            report_path = check.MlflowClient(tracking_uri=uri).download_artifacts(run_id, "regression/smoke.json", str(tmp_path))
+            report_path = check.MlflowClient(tracking_uri=uri).download_artifacts(scored.run_id, "regression/smoke.json", str(tmp_path))
             assert json.loads(Path(report_path).read_text())["cases"][0]["scenario"] == "proxy-smoke"
+            if os.environ.get("RUN_LLM_CALIBRATION_TEST") == "1":
+                from dotenv import load_dotenv
+
+                from regression.calibrate import DEFAULT_CASES, load_cases, run_judge
+                from regression.reporting import failure_message, write_report
+
+                load_dotenv(Path(__file__).parents[2] / "local-dev/.env")
+                calibration = run_judge(load_cases(DEFAULT_CASES), uri, "isolated-calibration")
+                saved = Path(__file__).parents[2] / f"local-dev/.mlflow/calibration/isolated-{calibration['run_id']}.json"
+                write_report(calibration, saved)
+                assert not calibration["failures"], failure_message(calibration)
         finally:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/PID", str(server.pid), "/T", "/F"], check=False, capture_output=True)

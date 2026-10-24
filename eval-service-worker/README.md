@@ -9,7 +9,9 @@ the full background/scope and `local-dev/README.md`'s "eval-service-worker" sect
 `DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`
 (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`, `tool_correctness`,
 `all_tool_calls_completed`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
-`no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`).
+`no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`,
+`final_recommendation_format`). The final-format check is independent of semantic judging:
+the updated agent must put a plain `APPROVE` or `REJECT` on its final line.
 This is the deliberately narrow online set: `decision_quality` is the per-run judge
 (direct OpenAI in the local demo, or an explicitly configured gateway), and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
 `matches_golden`) are left to the offline `eval-trace-listener` / `regression` suites.

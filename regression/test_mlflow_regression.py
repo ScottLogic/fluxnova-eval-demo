@@ -34,6 +34,7 @@ from fluxnova_mlflow_dataset import (
 )
 from fluxnova_mlflow_dataset.experiments import require_remote_artifacts
 from fluxnova_mlflow_dataset.goldens import load_goldens
+from fluxnova_mlflow_dataset.scorers import DECISION_QUALITY_RUBRIC_VERSION
 from fluxnova_runner.agent_output import agent_final_output
 from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
 from fluxnova_runner.client import Client
@@ -275,6 +276,8 @@ def _report_gate(result, rows: list[dict], names: list[str], gate: str, threshol
     report = build_report(result.tables["eval_results"], rows, names, gate, thresholds)
     run_id = result.run_id
     report["run_id"] = run_id
+    report["decision_quality_model"] = decision_quality.model
+    report["decision_quality_rubric_version"] = DECISION_QUALITY_RUBRIC_VERSION
     directory = Path(os.environ.get("REGRESSION_REPORT_DIR", str(_REPO_ROOT / "local-dev/.mlflow/reports")))
     path = directory / run_id / f"{gate}.json"
     write_report(report, path)

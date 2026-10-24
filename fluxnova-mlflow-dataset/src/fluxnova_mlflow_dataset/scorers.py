@@ -15,6 +15,7 @@ from mlflow.entities import Feedback
 from mlflow.genai.scorers import Guidelines, scorer
 
 DECISION_QUALITY_NAME = "decision_quality"
+DECISION_QUALITY_RUBRIC_VERSION = "2"
 
 # Three tool rounds (batched fraud/credit, income, affordability) plus the final
 # answer. A separate collateral round is allowed when it cannot be batched.
@@ -22,12 +23,23 @@ BASE_INFERENCE_BUDGET = 4
 COLLATERAL_INFERENCE_ALLOWANCE = 1
 
 DECISION_QUALITY_GUIDELINES = [
-    "The final output must reach a definitive APPROVE or REJECT lending recommendation. "
-    "Vague conclusions or deferred decisions such as 'next steps required' do not satisfy "
-    "this guideline.",
-    "The final output must state its recommendation backed by evidence: it must cite "
-    "specific data points gathered during the assessment, such as credit score, fraud "
-    "risk, affordability result, or employment status.",
+    "The response must select one unambiguous lending recommendation: APPROVE or REJECT. "
+    "Formatting, markdown and capitalization do not matter for this semantic check. "
+    "Contradictory recommendations or only deferring the decision to a human/next steps fail.",
+    "Read the ENTIRE response, including preceding paragraphs, bullet lists and tables. "
+    "The recommendation must be supported by concrete assessment evidence, such as credit "
+    "score, fraud risk score, verified income/employment, or DTI and affordability outcome. "
+    "Evidence stated earlier in the response counts and need not be repeated in the final "
+    "sentence. A coherent connection between at least one material assessment result and "
+    "the recommendation meets the support requirement; every listed data point need not "
+    "be individually connected to the conclusion. A supplied failed-affordability result "
+    "supports rejection without needing an additional numeric DTI policy threshold. "
+    "Do not invent requirements for policy thresholds absent from the inputs. "
+    "Relevant additional context is not a reason to fail. A clear explanation is enough; "
+    "do not require a particular wording, layout, citation format, or all values in one sentence. "
+    "Missing evidence, fabricated facts, or reasons contradicting the supplied assessment facts "
+    "fail. When inputs provide facts, use them to check claims. If failing, identify the actual "
+    "missing or contradictory evidence rather than inventing additional formatting requirements.",
 ]
 
 
@@ -359,6 +371,18 @@ def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow sc
 
 
 @scorer
+def final_recommendation_format(outputs) -> Feedback:  # noqa: ANN001
+    """Check the new agent output contract independently of semantic judging."""
+    lines = _decision_text(outputs).strip().splitlines()
+    passed = bool(lines) and lines[-1].strip() in {"APPROVE", "REJECT"}
+    return Feedback(
+        value=passed,
+        rationale="Final line must be exactly APPROVE or REJECT; justification belongs above it."
+        if not passed else "Final recommendation line has the required format.",
+    )
+
+
+@scorer
 def tool_correctness(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
     """Graded (0.0–1.0) counterpart to :func:`required_tools_called`: all tools the
     applicant's profile requires must be called, and forbidden ones penalised.
@@ -571,6 +595,7 @@ DETERMINISTIC_SCORERS = [
     required_tools_called,
     no_tool_errors,
     definitive_decision_stated,
+    final_recommendation_format,
     tool_correctness,
     all_tool_calls_completed,
     no_collateral_check_when_no_collateral,

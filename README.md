@@ -189,7 +189,7 @@ variables). The scorers split into two families:
 
 They are grouped into reusable bundles:
 
-- `DETERMINISTIC_SCORERS` — the 10 code scorers below that need only tool *names* / status / input-variables / output
+- `DETERMINISTIC_SCORERS` — the 11 code scorers below that need only tool *names* / status / input-variables / output
   text (no captured arguments).
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
@@ -205,6 +205,7 @@ service's README for exactly how it sources the scorer inputs.
 | `required_tools_called`                               | Code      | DETERMINISTIC | Every tool the scenario requires was called                                       | W · L     |
 | `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | W · L     |
 | `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
+| `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · L |
 | `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | W · L     |
 | `all_tool_calls_completed`                            | Code      | DETERMINISTIC | Every initiated tool call reached a completed status                              | W · L     |
 | `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | W · L     |

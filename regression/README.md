@@ -98,6 +98,42 @@ missing applicable verdicts, missing rows and scorer errors fail the gate.
 The four gates still reuse one live agent result per golden. Saved reports can be
 used for judge calibration/replay without another agent execution.
 
+### Judge calibration and frozen replay
+
+The decision-quality rubric is versioned (`2`) and accepts concrete evidence
+anywhere in the response, including bullets before a final recommendation. It
+still rejects absent evidence, invented/contradictory facts and deferred or
+contradictory decisions. Semantic judging does not impose an output layout.
+The separate deterministic `final_recommendation_format` check enforces the new
+agent contract: evidence and justification first, then a plain final line exactly
+`APPROVE` or `REJECT`. The updated BPMN requests that format explicitly.
+
+```bash
+python -m regression.calibrate                         # 8 frozen positive/negative judge cases
+python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/decision_quality.json
+python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/deterministic.json
+```
+
+Judge mode uses model calls, but never starts/deploys a workflow. The built-in suite
+has four expected `yes` and four deliberately invalid expected `no` responses; an
+all-yes judge fails calibration. Report replay expects `yes` for each recorded
+workflow output. `--model` selects an explicit candidate without changing the agent.
+Judge results/rationales, actual model and rubric version are saved in MLflow's
+separate `fluxnova-decision-quality-calibration-v2` experiment and locally under
+`local-dev/.mlflow/calibration/`; `--output` selects a local filename. Missing/error
+verdicts and expectation mismatches exit non-zero. Deterministic mode needs neither
+a model nor a tracking server and re-evaluates captured inputs with current scorers.
+
+Offline tests check wiring, reporting, negative-case handling and output format;
+they do not establish judge quality. Run the frozen suite against the configured
+model before claiming calibration passes. See [VALIDATION.md](VALIDATION.md) for
+the ordered upgrade and end-to-end checks.
+
+To reproduce live calibration against an isolated temporary MLflow store, use
+`RUN_MLFLOW_PROXY_TEST=1 RUN_LLM_CALIBRATION_TEST=1 python -m pytest local-dev/tests/test_artifact_proxy.py -q`.
+This explicit opt-in makes eight judge calls with the configured credentials and
+keeps the demo store unchanged. Standard unit tests and proxy-only checks make no model calls.
+
 ### Efficiency contract
 
 `iterations` means total LLM inference calls **including the final response** in

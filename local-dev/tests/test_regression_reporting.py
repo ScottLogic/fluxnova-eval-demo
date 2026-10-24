@@ -62,3 +62,18 @@ def test_numeric_thresholds_and_non_finite_values():
         report = build_report(table, [case], ["score"], "gate", {"score": 0.7})
         assert bool(report["failures"]) != passed
         json.dumps(report, allow_nan=False)
+
+
+def test_public_mlflow_trace_table_retains_kwargs_identity_and_assessment_rationale():
+    case = _case()
+    table = pd.DataFrame([{
+        "request": {"input_variables": case["inputs"]["input_variables"],
+                    "_scorer_only_fields": {k: v for k, v in case["inputs"].items() if k != "input_variables"}},
+        "response": "Evidence.\nAPPROVE", "score/value": False,
+        "assessments": [{"assessment_name": "score", "feedback": {"value": False},
+                         "rationale": "Specific failing reason", "valid": True}],
+    }])
+    report = build_report(table, [case], ["score"], "gate")
+    assert len(report["failures"]) == 1
+    assert report["failures"][0]["rationale"] == "Specific failing reason"
+    assert report["cases"][0]["outputs"] == "Evidence.\nAPPROVE"

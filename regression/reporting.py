@@ -48,21 +48,47 @@ def _passes(value, minimum: float) -> bool:
     return str(value).strip().lower() in {"true", "yes", "1"}
 
 
+def _normalize_result(row: dict) -> dict:
+    # MLflow 3.16's public table is trace-shaped (request/response/assessments),
+    # whereas its internal evaluator and offline replay use inputs/outputs.
+    inputs = row.get("inputs", row.get("request")) or {}
+    if isinstance(inputs, str):
+        try:
+            inputs = json.loads(inputs)
+        except json.JSONDecodeError:
+            inputs = {}
+    if not isinstance(inputs, dict):
+        inputs = {}
+    # Tracing a **kwargs predict_fn nests the scorer-only fields in its request.
+    extra = inputs.get("_scorer_only_fields")
+    inputs = {**inputs, **(extra if isinstance(extra, dict) else {})}
+    normalized = {**row, "inputs": inputs, "outputs": row.get("outputs", row.get("response"))}
+    assessments = row.get("assessments")
+    if not isinstance(assessments, list):
+        assessments = []
+    for assessment in assessments:
+        if not isinstance(assessment, dict) or assessment.get("valid") is False:
+            continue
+        feedback = assessment.get("feedback")
+        if not isinstance(feedback, dict):
+            continue
+        name = assessment.get("assessment_name", assessment.get("name"))
+        normalized[f"{name}/value"] = feedback.get("value")
+        normalized[f"{name}/rationale"] = assessment.get("rationale")
+        error = feedback.get("error") or assessment.get("error")
+        if error:
+            normalized[f"{name}/error_message"] = error.get("error_message", str(error)) if isinstance(error, dict) else str(error)
+    return normalized
+
+
 def build_report(table, expected_rows: list[dict], scorers: list[str], gate: str,
                  thresholds: dict[str, float] | None = None) -> dict:
     report = {"schema_version": 1, "gate": gate, "cases": [], "failures": []}
     by_scenario = {}
     expected_names = {row["inputs"]["scenario"] for row in expected_rows}
     for row in table.to_dict(orient="records"):
-        inputs = row.get("inputs") or {}
-        if isinstance(inputs, str):
-            try:
-                inputs = json.loads(inputs)
-            except json.JSONDecodeError:
-                inputs = {}
-        if not isinstance(inputs, dict):
-            inputs = {}
-        row["inputs"] = inputs
+        row = _normalize_result(row)
+        inputs = row["inputs"]
         scenario = inputs.get("scenario")
         if scenario not in expected_names or scenario in by_scenario:
             report["failures"].append({"scenario": scenario, "scorer": "evaluation",
