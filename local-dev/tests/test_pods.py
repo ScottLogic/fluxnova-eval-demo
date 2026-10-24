@@ -9,6 +9,16 @@ from pathlib import Path
 
 import pytest
 
+# Retain only the OS/runtime environment needed to launch Bash and the recording
+# Python executable. Developer .env exports and fake-Podman controls must come
+# exclusively from this fixture's .env or the test's explicit `extra` argument.
+_RUNTIME_ENV_KEYS = {
+    "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+    "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT",
+    "TEMP", "TMP", "TMPDIR", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+    "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
+}
+
 
 @pytest.fixture
 def run_script(tmp_path):
@@ -61,16 +71,15 @@ def run_script(tmp_path):
             + "POSTGRES_PORT=15432\nPROMETHEUS_PORT=19090\nGRAFANA_PORT=13000\n"
             "LLM_JUDGE_PROVIDER=openai\nOPENAI_API_KEY=test-key\n"
         )
-        env = dict(
-            os.environ,
-            PATH=f"{binaries}:{os.environ['PATH']}",
+        env = {key: value for key, value in os.environ.items() if key.upper() in _RUNTIME_ENV_KEYS}
+        env.update(
+            PATH=f"{binaries}{os.pathsep}{os.environ['PATH']}",
             PODMAN_TEST_LOG=str(log),
             FLUXNOVA_OPEN_BROWSER="false",
             MLFLOW_OPEN_BROWSER="false",
             OBSERVABILITY_OPEN_BROWSER="false",
             IMAGE_PULL_RETRY_DELAY="0",
         )
-        env.pop("MLFLOW_PORT", None)
         env.update(extra or {})
         result = subprocess.run(
             ["bash", str(local / f"services/{name}-up.sh")],
@@ -286,3 +295,29 @@ def test_exit_between_http_and_bootstrap_file_is_reported_once(run_script):
     assert "legacy artifact path" in result.stderr and "exit=1" in result.stderr
     assert "container state improper" not in result.stderr
     assert len([c for c in commands if c[0] == "exec"]) == 1
+
+
+@pytest.mark.parametrize("service, extra", [
+    ("mlflow", {"EXISTING_POD": "1"}),
+    ("eval-listener", {}),
+])
+def test_fixture_ignores_exported_developer_settings(run_script, monkeypatch, service, extra):
+    for name, value in {
+        "EVAL_SERVICE_EXPERIMENT_NAME": "fluxnova-loanAssessmentEvalProcess-v2",
+        "EVAL_LISTENER_TRACKING_URI": "http://developer.invalid:9999",
+        "MLFLOW_POD_NAME": "developer-mlflow",
+        "MLFLOW_RUNTIME_VOLUME": "developer-runtime",
+        "OLLAMA_CONTAINER_URL": "http://developer.invalid:11434",
+        "POD_NAME": "developer-pod",
+        "IMAGE_PULL_ATTEMPTS": "0",
+        "START_ERROR": "inherited fake failure must not escape into another test",
+    }.items():
+        monkeypatch.setenv(name, value)
+    result, commands = run_script(service, extra=extra)
+    assert result.returncode == 0, result.stderr
+    if service == "mlflow":
+        assert ["pod", "start", "mlflow-local"] in commands
+    else:
+        run = next(command for command in commands if command[0] == "run")
+        assert "EVAL_LISTENER_TRACKING_URI=http://mlflow-local:5000" in run
+        assert "OLLAMA_API_BASE=http://host.containers.internal:11434" in run
