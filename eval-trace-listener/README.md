@@ -50,9 +50,9 @@ inputs entirely *from the trace it just read*:
   span (no BPMN parsing, no Fluxnova REST call).
 - `outputs` — the agent's final answer extracted from the trace's output spans.
 
-> **Operational note:** because the listener now runs the two LLM judges, its container must be able to reach the
-> Ollama judge model directly (unlike the deterministic-only checks, which need nothing external). Ensure Ollama is
-> reachable from wherever the listener runs.
+> **Operational note:** the listener uses the shared judge provider (OpenAI by
+> default, Ollama when `LLM_JUDGE_PROVIDER=ollama`). Local startup passes the API key,
+> provider and container Ollama URL explicitly. See [local-dev](../local-dev/README.md).
 
 ## Why poll MLflow instead of receiving OTLP?
 
@@ -85,7 +85,7 @@ default; unknown keys are ignored so the file can carry forward-looking settings
 | Key                   | Default                                 | Purpose                                                                |
 |-----------------------|-----------------------------------------|------------------------------------------------------------------------|
 | `tracking_uri`        | `http://localhost:5000`                 | MLflow tracking server (HTTP, not `postgresql://`)                     |
-| `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`    | Experiment to tail (must match the collector's `MLFLOW_EXPERIMENT_ID`) |
+| `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`    | Experiment to tail (local startup initializes the collector with this experiment's real ID) |
 | `agent_names`         | `[AdHocSubProcess_LoanAssessmentAgent]` | Agents to score; empty ⇒ score every agent                             |
 | `poll_interval_s`     | `10`                                    | Seconds between polls                                                  |
 | `max_traces_per_poll` | `200`                                   | Upper bound on recent traces pulled per poll                           |

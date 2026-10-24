@@ -27,7 +27,7 @@ the eval services), so the same file works unchanged for both:
 
 | Field             | Required | Description                                                                   |
 |-------------------|----------|-------------------------------------------------------------------------------|
-| `fluxnova_url`    | Yes      | Fluxnova engine REST base URL                                                 |
+| `fluxnova_url`    | Yes      | Fluxnova engine REST base URL; exported `FLUXNOVA_URL` overrides it for local ports |
 | `bpmn_path`       | Yes      | Path to the `.bpmn` file — resolved relative to the repo root if not absolute |
 | `process_key`     | Yes      | The `id` attribute on `<process>` in the BPMN                                 |
 | `deployment_name` | Yes      | Human-readable deployment name shown in Cockpit                               |

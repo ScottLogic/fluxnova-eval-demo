@@ -39,6 +39,7 @@ if [ -f "$LOCAL_DEV_DIR/.env" ]; then
   set +a
 fi
 MLFLOW_ARTIFACT_DIR="${MLFLOW_ARTIFACT_DIR:-${LOCAL_DEV_DIR}/.mlflow/artifacts}"
+POD_NAME="${MLFLOW_POD_NAME:-mlflow-local}"
 
 podman pod stop "$POD_NAME" 2>/dev/null || true
 podman pod rm "$POD_NAME" 2>/dev/null || true

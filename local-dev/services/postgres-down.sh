@@ -36,6 +36,7 @@ if [ -f ../.env ]; then
   set +a
 fi
 POSTGRES_VOLUME="${POSTGRES_VOLUME:-postgres-local-data}"
+POD_NAME="${POSTGRES_POD_NAME:-postgres-local}"
 
 podman pod stop "$POD_NAME" 2>/dev/null || true
 podman pod rm "$POD_NAME" 2>/dev/null || true

@@ -10,8 +10,8 @@ the full background/scope and `local-dev/README.md`'s "eval-service-worker" sect
 (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`, `tool_correctness`,
 `all_tool_calls_completed`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
 `no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`).
-This is the deliberately narrow online set: `decision_quality` is the one judge cheap enough to run per-run through the
-`fluxnova-judge` gateway, and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
+This is the deliberately narrow online set: `decision_quality` is the per-run judge
+(direct OpenAI in the local demo, or an explicitly configured gateway), and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
 `matches_golden`) are left to the offline `eval-trace-listener` / `regression` suites.
 
 **How the scorer inputs are sourced.** All scorers are decoupled from tracing, so the worker builds their plain-value
@@ -43,6 +43,11 @@ is no child (e.g. running `loan-assesment.bpmn` standalone).
 
 ## Install (editable, into the shared repo venv or your own)
 
+For the complete shared environment run `./setup.sh` from the repository root.
+The [local development guide](../local-dev/README.md) covers host debugging and
+cross-platform container startup. Its `.env` configures a direct OpenAI judge by
+default; the standalone package default below retains the gateway URI.
+
 ```bash
 pip install -e ../fluxnova-mlflow-dataset   # shared trace-reader + judge definition
 pip install -e .
@@ -70,12 +75,10 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 
 A CLI flag always wins over the matching env var, which always wins over the default.
 
-> **Experiment alignment (important):** the OTel collector routes **every** trace — from the parent eval process *and*
-> the called agent child process — to the single MLflow experiment named by `MLFLOW_EXPERIMENT_ID` (a static collector
-> header), regardless of process key. The worker must therefore read from that **same** experiment, so
-> `EVAL_SERVICE_EXPERIMENT_NAME` has to name whatever experiment `MLFLOW_EXPERIMENT_ID` points at. `local-dev/` keeps
-> both in `local-dev/.env` so they stay in sync (currently `fluxnova-loanAssessmentEvalProcess`). See
-> `local-dev/README.md`.
+> **Experiment alignment:** local MLflow startup creates/resolves
+> `EVAL_SERVICE_EXPERIMENT_NAME` and shares its actual numeric ID with the collector.
+> All agent traces and both evaluation services use this experiment, regardless of
+> process key. No fixed `MLFLOW_EXPERIMENT_ID` is needed.
 
 ## Run as a worker (host)
 

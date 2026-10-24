@@ -10,6 +10,9 @@
 #   ./eval-listener-down.sh --delete-data  # same as above (no local data to delete)
 set -uo pipefail
 
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/../.env" ]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/../.env"
+fi
 POD_NAME="${EVAL_LISTENER_POD_NAME:-eval-listener-local}"
 
 for arg in "$@"; do

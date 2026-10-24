@@ -12,8 +12,8 @@ parsing, no Fluxnova REST calls.
 :data:`LISTENER_SCORERS` is the shared ``DETERMINISTIC_SCORERS`` plus the two LLM
 judges that need only trace-derivable data — ``decision_quality`` (a Guidelines
 judge over the final ``outputs``) and ``evidence_citation`` (over ``outputs`` +
-the extracted ``input_variables``). Both call the local Ollama judge model
-directly, so the listener host must be able to reach it. ``matches_golden`` is
+the extracted ``input_variables``). Both use the shared judge provider
+(OpenAI by default, optionally Ollama). ``matches_golden`` is
 *not* included: it needs a golden ``expected_output`` (an ``expectations`` value)
 that a bare trace doesn't carry — that judge lives in the regression suite.
 """

@@ -10,6 +10,9 @@
 #   ./eval-service-down.sh --delete-data  # same as above (no local data to delete)
 set -uo pipefail
 
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/../.env" ]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/../.env"
+fi
 POD_NAME="${EVAL_SERVICE_POD_NAME:-eval-service-local}"
 
 for arg in "$@"; do

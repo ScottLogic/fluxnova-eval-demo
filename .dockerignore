@@ -1,0 +1,10 @@
+.git
+.venv
+.idea
+.run
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+**/.env
+local-dev/.mlflow

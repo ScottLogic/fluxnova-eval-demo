@@ -10,7 +10,10 @@
 #   ./fluxnova-down.sh --delete-data  # same as above (no local data to delete)
 set -uo pipefail
 
-POD_NAME="${POD_NAME:-fluxnova-local}"
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/../.env" ]; then
+  source "$(dirname "${BASH_SOURCE[0]}")/../.env"
+fi
+POD_NAME="${FLUXNOVA_POD_NAME:-${POD_NAME:-fluxnova-local}}"
 
 for arg in "$@"; do
   case "$arg" in

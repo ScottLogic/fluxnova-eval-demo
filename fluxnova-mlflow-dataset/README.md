@@ -88,7 +88,7 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 `DECISION_QUALITY_GUIDELINES`) used identically by:
 
 - the regression suite (`regression/`) — called with a direct `"ollama:/gemma4:e2b"`-style URI.
-- `eval-service-worker` — synchronous per-run scoring, called with a `"gateway:/<endpoint>"` URI (required for
+- `eval-service-worker` — synchronous per-run scoring, using a direct provider URI in the local demo or a `"gateway:/<endpoint>"` URI (required for
   anything routed through the MLflow AI Gateway).
 
 `DETERMINISTIC_SCORERS` (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`) are non-LLM checks

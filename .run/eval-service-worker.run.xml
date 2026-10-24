@@ -1,0 +1,15 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="eval-service-worker" type="PythonConfigurationType" factoryName="Python">
+    <module name="fluxnova-eval-demo" />
+    <option name="ENV_FILES" value="$PROJECT_DIR$/local-dev/.env" />
+    <option name="PARENT_ENVS" value="true" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="IS_MODULE_SDK" value="true" />
+    <option name="ADD_CONTENT_ROOTS" value="true" />
+    <option name="ADD_SOURCE_ROOTS" value="true" />
+    <option name="SCRIPT_NAME" value="eval_service_worker.main" />
+    <option name="PARAMETERS" value="" />
+    <option name="MODULE_MODE" value="true" />
+    <method v="2" />
+  </configuration>
+</component>

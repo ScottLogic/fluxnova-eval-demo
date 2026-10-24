@@ -28,7 +28,7 @@ DEFAULT_TRACKING_URI = "http://localhost:5000"
 
 # The MLflow experiment whose traces are tailed. The OTel Collector routes ALL
 # traces (parent eval process + the called agent subprocess) to a single
-# experiment (MLFLOW_EXPERIMENT_ID in local-dev/.env) — so this must name that
+# experiment (resolved by local-dev/mlflow/bootstrap.py) — so this must name that
 # experiment, matching eval-service-worker's default (see local-dev/.env's
 # EVAL_SERVICE_EXPERIMENT_NAME). The agent runs we score land here tagged with
 # their invoke_agent span's gen_ai.agent.name (see agent_names below).
