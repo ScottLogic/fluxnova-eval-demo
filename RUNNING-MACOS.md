@@ -273,6 +273,18 @@ For host debugging, Compose, Ollama or the Windows host-network fallback, see
 
 ## Troubleshooting
 
+### MLflow exits during restart or repeats container state improper
+
+Run `podman logs --tail 80 mlflow`. A bootstrap error naming a container-local
+artifact experiment means the old experiment cannot be used by host clients.
+Verify the two `-v2` names from [regression/VALIDATION.md](regression/VALIDATION.md)
+are in `.env`, then recreate the stack with `pods-down.sh` / `pods-up.sh` as shown
+there. Starting the Podman machine or restarting the existing pod keeps its old
+environment; it does not apply `.env` edits. The scripts now detect stale MLflow
+experiment settings and fail fast if a container exits during readiness, showing
+the startup error rather than repeated `podman exec` failures. Normal pod recreation
+preserves the databases and artifact files.
+
 ### Image pull fails with unexpected EOF
 
 `failed to decode message from stream: unexpected EOF` occurs in Podman's remote

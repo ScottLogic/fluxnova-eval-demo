@@ -23,6 +23,7 @@ if ! start_existing_pod "$POSTGRES_POD_NAME" postgres; then
   finish_pod_creation
 fi
 for ((i=0; i<90; i++)); do
+  require_container_running postgres
   # The entrypoint's temporary initialization server is socket-only. Require TCP
   # so dependent services cannot race database/role creation on a fresh volume.
   if podman exec postgres pg_isready -h 127.0.0.1 -U "$POSTGRES_SUPERUSER" >/dev/null 2>&1; then

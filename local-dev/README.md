@@ -150,6 +150,12 @@ MLFLOW_EXPERIMENT_NAME=fluxnova-loanAssessmentProcess-regression-v2
 Recreate the stack with `pods-down.sh` / `pods-up.sh` (without `--delete-data`), then
 reload `.env` in host terminals. Startup refuses to reuse a container-local trace
 experiment; regression similarly rejects local artifact paths with upgrade guidance.
+Restarting the Podman VM or an existing pod does **not** replace container environment
+variables. Even when `.env` already says `-v2`, an old MLflow container may still
+select the legacy experiment. The up script detects that mismatch before restarting
+it and provides a pod-recreation command. If a process exits during readiness or
+experiment initialization, startup fails immediately with its exit status and recent
+logs instead of repeatedly executing probes against a stopped container.
 Validate the host proxy before running model-driven tests:
 
 ```bash

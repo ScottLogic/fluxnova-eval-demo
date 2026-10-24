@@ -26,6 +26,13 @@ def run_script(tmp_path):
         "if args[:1] == ['info'] and os.environ.get('STOPPED_MACHINE'): sys.exit(125)\n"
         "if args[:2] == ['pod', 'exists']: sys.exit(0 if os.environ.get('EXISTING_POD') else 1)\n"
         "if args[:2] == ['container', 'exists']: sys.exit(1 if os.environ.get('INCOMPLETE_POD') else 0)\n"
+        "if args[:2] == ['container', 'inspect']:\n"
+        " fmt = args[args.index('--format') + 1]\n"
+        " if '.Config.Env' in fmt: print('EVAL_SERVICE_EXPERIMENT_NAME=' + os.environ.get('BAKED_EXPERIMENT', 'fluxnova-loanAssessmentEvalProcess'))\n"
+        " elif '.State.Status' in fmt:\n"
+        "  with open(os.environ['PODMAN_TEST_LOG']) as f: previous = [json.loads(line) for line in f]\n"
+        "  probed = any(c[:1] == ['exec'] and 'test' in c for c in previous)\n"
+        "  print('exited 1' if os.environ.get('EXITED_CONTAINER') or (os.environ.get('EXIT_AFTER_EXEC') and probed) else 'running 0')\n"
         "if args[:2] == ['image', 'exists']: sys.exit(0 if os.environ.get('CACHED_IMAGE') else 1)\n"
         "if args[:2] == ['image', 'inspect']: print(os.environ.get('IMAGE_PLATFORM', 'linux/amd64'))\n"
         "if args[:2] == ['pod', 'inspect']: print(os.environ.get('EXISTING_MLFLOW_PORT', '15000'))\n"
@@ -33,6 +40,9 @@ def run_script(tmp_path):
         " print(os.environ['START_ERROR'], file=sys.stderr); sys.exit(125)\n"
         "if args[:1] == ['run'] and os.environ.get('RUN_ERROR'):\n"
         " print(os.environ['RUN_ERROR'], file=sys.stderr); sys.exit(125)\n"
+        "if args[:1] == ['exec'] and 'test' in args and os.environ.get('HEADER_NOT_READY'):\n"
+        " print('can only create exec sessions on running containers: container state improper', file=sys.stderr); sys.exit(125)\n"
+        "if args[:1] == ['logs']: print(os.environ.get('LOG_MESSAGE', 'startup log'), file=sys.stderr)\n"
         "if args[:1] == ['pull']:\n"
         " with open(os.environ['PODMAN_TEST_LOG']) as f: count = sum(json.loads(line)[0] == 'pull' for line in f)\n"
         " if count <= int(os.environ.get('PULL_FAILURES', '0')):\n"
@@ -253,3 +263,26 @@ def test_healthy_existing_pod_does_not_pull_or_recreate(run_script):
     result, commands = run_script("mlflow", extra={"EXISTING_POD": "1"})
     assert result.returncode == 0, result.stderr
     assert not any(c[0] in ("pull", "run") or c[:2] == ["pod", "rm"] for c in commands)
+
+
+def test_changed_experiment_requires_recreation_before_restarting(run_script):
+    result, commands = run_script("mlflow", extra={"EXISTING_POD": "1", "EVAL_SERVICE_EXPERIMENT_NAME": "trace-v2"})
+    assert result.returncode != 0
+    assert "trace-v2" in result.stderr and "Restarting does not apply" in result.stderr
+    assert "podman pod rm --force 'mlflow-local'" in result.stderr
+    assert not any(c[:2] in (["pod", "start"], ["pod", "rm"]) for c in commands)
+
+
+def test_exited_container_fails_http_readiness_with_startup_logs(run_script):
+    result, commands = run_script("mlflow", extra={"EXITED_CONTAINER": "1", "LOG_MESSAGE": "Experiment uses container-local artifact storage; choose a fresh name"})
+    assert result.returncode != 0
+    assert "exit=1" in result.stderr and "choose a fresh name" in result.stderr
+    assert not any(c[0] == "exec" for c in commands)
+
+
+def test_exit_between_http_and_bootstrap_file_is_reported_once(run_script):
+    result, commands = run_script("mlflow", extra={"HEADER_NOT_READY": "1", "EXIT_AFTER_EXEC": "1", "LOG_MESSAGE": "bootstrap failed: legacy artifact path"})
+    assert result.returncode != 0
+    assert "legacy artifact path" in result.stderr and "exit=1" in result.stderr
+    assert "container state improper" not in result.stderr
+    assert len([c for c in commands if c[0] == "exec"]) == 1

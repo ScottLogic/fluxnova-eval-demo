@@ -20,11 +20,7 @@ if ! start_existing_pod "$MLFLOW_POD_NAME" mlflow; then
   finish_pod_creation
 fi
 require_http "http://localhost:${MLFLOW_PORT}/version" mlflow
-for ((i=0; i<90; i++)); do
-  if podman exec mlflow test -s /mlflow-runtime/headers.yaml; then break; fi
-  sleep 2
-done
-podman exec mlflow test -s /mlflow-runtime/headers.yaml || die 'MLflow experiment initialization failed; see podman logs mlflow.'
+require_container_file mlflow /mlflow-runtime/headers.yaml
 echo "MLflow: ${READY_URL%/version}"
 echo "Trace experiment: $EVAL_SERVICE_EXPERIMENT_NAME (ID resolved automatically)"
 if [ "${MLFLOW_OPEN_BROWSER:-true}" = true ]; then open_browser "${READY_URL%/version}"; fi

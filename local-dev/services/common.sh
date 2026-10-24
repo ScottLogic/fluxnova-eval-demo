@@ -125,8 +125,17 @@ finish_pod_creation() {
   trap - EXIT
 }
 
+container_environment_value() {
+  local container="$1" key="$2" entry
+  # Filter inside the pipe: diagnostic output must never dump API keys/passwords.
+  podman container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" |
+    while IFS= read -r entry; do
+      case "$entry" in "$key="*) printf '%s\n' "${entry#*=}" ;; esac
+    done
+}
+
 start_existing_pod() {
-  local pod="$1" output port status
+  local pod="$1" output port status experiment
   shift
   if podman pod exists "$pod"; then :; else
     status=$?
@@ -139,15 +148,45 @@ start_existing_pod() {
   if [ "$pod" = "$MLFLOW_POD_NAME" ]; then
     port="$(podman pod inspect --format '{{range (index .InfraConfig.PortBindings "5000/tcp")}}{{.HostPort}}{{end}}' "$pod")" || die "Could not inspect MLflow's port mapping."
     [ "$port" = "$MLFLOW_PORT" ] || die "Pod '$pod' publishes MLflow on port '${port:-none}', but MLFLOW_PORT=$MLFLOW_PORT. Recreate it with: podman pod rm --force '$pod', then rerun pods-up.sh. Data is preserved."
+    experiment="$(container_environment_value mlflow EVAL_SERVICE_EXPERIMENT_NAME)" || die "Could not inspect MLflow's experiment configuration."
+    [ "$experiment" = "$EVAL_SERVICE_EXPERIMENT_NAME" ] || die "MLflow's existing container uses experiment '${experiment:-unset}', but local-dev/.env requests '$EVAL_SERVICE_EXPERIMENT_NAME'. Restarting does not apply new environment values. Run: podman pod rm --force '$pod', then rerun pods-up.sh. Data is preserved."
   fi
   if output="$(podman pod start "$pod" 2>&1)"; then :; else fail_pod "$pod" "$output"; fi
   echo "Pod '$pod' started (existing configuration; recreate to apply changes)."
+}
+
+require_container_running() {
+  local container="$1" state
+  state="$(podman container inspect --format '{{.State.Status}} {{.State.ExitCode}}' "$container" 2>/dev/null)" ||
+    die "Cannot inspect container '$container'. Check 'podman info' and 'podman ps -a'."
+  if [ "${state%% *}" != running ]; then
+    podman logs --tail 40 "$container" >&2 || true
+    die "Container '$container' stopped during startup (state=${state%% *}, exit=${state#* }). See the startup error above or run: podman logs --tail 80 '$container'. If .env changed, recreate its pod to apply the new settings; data is preserved."
+  fi
+}
+
+require_container_file() {
+  local container="$1" path="$2" tries="${3:-90}" i
+  for ((i=0; i<tries; i++)); do
+    require_container_running "$container"
+    if podman exec "$container" test -s "$path" >/dev/null 2>&1; then
+      require_container_running "$container"
+      return
+    fi
+    # The process can exit between inspect and exec. Report its logs immediately,
+    # rather than repeating Podman's "container state improper" for three minutes.
+    require_container_running "$container"
+    sleep 2
+  done
+  podman logs --tail 40 "$container" >&2 || true
+  die "$container did not initialize $path. Check the startup logs above."
 }
 
 wait_http() {
   local url="$1" container="$2" tries="${3:-120}"
   local i
   for ((i=0; i<tries; i++)); do
+    require_container_running "$container"
     if curl -fs -o /dev/null --max-time 2 "$url"; then return 0; fi
     sleep 2
   done

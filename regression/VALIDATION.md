@@ -20,6 +20,9 @@ MLFLOW_EXPERIMENT_NAME=fluxnova-loanAssessmentProcess-regression-v2
 
 Fresh names are necessary for experiments previously advertising `/mlflow-artifacts`.
 Restarting MLflow does not change artifact locations already stored in PostgreSQL.
+If the Podman VM is stopped, start it first with `podman machine start`. A VM/pod
+restart alone does not apply edited container environment values: the teardown and
+recreation below are required even if `.env` already contains the correct names.
 
 ```bash
 source .venv/bin/activate
