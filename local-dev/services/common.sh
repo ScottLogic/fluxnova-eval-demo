@@ -25,7 +25,7 @@ POSTGRES_POD_NAME="${POSTGRES_POD_NAME:-postgres-local}"
 FLUXNOVA_POD_NAME="${FLUXNOVA_POD_NAME:-${POD_NAME:-fluxnova-local}}"
 MLFLOW_POD_NAME="${MLFLOW_POD_NAME:-mlflow-local}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
-MLFLOW_PORT="${MLFLOW_PORT:-5000}"
+MLFLOW_PORT="${MLFLOW_PORT:-5001}"
 FLUXNOVA_PORT="${FLUXNOVA_PORT:-8080}"
 OTEL_METRICS_PORT="${OTEL_METRICS_PORT:-8889}"
 OTEL_GRPC_PORT="${OTEL_GRPC_PORT:-4317}"
@@ -46,14 +46,101 @@ OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 
 podman network create --ignore "$DEV_NETWORK" >/dev/null
 
-start_existing_pod() {
-  local pod="$1"
-  shift
-  if ! podman pod exists "$pod"; then return 1; fi
-  for container in "$@"; do
-    podman container exists "$container" || die "Pod '$pod' is incomplete. Remove it with its down script and retry."
+# Retry the entire CLI call: remote-client stream errors can escape Podman's
+# registry-level retries. Cached images avoid both the registry and remote pull API.
+ensure_image() {
+  local image="$1" platform="${2:-}" attempt
+  local attempts="${IMAGE_PULL_ATTEMPTS:-3}" delay="${IMAGE_PULL_RETRY_DELAY:-2}"
+  local platform_args=()
+  if [ -n "$platform" ]; then platform_args=(--platform "$platform"); fi
+  if podman image exists "$image"; then
+    if [ -z "$platform" ] || [ "$(podman image inspect --format '{{.Os}}/{{.Architecture}}' "$image")" = "$platform" ]; then
+      return
+    fi
+  fi
+  case "$attempts" in ''|*[!0-9]*|0) die 'IMAGE_PULL_ATTEMPTS must be a positive integer.' ;; esac
+  case "$delay" in ''|*[!0-9]*) die 'IMAGE_PULL_RETRY_DELAY must be a non-negative integer (seconds).' ;; esac
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    echo "Pulling $image (attempt $attempt/$attempts)..."
+    # Empty array expansion with nounset is not portable to macOS Bash 3.2.
+    if podman pull --quiet --retry 2 --retry-delay 2s ${platform_args[@]+"${platform_args[@]}"} "$image"; then
+      return
+    fi
+    podman info --format '{{.Host.Arch}}' >/dev/null 2>&1 || die "Podman disconnected while pulling $image. Check 'podman machine list' and restart the machine if needed."
+    if [ "$attempt" -lt "$attempts" ]; then sleep "$delay"; fi
   done
-  podman pod start "$pod" >/dev/null || die "Could not start pod '$pod'."
+  die "Could not pull $image after $attempts attempts. No pod was created. Retry 'podman pull $image'; for repeated 'unexpected EOF', see RUNNING-MACOS.md#image-pull-fails-with-unexpected-eof for a direct-VM pull using the same rootful/rootless storage."
+}
+
+fail_pod() {
+  local pod="$1" message="$2"
+  echo "$message" >&2
+  case "$message" in
+    *"address already in use"*|*"port is already allocated"*)
+      case "$pod" in
+        "$MLFLOW_POD_NAME") echo "MLflow host port $MLFLOW_PORT is occupied. Set MLFLOW_PORT to a free port in local-dev/.env (default 5001)." >&2 ;;
+        "$POSTGRES_POD_NAME") echo "Set POSTGRES_PORT to a free host port in local-dev/.env." >&2 ;;
+        "$FLUXNOVA_POD_NAME") echo "Check FLUXNOVA_PORT and OTEL_GRPC_PORT/OTEL_HTTP_PORT/OTEL_METRICS_PORT in local-dev/.env." >&2 ;;
+        *) echo "Check the service's configured host ports in local-dev/.env." >&2 ;;
+      esac
+      ;;
+  esac
+  die "Could not start pod '$pod'. To recreate it after correcting the configuration: podman pod rm --force '$pod', then rerun pods-up.sh. Named volumes and artifact files are preserved."
+}
+
+# Only remove pods created by this invocation when container creation fails.
+# Existing pods and volumes are never automatically removed. Once all containers
+# are created, retain them on readiness failures so their logs remain available.
+cleanup_new_pod() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ -n "${CREATING_POD:-}" ]; then
+    echo "Removing newly-created incomplete pod '$CREATING_POD' (keeping volumes and artifacts)." >&2
+    podman pod rm --force "$CREATING_POD" >/dev/null || echo "Cleanup failed; remove pod '$CREATING_POD' before retrying." >&2
+  fi
+  exit "$status"
+}
+
+create_pod() {
+  local pod="$1" output
+  shift
+  if output="$(podman pod create --name "$pod" "$@" 2>&1)"; then
+    CREATING_POD="$pod"
+    trap cleanup_new_pod EXIT
+  else
+    fail_pod "$pod" "$output"
+  fi
+}
+
+run_container() {
+  local output
+  if output="$(podman run --pull=never "$@" 2>&1)"; then
+    echo "$output"
+  else
+    fail_pod "$CREATING_POD" "$output"
+  fi
+}
+
+finish_pod_creation() {
+  CREATING_POD=""
+  trap - EXIT
+}
+
+start_existing_pod() {
+  local pod="$1" output port status
+  shift
+  if podman pod exists "$pod"; then :; else
+    status=$?
+    if [ "$status" -eq 1 ]; then return 1; fi
+    die "Could not inspect pod '$pod'; check 'podman info' before retrying."
+  fi
+  for container in "$@"; do
+    podman container exists "$container" || die "Pod '$pod' is incomplete. Run: podman pod rm --force '$pod', then rerun pods-up.sh. Named volumes and artifacts are preserved."
+  done
+  if [ "$pod" = "$MLFLOW_POD_NAME" ]; then
+    port="$(podman pod inspect --format '{{range (index .InfraConfig.PortBindings "5000/tcp")}}{{.HostPort}}{{end}}' "$pod")" || die "Could not inspect MLflow's port mapping."
+    [ "$port" = "$MLFLOW_PORT" ] || die "Pod '$pod' publishes MLflow on port '${port:-none}', but MLFLOW_PORT=$MLFLOW_PORT. Recreate it with: podman pod rm --force '$pod', then rerun pods-up.sh. Data is preserved."
+  fi
+  if output="$(podman pod start "$pod" 2>&1)"; then :; else fail_pod "$pod" "$output"; fi
   echo "Pod '$pod' started (existing configuration; recreate to apply changes)."
 }
 

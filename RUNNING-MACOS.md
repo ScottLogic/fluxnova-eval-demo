@@ -88,7 +88,8 @@ macOS defaults to bridge networking. If reusing an old `.env`, remove or change
 model setting above, and remove obsolete `MLFLOW_EXPERIMENT_ID`. Preserve your key.
 No fixed experiment ID or gateway endpoint is needed.
 
-If port `5000` is already in use (often AirPlay Receiver), set `MLFLOW_PORT=5001`.
+MLflow defaults to host port `5001`, avoiding the common AirPlay Receiver conflict
+on `5000`. If `5001` is occupied, choose another free `MLFLOW_PORT`.
 You may similarly change `FLUXNOVA_PORT`, `POSTGRES_PORT`, `PROMETHEUS_PORT` or
 `GRAFANA_PORT`. Ensure the `.env` has
 `FLUXNOVA_URL=http://localhost:${FLUXNOVA_PORT}/engine-rest` for host runner access.
@@ -110,7 +111,7 @@ recreate their configuration; this preserves databases and artifacts.
 ./local-dev/pods-up.sh postgres mlflow fluxnova
 podman pod ps
 podman ps
-curl -fsS "http://localhost:${MLFLOW_PORT:-5000}/version"
+curl -fsS "http://localhost:${MLFLOW_PORT:-5001}/version"
 curl -fsS "${FLUXNOVA_URL}/engine"
 podman exec mlflow python -c "from pathlib import Path; print(Path('/mlflow-runtime/headers.yaml').read_text())"
 ```
@@ -133,7 +134,7 @@ podman logs otel-collector
 ```bash
 ./local-dev/pods-up.sh eval-service eval-listener observability
 podman ps
-open "http://localhost:${MLFLOW_PORT:-5000}"
+open "http://localhost:${MLFLOW_PORT:-5001}"
 open "http://localhost:${GRAFANA_PORT:-3000}"
 ```
 
@@ -238,7 +239,7 @@ Record a trace ID and confirm it remains after recreation:
 ```bash
 ./local-dev/pods-down.sh
 ./local-dev/pods-up.sh
-open "http://localhost:${MLFLOW_PORT:-5000}"
+open "http://localhost:${MLFLOW_PORT:-5001}"
 ```
 
 **Expected:** the prior trace/assessments and experiment remain, and a new workflow
@@ -265,3 +266,51 @@ manifest checks; the full stack and Intel Mac/Windows runs still need local vali
 
 For host debugging, Compose, Ollama or the Windows host-network fallback, see
 [local-dev/README.md](local-dev/README.md).
+
+## Troubleshooting
+
+### Image pull fails with unexpected EOF
+
+`failed to decode message from stream: unexpected EOF` occurs in Podman's remote
+pull API before the application starts. The pod scripts now pull images before
+creating pods and retry the entire pull command (default three attempts), including
+remote-stream failures that can escape registry-level retries. Cached images are
+reused; containers then start with `--pull=never`.
+
+If the error persists, pull inside the VM to bypass the remote pull API. First run
+`podman machine list` to find your machine name and
+`podman info --format '{{.Host.Security.Rootless}}'` to determine the active storage
+mode. For the default machine, run **one** of these commands:
+
+```bash
+# If Rootless is false (rootful storage):
+podman machine ssh podman-machine-default sudo podman --remote=false pull ghcr.io/mlflow/mlflow:v3.16.0
+
+# If Rootless is true (rootless storage):
+podman machine ssh podman-machine-default podman --remote=false pull ghcr.io/mlflow/mlflow:v3.16.0
+```
+
+Match the machine and storage mode used by the Mac client, then confirm
+`podman image inspect ghcr.io/mlflow/mlflow:v3.16.0` succeeds from the Mac and rerun
+startup. For a pod left incomplete by the older scripts, recreate just that pod:
+
+```bash
+podman pod rm --force mlflow-local
+./local-dev/pods-up.sh postgres mlflow fluxnova
+```
+
+This preserves database volumes and artifact files. If the VM itself disconnects,
+check its state with `podman machine list` before restarting it.
+
+### Address already in use or an old port mapping
+
+For `listen tcp :5000: bind: address already in use`, set `MLFLOW_PORT=5001` in
+`local-dev/.env`; for a conflict on `5001`, choose another free port. Identify a Mac
+listener with `lsof -nP -iTCP:5001 -sTCP:LISTEN`. Recreate the MLflow pod after changing
+the port, using the two commands above, and reload `.env` in host-tool terminals.
+
+The scripts report port conflicts explicitly and detect an existing MLflow pod
+whose published port differs from the requested setting. A container-start failure
+cleans up only a pod created by that invocation, retaining named volumes/artifacts.
+Existing pods are kept and get an explicit recovery command. Readiness failures
+retain successfully-created containers so their logs can be inspected.

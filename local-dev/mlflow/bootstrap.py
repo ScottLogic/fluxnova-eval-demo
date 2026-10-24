@@ -48,7 +48,10 @@ def ensure_experiment(base_url: str, name: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tracking-uri", default="http://localhost:5000")
+    parser.add_argument(
+        "--tracking-uri",
+        default=f"http://localhost:{os.environ.get('MLFLOW_PORT', '5001')}",
+    )
     parser.add_argument(
         "--experiment-name", default="fluxnova-loanAssessmentEvalProcess"
     )

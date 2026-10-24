@@ -84,10 +84,10 @@ def default_server_tracking_uri() -> str:
     MLflow version (see ``local-dev/services/mlflow-up.sh`` and the version pin in
     ``local-dev/.env``). Host/port come from ``MLFLOW_HOST``/``MLFLOW_PORT`` (matching
     ``mlflow-up.sh``'s published port), defaulting to the local-dev pod's
-    ``http://localhost:5000``.
+    ``http://localhost:5001``.
     """
     host = os.environ.get("MLFLOW_HOST", "localhost")
-    port = os.environ.get("MLFLOW_PORT", "5000")
+    port = os.environ.get("MLFLOW_PORT", "5001")
     return f"http://{host}:{port}"
 
 

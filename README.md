@@ -407,9 +407,9 @@ and `local-dev/README.md`'s AI-Gateway section for the one-off endpoint setup th
 
 To view the results in the browser, use the same MLflow tracking server described in "Running the MLflow tracking
 server" below (or, if you only need read-only browsing and aren't ingesting new traces, the lighter-weight
-`mlflow ui --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --port 5000` works too).
+`mlflow ui --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --port 5001` works too).
 
-Then open [http://localhost:5000](http://localhost:5000) (or your configured port) and open the experiment named by
+Then open [http://localhost:5001](http://localhost:5001) (or your configured port) and open the experiment named by
 `EVAL_SERVICE_EXPERIMENT_NAME` (default `fluxnova-loanAssessmentEvalProcess`). Each
 evaluation run appears as a row; click into one to see per-scorer scores and rationales. Scoring further runs adds
 more rows to the same experiment for side-by-side comparison.
@@ -430,10 +430,10 @@ running)
 and leave it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
-python -m mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 0.0.0.0 --port 5000
+python -m mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 0.0.0.0 --port 5001
 ```
 
-This single server also serves the browsable UI at [http://localhost:5000](http://localhost:5000), so once it's running
+This single server also serves the browsable UI at [http://localhost:5001](http://localhost:5001), so once it's running
 you no longer need a separate `mlflow ui` process pointed at the same store.
 
 For trace ingestion into a host-run server, also run `local-dev/mlflow/bootstrap.py`
@@ -450,7 +450,7 @@ for the demo and debug the editable Python services on the host.
    `.venv/Scripts/mlflow.exe` (Windows) / `.venv/bin/mlflow` (macOS/Linux).
 4. **Parameters:**
    ```
-    server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 0.0.0.0 --port 5000
+    server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 0.0.0.0 --port 5001
    ```
 5. **Working directory:** `<repo root>`
 6. **Python interpreter:** the repo-root `.venv` interpreter (add it via **Add Interpreter → Existing** if not already

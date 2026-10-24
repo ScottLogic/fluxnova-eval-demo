@@ -39,7 +39,7 @@ mlflow-judges --experiment fluxnova-loanAssessmentProcess status
 
 Registers/starts/stops/inspects `automatic_judges()` against a target experiment using MLflow's
 `Scorer.register()`/`.start()`/`.stop()` — once started, the MLflow server scores a sampled fraction of new traces
-automatically, with no code needing to run continuously. `--tracking-uri` (default `http://localhost:5000`) **must**
+automatically, with no code needing to run continuously. `--tracking-uri` (default `http://localhost:5001`, honoring `MLFLOW_HOST`/`MLFLOW_PORT`) **must**
 be the running server's HTTP(S) address, not a direct `postgresql://...` path, since gateway-backed judges route
 through that server process — see [`local-dev/README.md`](../local-dev/README.md)'s "MLflow AI Gateway endpoint for
 automatic evaluation judges" section for the one-off endpoint setup this depends on. `--filter-string` on `start`

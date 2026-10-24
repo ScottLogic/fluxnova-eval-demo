@@ -8,7 +8,7 @@ from eval_trace_listener.config import ListenerConfig
 
 def test_defaults() -> None:
     config = ListenerConfig()
-    assert config.tracking_uri == "http://localhost:5000"
+    assert config.tracking_uri == "http://localhost:5001"
     assert config.experiment_name == "fluxnova-loanAssessmentEvalProcess"
     assert config.agent_names == ["AdHocSubProcess_LoanAssessmentAgent"]
     assert config.poll_interval_s == 10.0

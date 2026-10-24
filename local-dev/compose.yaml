@@ -37,7 +37,7 @@ services:
       EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
     entrypoint: [sh, /local-dev-mlflow/start.sh]
     ports:
-      - "${MLFLOW_PORT:-5000}:5000"
+      - "${MLFLOW_PORT:-5001}:5000"
     volumes:
       - ./.mlflow/artifacts:/mlflow-artifacts
       - mlflow-local-runtime:/mlflow-runtime

@@ -23,18 +23,32 @@ def run_script(tmp_path):
         "import json, os, sys\n"
         "args = sys.argv[1:]\n"
         "with open(os.environ['PODMAN_TEST_LOG'], 'a') as f: f.write(json.dumps(args) + '\\n')\n"
-        "if args[:2] in [['pod', 'exists'], ['image', 'exists'], ['volume', 'exists']]: sys.exit(1)\n"
         "if args[:1] == ['info'] and os.environ.get('STOPPED_MACHINE'): sys.exit(125)\n"
+        "if args[:2] == ['pod', 'exists']: sys.exit(0 if os.environ.get('EXISTING_POD') else 1)\n"
+        "if args[:2] == ['container', 'exists']: sys.exit(1 if os.environ.get('INCOMPLETE_POD') else 0)\n"
+        "if args[:2] == ['image', 'exists']: sys.exit(0 if os.environ.get('CACHED_IMAGE') else 1)\n"
+        "if args[:2] == ['image', 'inspect']: print(os.environ.get('IMAGE_PLATFORM', 'linux/amd64'))\n"
+        "if args[:2] == ['pod', 'inspect']: print(os.environ.get('EXISTING_MLFLOW_PORT', '15000'))\n"
+        "if args[:2] == ['pod', 'start'] and os.environ.get('START_ERROR'):\n"
+        " print(os.environ['START_ERROR'], file=sys.stderr); sys.exit(125)\n"
+        "if args[:1] == ['run'] and os.environ.get('RUN_ERROR'):\n"
+        " print(os.environ['RUN_ERROR'], file=sys.stderr); sys.exit(125)\n"
+        "if args[:1] == ['pull']:\n"
+        " with open(os.environ['PODMAN_TEST_LOG']) as f: count = sum(json.loads(line)[0] == 'pull' for line in f)\n"
+        " if count <= int(os.environ.get('PULL_FAILURES', '0')):\n"
+        "  print('failed to decode message from stream: unexpected EOF', file=sys.stderr); sys.exit(125)\n"
     )
     podman.chmod(0o755)
     curl = binaries / "curl"
     curl.write_text("#!/bin/sh\nexit 0\n")
     curl.chmod(0o755)
 
-    def run(name, mode="bridge", extra=None):
+    def run(name, mode="bridge", extra=None, mlflow_port="15000"):
+        log.write_text("")
         (local / ".env").write_text(
-            f"DEV_NETWORK_MODE={mode}\nFLUXNOVA_PORT=18080\nMLFLOW_PORT=15000\n"
-            "POSTGRES_PORT=15432\nPROMETHEUS_PORT=19090\nGRAFANA_PORT=13000\n"
+            f"DEV_NETWORK_MODE={mode}\nFLUXNOVA_PORT=18080\n"
+            + (f"MLFLOW_PORT={mlflow_port}\n" if mlflow_port else "")
+            + "POSTGRES_PORT=15432\nPROMETHEUS_PORT=19090\nGRAFANA_PORT=13000\n"
             "LLM_JUDGE_PROVIDER=openai\nOPENAI_API_KEY=test-key\n"
         )
         env = dict(
@@ -44,14 +58,16 @@ def run_script(tmp_path):
             FLUXNOVA_OPEN_BROWSER="false",
             MLFLOW_OPEN_BROWSER="false",
             OBSERVABILITY_OPEN_BROWSER="false",
+            IMAGE_PULL_RETRY_DELAY="0",
         )
+        env.pop("MLFLOW_PORT", None)
         env.update(extra or {})
         result = subprocess.run(
             ["bash", str(local / f"services/{name}-up.sh")],
             env=env,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=20,
             check=False,
         )
         commands = [json.loads(line) for line in log.read_text().splitlines()]
@@ -133,3 +149,107 @@ def test_stopped_machine_fails_before_creating_resources(run_script):
     assert result.returncode != 0
     assert "podman machine start" in result.stderr
     assert not any(c[:2] == ["pod", "create"] for c in commands)
+
+
+def test_mlflow_default_is_5001_on_host_and_5000_in_container(run_script):
+    result, commands = run_script("mlflow", mlflow_port=None)
+    assert result.returncode == 0, result.stderr
+    assert "5001:5000" in next(c for c in commands if c[:2] == ["pod", "create"])
+    assert "http://localhost:5001" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "service",
+    [
+        "postgres",
+        "mlflow",
+        "fluxnova",
+        "observability",
+        "eval-service",
+        "eval-listener",
+    ],
+)
+def test_failed_pull_creates_no_pod_or_container(run_script, service):
+    result, commands = run_script(service, extra={"PULL_FAILURES": "99"})
+    assert result.returncode != 0
+    assert len([c for c in commands if c[0] == "pull"]) == 3
+    assert not any(c[:2] == ["pod", "create"] or c[0] == "run" for c in commands)
+    assert "unexpected EOF" in result.stderr
+    assert "RUNNING-MACOS.md" in result.stderr
+
+
+def test_interrupted_pull_retries_before_creating_pod(run_script):
+    result, commands = run_script("mlflow", extra={"PULL_FAILURES": "1"})
+    assert result.returncode == 0, result.stderr
+    pulls = [i for i, c in enumerate(commands) if c[0] == "pull"]
+    create = next(i for i, c in enumerate(commands) if c[:2] == ["pod", "create"])
+    assert len(pulls) == 2 and max(pulls) < create
+    assert "--pull=never" in next(c for c in commands if c[0] == "run")
+
+
+def test_cached_image_avoids_pull(run_script):
+    result, commands = run_script("mlflow", extra={"CACHED_IMAGE": "1"})
+    assert result.returncode == 0, result.stderr
+    assert not any(c[0] == "pull" for c in commands)
+
+
+def test_engine_pull_requests_configured_platform(run_script):
+    result, commands = run_script("fluxnova")
+    assert result.returncode == 0, result.stderr
+    pull = next(
+        c for c in commands if c[0] == "pull" and "fluxnova-edd-platform" in c[-1]
+    )
+    assert pull[pull.index("--platform") + 1] == "linux/amd64"
+
+
+def test_new_pod_is_cleaned_up_on_port_conflict(run_script):
+    result, commands = run_script(
+        "mlflow", extra={"RUN_ERROR": "listen tcp :15000: bind: address already in use"}
+    )
+    assert result.returncode != 0
+    assert "MLFLOW_PORT" in result.stderr and "15000" in result.stderr
+    assert ["pod", "rm", "--force", "mlflow-local"] in commands
+    assert not any(c[0] == "volume" and "rm" in c for c in commands)
+    # A subsequent invocation can recreate the pod after the conflict is corrected.
+    result, _ = run_script("mlflow")
+    assert result.returncode == 0, result.stderr
+
+
+def test_existing_pod_port_conflict_is_diagnosed_without_deleting_it(run_script):
+    result, commands = run_script(
+        "mlflow",
+        extra={
+            "EXISTING_POD": "1",
+            "START_ERROR": "listen tcp :15000: bind: address already in use",
+        },
+    )
+    assert result.returncode != 0
+    assert "MLFLOW_PORT" in result.stderr
+    assert not any(c[:2] == ["pod", "rm"] for c in commands)
+
+
+def test_existing_old_port_requires_recreation_before_start(run_script):
+    result, commands = run_script(
+        "mlflow",
+        mlflow_port=None,
+        extra={"EXISTING_POD": "1", "EXISTING_MLFLOW_PORT": "5000"},
+    )
+    assert result.returncode != 0
+    assert "5000" in result.stderr and "MLFLOW_PORT=5001" in result.stderr
+    assert "Recreate" in result.stderr
+    assert not any(c[:2] in (["pod", "start"], ["pod", "rm"]) for c in commands)
+
+
+def test_incomplete_existing_pod_gets_recovery_command(run_script):
+    result, commands = run_script(
+        "mlflow", extra={"EXISTING_POD": "1", "INCOMPLETE_POD": "1"}
+    )
+    assert result.returncode != 0
+    assert "podman pod rm --force 'mlflow-local'" in result.stderr
+    assert not any(c[:2] == ["pod", "rm"] for c in commands)
+
+
+def test_healthy_existing_pod_does_not_pull_or_recreate(run_script):
+    result, commands = run_script("mlflow", extra={"EXISTING_POD": "1"})
+    assert result.returncode == 0, result.stderr
+    assert not any(c[0] in ("pull", "run") or c[:2] == ["pod", "rm"] for c in commands)

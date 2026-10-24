@@ -69,7 +69,7 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 | External-task topic     | `--topic`               | `EVAL_SERVICE_TOPIC`               | `agent-output-eval`                                                                         |
 | Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `gateway:/fluxnova-judge`                                                                   |
 | Lock duration (ms)      | `--lock-duration-ms`    | `EVAL_SERVICE_LOCK_DURATION_MS`    | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes)                     |
-| MLflow tracking URI     | `--tracking-uri`        | `EVAL_SERVICE_TRACKING_URI`        | `http://localhost:5000`                                                                     |
+| MLflow tracking URI     | `--tracking-uri`        | `EVAL_SERVICE_TRACKING_URI`        | `http://localhost:5001`                                                                     |
 | Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `30.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
 | Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0`                                                                                       |
 
@@ -100,7 +100,7 @@ from eval_service_worker.scoring import score_process_instance
 
 outcome = score_process_instance(
     "<processInstanceId>",
-    tracking_uri="http://localhost:5000",
+    tracking_uri="http://localhost:5001",
     process_key="loanAssessmentEvalProcess",
     experiment_name="fluxnova-loanAssessmentEvalProcess",
     judge_model="gateway:/fluxnova-judge",

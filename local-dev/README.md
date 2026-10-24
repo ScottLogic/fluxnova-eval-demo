@@ -54,7 +54,7 @@ their actual scoring is part of the local validation walkthrough.
 | Service | Host endpoint | Container/pod endpoint (bridge mode) |
 | --- | --- | --- |
 | PostgreSQL | `localhost:5432` | `postgres-local:5432` |
-| MLflow | `http://localhost:5000` | `http://mlflow-local:5000` |
+| MLflow | `http://localhost:5001` | `http://mlflow-local:5000` |
 | Fluxnova | `http://localhost:8080/engine-rest` | `http://fluxnova-local:8080/engine-rest` |
 | Collector OTLP | `localhost:4317` / `localhost:4318` | `localhost:4317` from Fluxnova |
 | Collector metrics | `http://localhost:8889/metrics` | `http://fluxnova-local:8889/metrics` |
@@ -144,6 +144,24 @@ MLflow artifacts use the host bind mount `local-dev/.mlflow/artifacts`.
 Pod scripts are idempotent: existing pods are started, not recreated. Recreate
 them after changing image tags, `.env`, model settings or topology. The runtime
 volume contains generated headers only; MLflow rewrites them on every server start.
+
+### Pull/startup failure recovery
+
+Before creating a pod, scripts pull all required images (or build the eval image).
+Cached images are reused, including a platform check for Fluxnova, and container
+starts use `--pull=never`. Interrupted pull CLI calls are retried up to three times;
+`IMAGE_PULL_ATTEMPTS` and `IMAGE_PULL_RETRY_DELAY` (seconds) override this behavior.
+Registry-level retries are also enabled, but the whole-command retry is needed for
+remote-client `unexpected EOF` failures. Python base images are pulled before builds.
+
+If a container fails to start, only the new pod created by that script is cleaned
+up; volumes and artifacts remain. Existing incomplete pods get a recovery command.
+Port-binding errors report the applicable configuration, and an existing MLflow
+pod with a different published port must be recreated before it is started.
+Once containers are successfully created, readiness failures keep them for log
+inspection. The [Mac troubleshooting guide](../RUNNING-MACOS.md#troubleshooting)
+includes a direct-VM pull workaround using the active rootful/rootless store.
+These helpers apply to the pod scripts; Compose uses its provider's pull/start behavior.
 
 ## Alternative: a single Podman Compose file
 
@@ -239,9 +257,9 @@ source .venv/bin/activate
 set -a
 source local-dev/.env
 set +a
-eval-service-worker --fluxnova-url "$FLUXNOVA_URL" --tracking-uri "http://localhost:${MLFLOW_PORT:-5000}"
+eval-service-worker --fluxnova-url "$FLUXNOVA_URL" --tracking-uri "http://localhost:${MLFLOW_PORT:-5001}"
 # In another terminal with the same activation/environment:
-eval-trace-listener --tracking-uri "http://localhost:${MLFLOW_PORT:-5000}"
+eval-trace-listener --tracking-uri "http://localhost:${MLFLOW_PORT:-5001}"
 ```
 
 In PyCharm/IntelliJ's Python plugin select `.venv/bin/python` (Mac) or
@@ -260,8 +278,9 @@ REBUILD=1 ./local-dev/pods-up.sh eval-service eval-listener
 
 ## Port overrides and checks
 
-Set `MLFLOW_PORT=5001` if macOS AirPlay Receiver or another app occupies `5000`.
-Internal bridge URLs still use `5000`; host tools use the published port. The
+MLflow defaults to host port **5001** to avoid macOS AirPlay Receiver on `5000`.
+Override `MLFLOW_PORT` if another app occupies `5001`. Internal bridge URLs still
+use `5000`; host tools use the published port. The
 regression suite reads `MLFLOW_PORT` from `.env`. Set `FLUXNOVA_PORT` similarly;
 exported `FLUXNOVA_URL` in the template expands that port and overrides runner YAML.
 Host debugging services need explicit tracking/engine URL flags for custom ports.

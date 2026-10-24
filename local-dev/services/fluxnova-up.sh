@@ -24,13 +24,15 @@ else
 fi
 
 if ! start_existing_pod "$FLUXNOVA_POD_NAME" fluxnova otel-collector; then
-  podman pod create --name "$FLUXNOVA_POD_NAME" "${network_args[@]}" >/dev/null
-  podman run -d --pod "$FLUXNOVA_POD_NAME" --name otel-collector \
+  ensure_image "$OTEL_COLLECTOR_IMAGE"
+  ensure_image "$FLUXNOVA_IMAGE" "$FLUXNOVA_PLATFORM"
+  create_pod "$FLUXNOVA_POD_NAME" "${network_args[@]}"
+  run_container -d --pod "$FLUXNOVA_POD_NAME" --name otel-collector \
     -e MLFLOW_OTLP_ENDPOINT="${MLFLOW_OTLP_ENDPOINT:-$mlflow_endpoint}" \
     -v "${MLFLOW_RUNTIME_VOLUME}:/mlflow-runtime:ro" \
     -v "${LOCAL_DEV_DIR}/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro" \
     "$OTEL_COLLECTOR_IMAGE" --config=/etc/otelcol/config.yaml
-  podman run -d --pod "$FLUXNOVA_POD_NAME" --name fluxnova --platform "$FLUXNOVA_PLATFORM" \
+  run_container -d --pod "$FLUXNOVA_POD_NAME" --name fluxnova --platform "$FLUXNOVA_PLATFORM" \
     -e SERVER_PORT="$engine_port" \
     -e FLUXNOVA_POSTGRES_HOST="${FLUXNOVA_POSTGRES_HOST:-$db_host}" \
     -e FLUXNOVA_POSTGRES_PORT="${FLUXNOVA_POSTGRES_PORT:-$db_port}" \
@@ -43,6 +45,7 @@ if ! start_existing_pod "$FLUXNOVA_POD_NAME" fluxnova otel-collector; then
     -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
     -v "${LOCAL_DEV_DIR}/default.yml:/fluxnova/configuration/default.yml:ro" \
     "$FLUXNOVA_IMAGE"
+  finish_pod_creation
 fi
 require_http "http://localhost:${FLUXNOVA_PORT}/engine-rest/engine" fluxnova
 FLUXNOVA_URL="${READY_URL%/engine-rest/engine}"

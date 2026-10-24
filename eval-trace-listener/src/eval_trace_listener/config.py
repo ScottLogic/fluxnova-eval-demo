@@ -24,7 +24,7 @@ import yaml
 # MLflow tracking server address the OTel Collector exports traces into — must be
 # an HTTP(S) URL (not a direct postgresql:// path) so the trace store is queryable
 # over the REST API from this service's own pod.
-DEFAULT_TRACKING_URI = "http://localhost:5000"
+DEFAULT_TRACKING_URI = "http://localhost:5001"
 
 # The MLflow experiment whose traces are tailed. The OTel Collector routes ALL
 # traces (parent eval process + the called agent subprocess) to a single

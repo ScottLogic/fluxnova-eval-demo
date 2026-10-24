@@ -6,8 +6,9 @@ POSTGRES_VOLUME="${POSTGRES_VOLUME:-postgres-local-data}"
 POSTGRES_SUPERUSER="${POSTGRES_SUPERUSER:-postgres}"
 podman volume create --ignore "$POSTGRES_VOLUME" >/dev/null
 if ! start_existing_pod "$POSTGRES_POD_NAME" postgres; then
-  podman pod create --name "$POSTGRES_POD_NAME" --network "$DEV_NETWORK" -p "${POSTGRES_PORT}:5432" >/dev/null
-  podman run -d --pod "$POSTGRES_POD_NAME" --name postgres \
+  ensure_image "${POSTGRES_IMAGE:-docker.io/library/postgres:16}"
+  create_pod "$POSTGRES_POD_NAME" --network "$DEV_NETWORK" -p "${POSTGRES_PORT}:5432"
+  run_container -d --pod "$POSTGRES_POD_NAME" --name postgres \
     -e POSTGRES_USER="$POSTGRES_SUPERUSER" \
     -e POSTGRES_PASSWORD="${POSTGRES_SUPERUSER_PASSWORD:-postgres}" \
     -e MLFLOW_POSTGRES_USER="${MLFLOW_POSTGRES_USER:-mlflow}" \
@@ -19,6 +20,7 @@ if ! start_existing_pod "$POSTGRES_POD_NAME" postgres; then
     -v "${POSTGRES_VOLUME}:/var/lib/postgresql/data" \
     -v "${LOCAL_DEV_DIR}/postgres:/docker-entrypoint-initdb.d:ro" \
     "${POSTGRES_IMAGE:-docker.io/library/postgres:16}"
+  finish_pod_creation
 fi
 for ((i=0; i<90; i++)); do
   # The entrypoint's temporary initialization server is socket-only. Require TCP

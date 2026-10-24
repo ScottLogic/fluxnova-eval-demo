@@ -15,7 +15,7 @@ class TestEvalServiceConfig:
         assert config.topic == "agent-output-eval"
         assert config.judge_model == "gateway:/fluxnova-judge"
         assert config.lock_duration_ms == 600_000
-        assert config.tracking_uri == "http://localhost:5000"
+        assert config.tracking_uri == "http://localhost:5001"
         assert config.trace_poll_timeout == 30.0
         assert config.trace_poll_interval == 3.0
 

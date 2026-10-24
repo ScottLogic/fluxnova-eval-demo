@@ -38,7 +38,7 @@ the default direct judges. If reproducing the older OTLP isolation issue, select
 `DEV_NETWORK_MODE=host` in `.env` and recreate the pods. Windows Git Bash already
 defaults to that fallback; these are different Podman environments.
 
-Endpoints: Fluxnova `localhost:8080` (`demo`/`demo`), MLflow `localhost:5000`, Grafana
+Endpoints: Fluxnova `localhost:8080` (`demo`/`demo`), MLflow `localhost:5001`, Grafana
 `localhost:3000`, Prometheus `localhost:9090`, PostgreSQL `localhost:5432`. Respect
 any `.env` port overrides. Follow steps 7–11 of the Mac guide for workflow, trace,
 assessment, regression and persistence checks; use your Linux browser as appropriate.

@@ -84,7 +84,7 @@ default; unknown keys are ignored so the file can carry forward-looking settings
 
 | Key                   | Default                                 | Purpose                                                                |
 |-----------------------|-----------------------------------------|------------------------------------------------------------------------|
-| `tracking_uri`        | `http://localhost:5000`                 | MLflow tracking server (HTTP, not `postgresql://`)                     |
+| `tracking_uri`        | `http://localhost:5001`                 | MLflow tracking server (HTTP, not `postgresql://`)                     |
 | `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`    | Experiment to tail (local startup initializes the collector with this experiment's real ID) |
 | `agent_names`         | `[AdHocSubProcess_LoanAssessmentAgent]` | Agents to score; empty ⇒ score every agent                             |
 | `poll_interval_s`     | `10`                                    | Seconds between polls                                                  |
@@ -97,7 +97,7 @@ a CLI flag (flag > env > file > default). See `eval_trace_listener/config.py` an
 ## Running
 
 ```bash
-# Locally (against a host MLflow at :5000)
+# Locally (against a host MLflow at :5001)
 eval-trace-listener --config eval-trace-listener/config.yaml
 
 # In Podman (needs mlflow-local running — reaches it by pod name)

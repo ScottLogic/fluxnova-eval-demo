@@ -14,13 +14,15 @@ else
   config="$LOCAL_DEV_DIR/prometheus.yml"
 fi
 if ! start_existing_pod "$POD_NAME" prometheus grafana; then
-  podman pod create --name "$POD_NAME" "${network_args[@]}" >/dev/null
-  podman run -d --pod "$POD_NAME" --name prometheus \
+  ensure_image "${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:v3.14.0}"
+  ensure_image "${GRAFANA_IMAGE:-docker.io/grafana/grafana:13.2.1}"
+  create_pod "$POD_NAME" "${network_args[@]}"
+  run_container -d --pod "$POD_NAME" --name prometheus \
     -v "${PROMETHEUS_CONFIG_FILE:-$config}:/etc/prometheus/prometheus.yml:ro" \
     "${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:v3.14.0}" \
     --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus \
     --web.listen-address=":${prometheus_listen}"
-  podman run -d --pod "$POD_NAME" --name grafana \
+  run_container -d --pod "$POD_NAME" --name grafana \
     -e GF_SERVER_HTTP_PORT="$grafana_listen" \
     -e PROMETHEUS_URL="http://localhost:${prometheus_listen}" \
     -e GF_SECURITY_ADMIN_USER=admin -e GF_SECURITY_ADMIN_PASSWORD=admin \
@@ -29,6 +31,7 @@ if ! start_existing_pod "$POD_NAME" prometheus grafana; then
     -v "${LOCAL_DEV_DIR}/grafana/provisioning:/etc/grafana/provisioning:ro" \
     -v "${LOCAL_DEV_DIR}/grafana/dashboards:/var/lib/grafana/dashboards:ro" \
     "${GRAFANA_IMAGE:-docker.io/grafana/grafana:13.2.1}"
+  finish_pod_creation
 fi
 require_http "http://localhost:${PROMETHEUS_PORT}/-/ready" prometheus
 require_http "http://localhost:${GRAFANA_PORT}/api/health" grafana

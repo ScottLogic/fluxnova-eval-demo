@@ -13,6 +13,7 @@ trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 python /local-dev-mlflow/bootstrap.py \
+  --tracking-uri http://localhost:5000 \
   --experiment-name "$EVAL_SERVICE_EXPERIMENT_NAME" \
   --output /mlflow-runtime/headers.yaml
 wait "$server_pid"
