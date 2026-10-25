@@ -143,6 +143,32 @@ calibration report paths, regression run ID, inference counts, artifact smoke re
 and online workflow outcome. All four live regression gates have passed local
 Apple Silicon validation; repeat these checks after workflow, scorer or model changes.
 
+### Recorded Apple Silicon validation — 2026-10-25
+
+Environment: macOS ARM64, Python 3.11.13, Podman 5.8.1 with an existing
+`libkrun` VM (8 CPUs, approximately 30 GiB RAM), MLflow 3.16.0. Fluxnova runs
+as AMD64; the agent is `gpt-4o`, the decision judge `gpt-4.1-mini` (rubric 2),
+and the auxiliary judges `gpt-4o-mini`.
+
+| Check | Recorded result |
+| --- | --- |
+| Package unit suites | Shared dataset 120, runner 49, worker 23 and listener 29 passed in separate suites. |
+| Local startup/integration checks | 69 passed, one expected opt-in skip; the real HTTP artifact-proxy test also passed separately. |
+| Frozen calibration | All eight labels matched repeatedly; default-model confirmation run `d7102aab47e54f05a0db4d72550d61e0`. |
+| Pod live regression | All four gates passed, run `6f033e5d76004b29aff879a389b0bf12`; deterministic and six-output judge replay passed. |
+| Compose live regression | All four gates passed, run `87cb04a4771d4b4581f100e73e16daeb`; deterministic and six-output judge replay passed. |
+| Online evaluation routing | Approval and controlled failed-evaluation review routes verified with both pod and Compose orchestration. |
+| Artifact transport and persistence | HTTP upload/download passed; historical failed/successful runs, trace payloads/assessments, four regression reports and four approval/review tasks survived orchestration recreation and a VM restart. |
+| Fresh workflow after restart | Process `f9737fdd-d016-11f1-a555-0aa8c5b19949` completed in four inferences; trace `tr-f62e531178d8d10bb18e8481bef2c289` has nine spans, decision-quality `yes`, evidence score `1.0` and passing applicable deterministic assessments. |
+| Observability after restart | Collector scrape target UP; Grafana database healthy and the provisioned GenAI dashboard available. |
+
+Earlier automated validation sessions experienced unexpected orderly VM shutdowns.
+The final post-restart checks above passed after starting the VM from an independent
+user Terminal; this does not establish the cause of those earlier shutdowns.
+Windows, Intel macOS, native Linux and the optional Ollama path remain unvalidated.
+Run IDs refer to the retained local development store; reproduce results with the
+sequence above when using a different store or changing the workflow/scorers/models.
+
 ## Configuration
 
 Every gate now writes `regression/<gate>.json` to its MLflow run and a local copy
