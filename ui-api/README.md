@@ -43,7 +43,8 @@ GET  /api/workflow/runs/{instance_id} -> {"instanceId": ..., "status": "active"}
                                            "state": "COMPLETED", "variables": {...}}
 ```
 
-Each `POST` deploys the configured BPMN fresh (mirroring `fluxnova-run`'s default clean-redeploy behaviour) and
+Each `POST` deploys the configured BPMN using duplicate filtering (reusing unchanged
+resources or creating a new version), preserving earlier instances, history and human tasks, and
 starts the config's mock external-task workers once per ui-api process (they run forever, answering whichever
 matching task shows up — no need to restart them per run). Which workflow config file is used is controlled by
 `UI_API_WORKFLOW_CONFIG` (defaults to `fluxnova-runner/config/loan_approval_process_ai.yml`, resolved relative to the repo

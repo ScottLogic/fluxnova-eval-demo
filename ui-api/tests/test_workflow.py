@@ -127,6 +127,19 @@ def test_start_run_returns_instance_id(client: TestClient) -> None:
     assert response.json() == {"instanceId": "instance-1"}
 
 
+def test_consecutive_starts_never_delete_previous_deployments(client, monkeypatch):
+    from unittest.mock import Mock
+
+    delete = Mock(side_effect=AssertionError("would erase prior instances and history"))
+    deploy = Mock(return_value={"id": "deployment-1"})
+    monkeypatch.setattr(_FakeClient, "delete_deployments_by_name", delete)
+    monkeypatch.setattr(_FakeClient, "deploy", deploy)
+    assert client.post("/api/workflow/runs").status_code == 202
+    assert client.post("/api/workflow/runs").status_code == 202
+    delete.assert_not_called()
+    assert deploy.call_count == 2
+
+
 def test_start_run_passes_through_skip_eval_service_worker_override(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
