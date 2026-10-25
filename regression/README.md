@@ -125,6 +125,42 @@ calibration report paths, regression run ID, inference counts, artifact smoke re
 and online workflow outcome. All four live regression gates have passed local
 Apple Silicon validation; repeat these checks after workflow, scorer or model changes.
 
+### Combined upstream-tree validation — 2026-10-25
+
+Upstream `main` at `771e8c8` was merged in `805113e`, reconciling its UI API,
+listener sampling and per-golden regression refactors with the portability and
+evaluation changes. The environment/models are the same as the earlier matrix
+below; rebuilt ARM64 Python containers used Python 3.11.17 (host: 3.11.13).
+
+| Check | Integrated-tree result |
+| --- | --- |
+| Separate Python suites | Shared dataset **131**, runner **50**, worker **23**, listener **38**, UI API **24** passed; local-dev **73 passed, 1 expected opt-in skip**. |
+| Isolated HTTP integration | `RUN_MLFLOW_PROXY_TEST=1 python -m pytest local-dev/tests/test_artifact_proxy.py -q`: **1 passed**, including real evaluation schema/report upload/download. |
+| Frontend | `npm ci`, `npm run build` and `npm run lint` completed; lint reported three upstream warnings and the build reported a large-chunk warning. |
+| Frozen calibration | Eight labels, zero mismatches; run `40598fb63c6b4163af63e915cdbccf0c`. |
+| Pods, through nginx/UI API | UI run `063dfed1f08947b3b0eb3e3bcf1a58e7`; MLflow run `6df4f167b74d492d9f9bf571fa218317`: **6 passed**, all **18 scorers** (15 deterministic + 3 judges), four gate groups. Every scenario used four inferences. |
+| Compose, through nginx/UI API | UI run `73408eb05aa846b08b82878633d938fd`; MLflow run `bafdee4e184d4a31a00648ef83691738`: **6 passed**, same scorer/gate groups. Self-employed approval used three inferences; all others used four. |
+| Frozen replay | All six outputs passed deterministic and semantic replay for each orchestration; replay runs `c17963d64b7b42af8a968b608d164d68` and `f8d3faab160046ffb38c9bb1d2550992`. Each source run retained **24** per-scenario gate reports. |
+| UI integration | Six test descriptions, progress polling, scorer statuses/rationales, 18 scorer definitions, nested workflow stages, and listener off/on sampling control verified through HTTP APIs behind nginx under both orchestrations. |
+| Online routing | Both pod and Compose controlled-eval workflows reached approval on a genuine scoring pass and failed-evaluation review on a deliberately injected false result; worker restored afterward. |
+| Artifacts/readiness/observability | Artifact round-trips passed on both orchestrations. Recreated Compose engine and UI API reported healthy; collector scrape target UP, Grafana healthy, dashboard provisioned. |
+| Persistence | Old failed/successful runs, trace payload/assessments, eight old/new approval/review tasks and all 48 integrated gate reports re-read after recreation/restart; three UI histories re-read after the preservation fix and return to pods. |
+
+UI API persistence validation exposed upstream's cascading deployment deletion on
+each workflow start ([#32](https://github.com/ScottLogic/fluxnova-eval-demo/issues/32)).
+The first pod UI instance was deleted by the next launch before the fix. Commit
+`37ad0f7` removes that implicit deletion; a new unit check plus consecutive live
+launches and a Compose-to-pods switch verified that the prior and new histories
+remain available. This targeted follow-up did not change regression scoring.
+
+The VM shutdown recurred even after an independent Terminal start. After another
+user restart, final persistence/readiness checks passed and a fresh pod UI workflow
+`31aa9a0b-d024-11f1-ae8f-1efa7cc6c1d1` received `evalPassed=true`. The shutdown
+cause remains unconfirmed. UI behavior was checked programmatically, not through
+a browser/visual acceptance test. Windows/WSL, Intel macOS, native Linux, other VM
+providers, native ARM64 Fluxnova, Ollama, AI Gateway sampling, IDE breakpoints,
+fresh-machine/destructive-reset and load/soak testing remain unvalidated.
+
 ### Recorded Apple Silicon validation — 2026-10-25 (before upstream integration)
 
 Environment: macOS ARM64, Python 3.11.13, Podman 5.8.1 with an existing
