@@ -1,7 +1,7 @@
 # Local development with Podman: macOS, Windows and Linux
 
-The stack contains PostgreSQL, MLflow, Fluxnova + an OTel Collector, two evaluation
-services, and optional Prometheus/Grafana dashboards. Host Python packages run from
+The stack contains PostgreSQL, MLflow, Fluxnova + an OTel Collector, frontend/UI API,
+two evaluation services, and optional Prometheus/Grafana dashboards. Host Python packages run from
 one editable `.venv`; infrastructure runs in Podman.
 
 This is the shared setup, demo and troubleshooting guide. Use the
@@ -114,7 +114,7 @@ set +a
 fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
 ```
 
-Bare `./local-dev/pods-up.sh` starts all six pods in dependency order. Startup waits
+Bare `./local-dev/pods-up.sh` starts all seven pods in dependency order. Startup waits
 for PostgreSQL/MLflow/Fluxnova and the dashboard HTTP endpoints; readiness failures
 return non-zero with diagnostics. Worker/listener startup confirms container creation;
 their actual scoring is part of the local validation walkthrough.
@@ -134,12 +134,35 @@ stops automatic exporting of new assignments without removing the variables just
 | Collector metrics | `http://localhost:8889/metrics` | `http://fluxnova-local:8889/metrics` |
 | Prometheus | `http://localhost:9090` | `localhost:9090` from Grafana |
 | Grafana | `http://localhost:3000` | `observability-local:3000` |
+| Demo UI | `http://localhost:8081` | `frontend-local:80` |
+| UI API | `http://localhost:8090/health` | `localhost:8090` from nginx |
+| Listener control | `http://localhost:8092/config` | `eval-listener-local:8092` |
 
 Fluxnova login is `demo` / `demo`; Grafana allows anonymous viewing and uses
 `admin` / `admin` for editing. The provisioned dashboard is **Fluxnova → Fluxnova
 GenAI Metrics**. Prometheus/Grafana storage is ephemeral.
 
 ## Demo walkthrough
+
+### Frontend and UI API
+
+The default startup includes nginx and the UI API in the shared `frontend-local`
+pod/namespace. Open `http://localhost:8081`; nginx proxies `/api/` to the API. The
+workflow page starts the current `LoanApprovalProcess_AI` workflow, while the
+regression page lists/runs the six golden scenarios and displays per-scorer results.
+The auto-eval toggle changes the listener's runtime sample rate. The CLI walkthrough
+below separately exercises the smaller loan-assessment and controlled eval workflows.
+
+Bridge-mode UI API calls use internal engine/MLflow/listener DNS names, independently
+of host `FLUXNOVA_URL`/port settings. `UI_API_FLUXNOVA_URL`, `UI_API_TRACKING_URI` and
+`UI_API_EVAL_LISTENER_URL` override these container endpoints when needed. Host ports
+are `FRONTEND_PORT`, `UI_API_PORT` and `EVAL_LISTENER_CONTROL_PORT`; internal bridge
+ports stay 80, 8090 and 8092. Recreate affected pods to change settings.
+
+`REBUILD=1 ./local-dev/pods-up.sh frontend` builds changed sources when creating a new
+pod; remove the existing frontend pod first with `./local-dev/pods-down.sh frontend`.
+Stop/restart the UI API before host-side regression if its workflow mock workers are
+already active, so competing worker pools cannot affect validation.
 
 ### 1. Check infrastructure and artifact storage
 
@@ -312,8 +335,9 @@ MLflow health only passes once the header file and HTTP endpoint are ready.
 No fixed ID, pre-existing experiment, or manual database edit is required.
 `MLFLOW_EXPERIMENT_ID` in an older `.env` is obsolete and ignored. All agent traces
 go to the configured experiment regardless of BPMN process key; both evaluation
-services read that same experiment. Regression results use a separate
-`fluxnova-loanAssessmentProcess-regression` experiment.
+services read that same experiment. Regression evaluation runs share the trace
+experiment by default; `MLFLOW_EXPERIMENT_NAME` can select a separate regression
+experiment. Raw regression traces are tagged `source=regression` for listener exclusion.
 
 PostgreSQL uses the named volume `postgres-local-data` (host bind mounts are
 unsuitable for PGDATA ownership through VM file sharing). Its initialization
@@ -407,7 +431,7 @@ the host artifact directory intact; pod scripts' `--delete-data` clears artifact
 Default demo setup uses OpenAI for both the agent and evaluation services. The
 worker is configured by `.env` to call `openai:/gpt-4.1-mini` directly, so no MLflow
 AI Gateway endpoint or local model download is needed. The worker package's
-standalone default remains `gateway:/fluxnova-judge` for existing gateway users;
+standalone default remains `gateway:/fluxnova-judge-oai` for existing gateway users;
 the local startup scripts pass the configured model explicitly.
 
 Decision-quality judging defaults to `gpt-4.1-mini` after repeated calibration
@@ -472,7 +496,8 @@ optional for the default demo's direct worker/listener/regression judges.
 
 ## Host debugging and rebuilds
 
-`./setup.sh` installs all four packages editable. To debug Python services against
+`./setup.sh` installs all five packages editable (including UI API and regression
+JSON-report dependencies). To debug Python services against
 container infrastructure, stop the corresponding service pods first:
 
 ```bash
@@ -520,7 +545,10 @@ python -m pytest fluxnova-mlflow-dataset/tests -q
 python -m pytest eval-service-worker/tests -q
 python -m pytest eval-trace-listener/tests -q
 python -m pytest local-dev/tests -q
+python -m pytest ui-api/tests -q
 ```
+
+Frontend checks: run `npm ci`, `npm run build` and `npm run lint` from `frontend/`.
 
 The startup tests use a fake Podman and test bootstrap responses; they do not start
 a VM or replace end-to-end validation. Follow the demo walkthrough to check actual

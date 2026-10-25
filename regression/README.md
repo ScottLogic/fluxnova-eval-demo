@@ -7,55 +7,36 @@ judges/scorers).
 
 ## What it does
 
-`test_mlflow_regression.py` follows MLflow's canonical
-[`predict_fn` regression-testing pattern](https://mlflow.org/docs/latest/genai/eval-monitor/regression-testing/): for
-every golden scenario in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json), a
-`predict_fn` fixture drives the live loan-assessment agent end-to-end via `fluxnova-runner`, and
-`mlflow.genai.evaluate()` scores the agent's *actual* output. Four gating tests:
+`test_agent_passes_golden[<scenario>]` is parametrized once for each of the six
+goldens in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json).
+Each test drives the live agent once via `fluxnova-runner`, then scores that actual
+output with every scorer in one `mlflow.genai.evaluate()` call. Four gate groups:
 
-- `test_agent_reaches_evidence_backed_decision` — the output satisfies the shared `decision_quality` guideline judge (a
-  definitive APPROVE/REJECT backed by cited evidence).
-- `test_agent_matches_golden_decisions` — the output matches the golden's `expected_output` via the shared
-  `matches_golden` judge (thresholded at `GOLDEN_MATCH_THRESHOLD`).
-- `test_agent_passes_deterministic_checks` — the output/run passes every scorer in
-  `fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS`: states an APPROVE/REJECT keyword, called exactly the
-  tools its applicant profile requires (and none it shouldn't), ends with a plain
-  final recommendation line, made no failed tool calls, called tools in the expected
-  order, and passed each tool the arguments the BPMN wires up for it.
-- `test_agent_cites_gathered_evidence` — the output grounds its reasoning in the applicant/tool evidence, via the
-  shared `evidence_citation` judge (a graded 0.0–1.0 score, thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`).
+- `decision_quality`: an unambiguous evidence-backed APPROVE/REJECT, judged semantically.
+- `matches_golden`: agreement with the golden decision/evidence, thresholded at `GOLDEN_MATCH_THRESHOLD`.
+- `ALL_DETERMINISTIC_SCORERS` (15): tool selection, errors, duplicates, risk/income ordering,
+  inference budget, evidence keywords, plain final recommendation line and captured arguments.
+- `evidence_citation`: grounded evidence, thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`.
 
-Each gating test is its own `mlflow.genai.evaluate(predict_fn=predict_fn, scorers=[...])` call, so `@mlflow.test`
-records an independent pass/fail per gate.
+All groups must pass. `@mlflow.test` records one outcome per scenario. The
+`pytest-json-report` plugin exposes every scorer's name/status/value/rationale in
+`metadata.scorers` for the UI API; replayable reports preserve the process ID and
+captured output/tool data as well. `./setup.sh` installs the plugin.
 
-### One real run per golden, replayed across every gate
+### One real run per golden, one evaluation of that frozen result
 
-`predict_fn` is cached (keyed by the golden's process variables): the first call for a scenario actually drives the
-live agent, and every later call — including from the other three gating tests' own `evaluate()` calls — replays that
-same cached result rather than re-running the agent. This is a deliberate departure from calling `predict_fn` fresh
-each time: the agent is a live, non-deterministic GPT-4o call, and without caching, `decision_quality`,
-`matches_golden`, `test_agent_passes_deterministic_checks`, and `evidence_citation` could each be judging a
-*different* actual output for the same golden — a scenario could pass one gate and fail another purely from LLM
-variance between calls, unrelated to either scorer. Caching guarantees every gate judges the same real output, keeping
-scenario-level flakiness attributable to the agent rather than smeared across unrelated tests. The `evaluation_rows`
-fixture forces this one real run per golden up front (calling `predict_fn` directly, before any `evaluate()` call), so
-every row's `inputs` already carries that run's full scorer data.
+The combined suite follows upstream's per-scenario execution model: it captures
+one actual output and scores all gates together, replacing the older cached
+`predict_fn`/four-test layout. No gate reruns the live agent. Use `pytest -k
+<scenario>` to run one golden; the UI API lists the same six parametrized tests.
 
 ### Scorers and how the data is retrieved
 
 Only regression runs `matches_golden`, which needs a reference answer from the
 golden dataset. The other judges are also used by the trace-based evaluation services.
 
-| Scorer                            | Type          | Gating test                                   |
-|------------------------------------|---------------|-----------------------------------------------|
-| `decision_quality`                 | LLM judge     | `test_agent_reaches_evidence_backed_decision` |
-| `matches_golden`                   | LLM judge     | `test_agent_matches_golden_decisions`         |
-| `ALL_DETERMINISTIC_SCORERS` (14)  | Code          | `test_agent_passes_deterministic_checks`      |
-| `evidence_citation`                | LLM judge     | `test_agent_cites_gathered_evidence`          |
-
-**How the scorer inputs are sourced — with no MLflow trace read.** `predict_fn` makes no `mlflow.*` call: a nested
-`mlflow.search_traces` inside a `predict_fn` corrupts MLflow's active-trace context and breaks assessment logging. So
-every value the deterministic scorers need is read straight off the Fluxnova engine's REST API instead of a trace:
+**How scorer inputs are sourced.** Every scorer value comes directly from
+Fluxnova REST history/process variables, independently of trace export:
 
 - `outputs` — the agent's *actual* final answer, read from the run's `_agentConversationHistory` process variable
   (`fluxnova_runner.agent_output`).
@@ -66,9 +47,10 @@ every value the deterministic scorers need is read straight off the Fluxnova eng
   equivalent of what `eval-service-worker`/`eval-trace-listener` read off the OTel trace's `execute_tool` spans.
 - `expectations.expected_output` — the golden's reference answer (consumed by `matches_golden`).
 
-This actually runs the agent — it's a gating check, not a coverage suite. Results are recorded to the shared
-PostgreSQL-backed MLflow tracking store under a dedicated `fluxnova-loanAssessmentProcess-regression` experiment (kept
-separate from real recorded agent runs).
+The suite also best-effort tags each raw trace `source=regression` so the listener
+can skip it. Raw traces follow `EVAL_SERVICE_EXPERIMENT_NAME`. Evaluation runs share
+that experiment by default; `MLFLOW_EXPERIMENT_NAME` can select a separate regression
+experiment (including a fresh `-v2` name when preserving legacy artifact locations).
 
 ## Running
 
@@ -121,15 +103,15 @@ mock-worker terminal before the live regression; the suite starts its own pool.
    ```bash
    python -m pytest regression -v -rs
    ```
-   Expected: six live scenarios cached across four passing gates, no artifact-path
+    Expected: six parametrized scenarios with four passing gate groups, no artifact-path
    warnings and no skips. Inspect the experiment named by `MLFLOW_EXPERIMENT_NAME`
-   (the default name or your `-v2` override), its `regression/*.json` artifacts and
+    (the default name or your `-v2` override), its `regression/<scenario>/*.json` artifacts and
    local report copies. Scored model-quality failures differ from infrastructure
    errors; use the scenario, process ID and rationale before changing a threshold.
 6. **Replay captured results**, substituting the run ID printed by the suite:
    ```bash
-   python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/deterministic.json
-   python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/decision_quality.json
+    python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/<scenario>/deterministic.json
+    python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/<scenario>/decision_quality.json
    ```
    The first is offline; the second makes judge calls on the frozen outputs.
    Neither executes the agent. Old inefficient outputs should still fail current
@@ -143,7 +125,7 @@ calibration report paths, regression run ID, inference counts, artifact smoke re
 and online workflow outcome. All four live regression gates have passed local
 Apple Silicon validation; repeat these checks after workflow, scorer or model changes.
 
-### Recorded Apple Silicon validation — 2026-10-25
+### Recorded Apple Silicon validation — 2026-10-25 (before upstream integration)
 
 Environment: macOS ARM64, Python 3.11.13, Podman 5.8.1 with an existing
 `libkrun` VM (8 CPUs, approximately 30 GiB RAM), MLflow 3.16.0. Fluxnova runs
@@ -171,15 +153,15 @@ sequence above when using a different store or changing the workflow/scorers/mod
 
 ## Configuration
 
-Every gate now writes `regression/<gate>.json` to its MLflow run and a local copy
-under `local-dev/.mlflow/reports/<run-id>/` (`REGRESSION_REPORT_DIR` overrides the
-root). Reports contain scenario labels, engine process instance IDs, cached actual
+Every gate group writes `regression/<scenario>/<gate>.json` to its MLflow run and a local copy
+under `local-dev/.mlflow/reports/<run-id>/<scenario>/` (`REGRESSION_REPORT_DIR` overrides the
+root). Reports contain scenario labels, engine process instance IDs, captured actual
 outputs, expectations, tool calls, total inference counts and scorer verdicts/errors/
 rationales. Failures list every affected scenario/scorer, rather than stopping at
 the first deterministic scorer. Profile-driven not-applicable checks remain skips;
 missing applicable verdicts, missing rows and scorer errors fail the gate.
 
-The four gates still reuse one live agent result per golden. Saved reports can be
+The four groups use one live agent result per golden. Saved reports can be
 used for judge calibration/replay without another agent execution.
 
 ### Judge calibration and frozen replay
@@ -194,8 +176,8 @@ agent contract: evidence and justification first, then a plain final line exactl
 
 ```bash
 python -m regression.calibrate                         # 8 frozen positive/negative judge cases
-python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/decision_quality.json
-python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/deterministic.json
+python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/<scenario>/decision_quality.json
+python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/<scenario>/deterministic.json
 ```
 
 Judge mode uses model calls, but never starts/deploys a workflow. The built-in suite
@@ -260,7 +242,7 @@ is always respected.
 | `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` with `LLM_JUDGE_PROVIDER=ollama`, else `10` | `conftest.py`                       | Judge-call concurrency; capped to 1 only for the single-instance local Ollama judge                                                                                                                     |
 | `MLFLOW_TRACKING_URI`                     | `http://localhost:5001` (`default_server_tracking_uri`) | `conftest.py`                 | HTTP tracking server; avoids direct database/schema and container-local artifact access |
 | `MLFLOW_HOST` / `MLFLOW_PORT`             | `localhost` / `5001`                            | `default_server_tracking_uri`       | Host endpoint used when no explicit tracking URI is exported |
-| `MLFLOW_EXPERIMENT_NAME`                  | `fluxnova-loanAssessmentProcess-regression`     | `conftest.py`                       | Experiment the regression runs land in                                                                                                                                                                  |
+| `MLFLOW_EXPERIMENT_NAME`                  | `EVAL_SERVICE_EXPERIMENT_NAME` or `fluxnova-loanAssessmentEvalProcess` | `conftest.py` | Evaluation experiment override; raw traces keep the collector target |
 | `REGRESSION_REPORT_DIR`                   | `local-dev/.mlflow/reports`                     | `test_mlflow_regression.py`          | Local JSON report root; each run gets a separate directory |
 | `FLUXNOVA_USERNAME` / `FLUXNOVA_PASSWORD` | none                                            | read by `test_mlflow_regression.py` | Credentials for the Fluxnova engine / mock workers                                                                                                                                                      |
 

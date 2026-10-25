@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # First-time setup for the shared host virtual environment.
 #
-# Creates one venv under `.venv` at the repo root and installs all four of this
+# Creates one venv under `.venv` at the repo root and installs all five of this
 # repo's local Python packages editable into it.
 #
 # Idempotent: safe to re-run — reuses an existing `.venv` and lets pip skip
@@ -60,7 +60,11 @@ echo "=== Installing editable packages ==="
   -e "fluxnova-mlflow-dataset[dev]" \
   -e "fluxnova-runner[dev]" \
   -e "eval-service-worker[dev]" \
-  -e "eval-trace-listener[dev]"
+  -e "eval-trace-listener[dev]" \
+  -e "ui-api[dev]"
+
+echo "=== Installing regression suite's extra dependencies ==="
+"$VENV_PY" -m pip install -r regression/requirements.txt
 
 echo
 echo "Done. Activate the environment with:"

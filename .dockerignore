@@ -1,10 +1,15 @@
 .git
 .venv
+**/.venv
 .idea
 .run
 **/__pycache__
+**/*.pyc
 **/*.egg-info
 **/.pytest_cache
 **/.ruff_cache
 **/.env
 local-dev/.mlflow
+**/node_modules
+**/dist
+**/.DS_Store

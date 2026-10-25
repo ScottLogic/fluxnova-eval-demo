@@ -141,6 +141,58 @@ services:
     environment:
       EVAL_LISTENER_TRACKING_URI: ${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:5000}
       EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
+      EVAL_LISTENER_CONTROL_PORT: "8092"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
+      DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}
+      OLLAMA_API_BASE: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
+
+    ports:
+      - "${EVAL_LISTENER_CONTROL_PORT:-8092}:8092"
+    networks:
+      default:
+        aliases: [eval-listener-local]
+
+  frontend-local:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+    image: ${FRONTEND_IMAGE:-frontend:local}
+    container_name: frontend
+    depends_on:
+      fluxnova-local:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"
+      - "${UI_API_PORT:-8090}:8090"
+    environment:
+      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://localhost:8090}
+
+  ui-api-local:
+    build:
+      context: ..
+      dockerfile: ui-api/Dockerfile
+    image: ${UI_API_IMAGE:-ui-api:local}
+    container_name: ui-api
+    network_mode: service:frontend-local
+    depends_on:
+      frontend-local:
+        condition: service_started
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    environment:
+      UI_API_PORT: "8090"
+      FLUXNOVA_URL: ${UI_API_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
+      MLFLOW_TRACKING_URI: ${UI_API_TRACKING_URI:-http://mlflow-local:5000}
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
+      EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
+      UI_API_EVAL_LISTENER_URL: ${UI_API_EVAL_LISTENER_URL:-http://eval-listener-local:8092}
+      FLUXNOVA_USERNAME: ${FLUXNOVA_USERNAME:-demo}
+      FLUXNOVA_PASSWORD: ${FLUXNOVA_PASSWORD:-demo}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
       DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}

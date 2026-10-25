@@ -78,6 +78,7 @@ def run_script(tmp_path):
             FLUXNOVA_OPEN_BROWSER="false",
             MLFLOW_OPEN_BROWSER="false",
             OBSERVABILITY_OPEN_BROWSER="false",
+            FRONTEND_OPEN_BROWSER="false",
             IMAGE_PULL_RETRY_DELAY="0",
         )
         env.update(extra or {})
@@ -93,6 +94,30 @@ def run_script(tmp_path):
         return result, commands
 
     return run
+
+
+def test_frontend_bridge_wires_api_dependencies_and_shared_namespace(run_script):
+    result, commands = run_script("frontend")
+    assert result.returncode == 0, result.stderr
+    create = next(c for c in commands if c[:2] == ["pod", "create"])
+    assert "8081:80" in create and "8090:8090" in create
+    api = next(c for c in commands if c[:1] == ["run"] and "ui-api" in c)
+    assert "FLUXNOVA_URL=http://fluxnova-local:8080/engine-rest" in api
+    assert "MLFLOW_TRACKING_URI=http://mlflow-local:5000" in api
+    assert "UI_API_EVAL_LISTENER_URL=http://eval-listener-local:8092" in api
+    assert "EVAL_SERVICE_EXPERIMENT_NAME=fluxnova-loanAssessmentEvalProcess" in api
+    assert "DECISION_QUALITY_MODEL=openai:/gpt-4.1-mini" in api
+
+
+def test_frontend_host_fallback_keeps_vm_local_dependency_ports(run_script):
+    result, commands = run_script("frontend", "host")
+    assert result.returncode == 0, result.stderr
+    create = next(c for c in commands if c[:2] == ["pod", "create"])
+    assert "host" in create and "-p" not in create
+    api = next(c for c in commands if c[:1] == ["run"] and "ui-api" in c)
+    assert "FLUXNOVA_URL=http://localhost:18080/engine-rest" in api
+    assert "MLFLOW_TRACKING_URI=http://localhost:15000" in api
+    assert "UI_API_EVAL_LISTENER_URL=http://localhost:8092" in api
 
 
 def test_bridge_engine_publishes_ports_and_uses_internal_db(run_script):

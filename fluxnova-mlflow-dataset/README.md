@@ -92,7 +92,7 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 - `eval-service-worker` — synchronous per-run scoring, using a direct provider URI in the local demo or a `"gateway:/<endpoint>"` URI (required for
   anything routed through the MLflow AI Gateway).
 
-`DETERMINISTIC_SCORERS` (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`) are non-LLM checks
+`DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, and others) are non-LLM checks
 used by `eval-service-worker`, `eval-trace-listener` and the regression suite. They know nothing about tracing:
 each reads plain values from MLflow's standard `inputs`/`outputs` columns (the canonical shape
 `{"input_variables", "tool_calls": [{"name", "status", "arguments"}], "iterations"}` — see
@@ -102,7 +102,7 @@ process variables — and passes them via `mlflow.genai.evaluate(data=[{"trace":
 scorers=[...])`. When a `trace` column is included, MLflow still logs every scorer's `Feedback` back onto that same
 real trace (regardless of which columns the scorer reads), grouped under one Evaluation Run.
 
-> **Note:** `required_tools_called`'s tool-call rules (`_ALWAYS_REQUIRED_TOOLS` + the `_expected_tools_for` branching
+> **Note:** `tool_correctness`'s tool-call rules (`_ALWAYS_REQUIRED_TOOLS` + the `_expected_tools_for` branching
 > on `applicantType`/`hasCollateral`) are a hardcoded mirror of `fluxnova-runner/config/loan-assesment-eval.yml`'s
 > `expected_tools` list, kept in sync manually rather than read from that YAML at runtime — this is deliberate (see
 > the module's comment) to keep callers free of any BPMN/YAML config read, at the cost of

@@ -13,7 +13,7 @@ class _FakeScorer:
         self.name = name
 
 
-_SCORERS = [_FakeScorer("required_tools_called"), _FakeScorer("no_tool_errors")]
+_SCORERS = [_FakeScorer("tool_correctness"), _FakeScorer("no_tool_errors")]
 _TARGET_AGENT = "AdHocSubProcess_LoanAssessmentAgent"
 
 
@@ -85,7 +85,7 @@ def test_scores_in_progress_trace_once_it_completes() -> None:
 
 def test_skips_and_remembers_already_scored_trace() -> None:
     listener, calls = _listener()
-    trace = make_trace("tr-1", agent_name=_TARGET_AGENT, assessments=["required_tools_called"])
+    trace = make_trace("tr-1", agent_name=_TARGET_AGENT, assessments=["tool_correctness"])
     assert listener._process_trace(trace) is False
     assert calls == []
     assert "tr-1" in listener._scored  # cached so it isn't re-inspected next poll
@@ -100,7 +100,7 @@ def test_does_not_skip_trace_carrying_only_worker_assessments() -> None:
     scorers = [
         _FakeScorer("decision_quality"),
         _FakeScorer("evidence_citation"),
-        _FakeScorer("required_tools_called"),
+        _FakeScorer("tool_correctness"),
     ]
     listener = TraceListener(config, scorers=scorers)
     calls: list[str] = []
@@ -111,7 +111,7 @@ def test_does_not_skip_trace_carrying_only_worker_assessments() -> None:
     worker_scored = make_trace(
         "tr-1",
         agent_name=_TARGET_AGENT,
-        assessments=["decision_quality", "required_tools_called"],
+        assessments=["decision_quality", "tool_correctness"],
     )
     assert listener._process_trace(worker_scored) is True
     assert calls == ["tr-1"]
@@ -124,7 +124,7 @@ def test_skips_trace_carrying_its_own_signature_assessment() -> None:
     scorers = [
         _FakeScorer("decision_quality"),
         _FakeScorer("evidence_citation"),
-        _FakeScorer("required_tools_called"),
+        _FakeScorer("tool_correctness"),
     ]
     listener = TraceListener(config, scorers=scorers)
     calls: list[str] = []
@@ -135,7 +135,7 @@ def test_skips_trace_carrying_its_own_signature_assessment() -> None:
     already = make_trace(
         "tr-1",
         agent_name=_TARGET_AGENT,
-        assessments=["decision_quality", "evidence_citation", "required_tools_called"],
+        assessments=["decision_quality", "evidence_citation", "tool_correctness"],
     )
     assert listener._process_trace(already) is False
     assert calls == []
@@ -226,3 +226,36 @@ def test_gives_up_on_poison_trace_after_max_attempts(monkeypatch) -> None:
     # After the retry budget it's marked scored (skipped) and no longer retried.
     assert "tr-bad" in listener._scored
     assert "tr-bad" not in listener._failures
+
+
+def test_sample_rate_zero_skips_scoring_but_marks_handled() -> None:
+    listener, calls = _listener(sample_rate=0.0)
+    assert listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT)) is False
+    assert calls == []
+    assert "tr-1" in listener._scored  # decided once, not re-rolled every poll
+
+
+def test_sample_rate_one_always_scores() -> None:
+    listener, calls = _listener(sample_rate=1.0)
+    assert listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT)) is True
+    assert calls == ["tr-1"]
+
+
+def test_sample_rate_control_overrides_static_config_live() -> None:
+    from eval_trace_listener.control import SampleRateControl
+
+    control = SampleRateControl(initial=1.0)
+    config = ListenerConfig(agent_names=[_TARGET_AGENT])
+    listener = TraceListener(config, scorers=_SCORERS, sample_rate=control)
+    calls: list[str] = []
+    listener._score = lambda trace: (  # type: ignore[method-assign]
+        calls.append(trace.info.trace_id)
+        or TraceEvalOutcome(trace_id=trace.info.trace_id, passed=True, scorer_results={})
+    )
+
+    control.set(0.0)
+    assert listener._process_trace(make_trace("tr-1", agent_name=_TARGET_AGENT)) is False
+
+    control.set(1.0)
+    assert listener._process_trace(make_trace("tr-2", agent_name=_TARGET_AGENT)) is True
+    assert calls == ["tr-2"]

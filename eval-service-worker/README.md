@@ -9,8 +9,8 @@ for container startup and expected results.
 
 **Scorers run per task:** `decision_quality` (the non-deterministic `Guidelines` LLM judge) plus the full
 `DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`
-(`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`, `tool_correctness`,
-`all_tool_calls_completed`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
+(`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, `cites_key_evidence_terms`,
+`no_duplicate_tool_calls`, `risk_checks_precede_affordability`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
 `no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`,
 `final_recommendation_format`). The final-format check is independent of semantic judging:
 the updated agent must put a plain `APPROVE` or `REJECT` on its final line.
@@ -71,10 +71,10 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 | MLflow experiment       | `--experiment-name`     | `EVAL_SERVICE_EXPERIMENT_NAME`     | `fluxnova-loanAssessmentEvalProcess`                                                        |
 | Process key (tags)      | `--process-key`         | `EVAL_SERVICE_PROCESS_KEY`         | `loanAssessmentEvalProcess`                                                                 |
 | External-task topic     | `--topic`               | `EVAL_SERVICE_TOPIC`               | `agent-output-eval`                                                                         |
-| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `gateway:/fluxnova-judge`                                                                   |
+| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `gateway:/fluxnova-judge-oai` (local orchestration overrides with direct OpenAI) |
 | Lock duration (ms)      | `--lock-duration-ms`    | `EVAL_SERVICE_LOCK_DURATION_MS`    | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes)                     |
 | MLflow tracking URI     | `--tracking-uri`        | `EVAL_SERVICE_TRACKING_URI`        | `http://localhost:5001`                                                                     |
-| Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `30.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
+| Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `90.0` (allows asynchronous collector export) |
 | Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0`                                                                                       |
 
 A CLI flag always wins over the matching env var, which always wins over the default.

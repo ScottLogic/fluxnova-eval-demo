@@ -16,9 +16,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Per-service scripts live in the services/ subfolder.
 SERVICES_DIR="services"
-ALL_PODS=(postgres mlflow fluxnova eval-service eval-listener observability)
+ALL_PODS=(postgres mlflow fluxnova frontend eval-service eval-listener observability)
 # Teardown order: the reverse of pods-up.sh's start order.
-TEARDOWN_ORDER=(observability eval-listener eval-service fluxnova mlflow postgres)
+TEARDOWN_ORDER=(observability eval-listener eval-service frontend fluxnova mlflow postgres)
 
 usage() {
   cat <<EOF
@@ -26,15 +26,15 @@ Usage: ./pods-down.sh [--delete-data] [pod ...]
 
 Stops and removes one or more of the local-dev pods via their respective
 services/*-down.sh scripts, always in reverse-dependency order (observability,
-then eval-listener, then eval-service, then fluxnova, then mlflow, then postgres) regardless of the
-order given on the command line. Idempotent — safe to re-run, or run when
-nothing is up.
+then eval-listener, then eval-service, then frontend, then fluxnova, then mlflow,
+then postgres) regardless of the order given on the command line. Idempotent —
+safe to re-run, or run when nothing is up.
 
 With no pod names given, stops/removes all pods: ${ALL_PODS[*]}.
 
 Options:
   --delete-data  Also delete persistent data: postgres' PGDATA volume and
-                 mlflow's artifact files. Fluxnova, eval-service and
+                 mlflow's artifact files. Fluxnova, frontend, eval-service and
                  observability have no data of their own (fluxnova's state lives
                  in postgres) — the flag is a no-op for them.
 
@@ -42,6 +42,7 @@ Pods:
   postgres      PostgreSQL (services/postgres-down.sh)
   mlflow        MLflow tracking server (services/mlflow-down.sh)
   fluxnova      Fluxnova engine + OTel Collector (services/fluxnova-down.sh)
+  frontend      Frontend UI (services/frontend-down.sh)
   eval-service  Eval-service worker (services/eval-service-down.sh)
   eval-listener Eval trace listener (services/eval-listener-down.sh)
   observability Prometheus + Grafana (services/observability-down.sh)
@@ -63,7 +64,7 @@ for arg in "$@"; do
       exit 0
       ;;
     --delete-data) DELETE_DATA=true ;;
-    postgres|mlflow|fluxnova|eval-service|eval-listener|observability) selected+=("$arg") ;;
+    postgres|mlflow|fluxnova|frontend|eval-service|eval-listener|observability) selected+=("$arg") ;;
     *)
       echo "Unknown argument: '$arg' (expected --delete-data or one of: ${ALL_PODS[*]})" >&2
       usage >&2

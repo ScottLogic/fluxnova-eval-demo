@@ -34,9 +34,9 @@ The listener runs `LISTENER_SCORERS` (defined in `eval_trace_listener.scoring`) 
 
 - `decision_quality` — the `Guidelines` judge (definitive, evidence-backed APPROVE/REJECT).
 - `evidence_citation` — grades how well the output grounds its reasoning in the applicant/tool evidence (0.0–1.0).
-- all 11 deterministic code scorers (`required_tools_called`, `no_tool_errors`, `definitive_decision_stated`, `final_recommendation_format`,
-  `tool_correctness`, `all_tool_calls_completed`, the collateral/employment guards, `step_efficiency`,
-  `affordability_called_after_income_confirmed`).
+- all 12 deterministic code scorers (`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, `final_recommendation_format`,
+  `cites_key_evidence_terms`, `no_duplicate_tool_calls`, `risk_checks_precede_affordability`, the collateral/employment guards,
+  `step_efficiency`, `affordability_called_after_income_confirmed`).
 
 **`matches_golden` is deliberately excluded** — it needs a golden `expected_output`, which a bare trace doesn't carry.
 That judge stays in the `regression` suite, which has the golden dataset. `agent_goal` (a Fluxnova-only field, not on
@@ -77,6 +77,12 @@ eval-vs-standalone *invocations* of the same agent isn't possible from the trace
 alone (it would need a Fluxnova REST lookup) and is out of scope.
 
 ## Configuration
+
+Traces tagged `source=regression` are excluded from listener scoring. The runtime
+sample rate is controlled by `GET`/`PUT /config` on port 8092 (published with
+`EVAL_LISTENER_CONTROL_PORT`), including the frontend's auto-eval toggle through
+the UI API. Static `sample_rate`, `control_host` and `control_port` settings also
+accept the corresponding `EVAL_LISTENER_*` overrides.
 
 Static settings live in a **YAML config file** (`config.yaml` — the one baked into
 the image is a worked example). Every key is optional and falls back to a built-in

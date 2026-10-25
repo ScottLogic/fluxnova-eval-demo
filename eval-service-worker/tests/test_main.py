@@ -26,7 +26,7 @@ class TestParseArgs:
         assert args.tracking_uri == "http://localhost:5001"
         assert args.topic == "agent-output-eval"
         assert args.lock_duration_ms == 600_000
-        assert args.trace_poll_timeout == 30.0
+        assert args.trace_poll_timeout == 90.0
         assert args.trace_poll_interval == 3.0
 
     def test_cli_flags_override_defaults(self):

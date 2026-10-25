@@ -1,0 +1,12 @@
+@import './styles/shell.css';
+@import './styles/panel.css';
+@import './styles/buttons.css';
+@import './styles/badges.css';
+@import './styles/forms.css';
+@import './styles/results.css';
+@import './styles/regression.css';
+@import './styles/workflow.css';
+@import './styles/telemetry.css';
+@import './styles/finos.css';
+@import './styles/contents.css';
+@import './styles/evals.css';

@@ -1,0 +1,5 @@
+# Extra dependency (on top of fluxnova-runner/fluxnova-mlflow-dataset, installed
+# editable by ../setup.sh) needed only for ui-api's regression.py router to trigger
+# runs with structured, per-test pass/fail/timing output — see
+# ui-api/src/ui_api/regression_runner.py.
+pytest-json-report>=1.5

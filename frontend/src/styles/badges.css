@@ -1,0 +1,51 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--paper-dim);
+  border: 1px solid rgba(232, 237, 244, 0.22);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+
+.status-badge.status-ok,
+.status-badge.status-pass,
+.status-badge.status-passed,
+.status-badge.status-completed {
+  color: #6db892;
+  border-color: rgba(109, 184, 146, 0.45);
+}
+
+.status-badge.status-warn,
+.status-badge.status-active,
+.status-badge.status-running {
+  color: var(--copper);
+  border-color: rgba(196, 107, 58, 0.45);
+}
+
+.status-badge.status-running {
+  animation: status-badge-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes status-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-badge.status-fail,
+.status-badge.status-failed,
+.status-badge.status-error,
+.status-badge.status-terminated,
+.status-badge.status-exceeded {
+  color: #e07a7a;
+  border-color: rgba(224, 122, 122, 0.45);
+}

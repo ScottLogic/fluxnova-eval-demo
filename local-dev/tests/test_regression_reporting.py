@@ -77,3 +77,27 @@ def test_public_mlflow_trace_table_retains_kwargs_identity_and_assessment_ration
     assert len(report["failures"]) == 1
     assert report["failures"][0]["rationale"] == "Specific failing reason"
     assert report["cases"][0]["outputs"] == "Evidence.\nAPPROVE"
+
+
+def test_parametrized_reports_preserve_each_scenario_in_one_mlflow_run(tmp_path, monkeypatch):
+    import runpy
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import mlflow
+
+    module = runpy.run_path(str(Path(__file__).parents[2] / "regression/test_mlflow_regression.py"))
+    log = Mock()
+    monkeypatch.setattr(mlflow, "log_dict", log)
+    monkeypatch.setenv("REGRESSION_REPORT_DIR", str(tmp_path))
+    for name in ("first", "second"):
+        case = _case(name)
+        table = pd.DataFrame([{"request": case["inputs"], "response": "Evidence.\nAPPROVE",
+                               "assessments": [{"assessment_name": "score", "feedback": {"value": True}}]}])
+        result = SimpleNamespace(run_id="shared-run", tables={"eval_results": table})
+        module["_report_gate"](result, [case], ["score"], "deterministic", scenario=name)
+    assert {call.args[1] for call in log.call_args_list} == {
+        "regression/first/deterministic.json", "regression/second/deterministic.json"}
+    assert json.loads((tmp_path / "shared-run/first/deterministic.json").read_text())["cases"][0]["scenario"] == "first"
+    assert (tmp_path / "shared-run/second/deterministic.json").is_file()

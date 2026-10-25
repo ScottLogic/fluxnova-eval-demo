@@ -125,7 +125,7 @@ def test_listener_scorers_bundle_includes_llm_judges() -> None:
     # matches_golden (which needs a golden expected_output a bare trace lacks).
     names = {s.name for s in scoring.LISTENER_SCORERS}
     assert {"decision_quality", "evidence_citation"} <= names
-    assert "required_tools_called" in names
+    assert "tool_correctness" in names
     assert "matches_golden" not in names
 
 

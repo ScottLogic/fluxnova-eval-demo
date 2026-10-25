@@ -1,0 +1,35 @@
+.status-badge.status-deterministic {
+  color: #6db8b8;
+  border-color: rgba(109, 184, 184, 0.45);
+}
+
+.status-badge.status-non-deterministic {
+  color: #b98be0;
+  border-color: rgba(185, 139, 224, 0.45);
+}
+
+.scorer-legend-deterministic {
+  color: #6db8b8;
+}
+
+.scorer-legend-non-deterministic {
+  color: #b98be0;
+}
+
+.scorer-table td {
+  vertical-align: middle;
+}
+
+td.centered {
+  text-align: center;
+}
+
+.scorer-used {
+  color: #6db892;
+  font-weight: 700;
+}
+
+.scorer-unused {
+  font-weight: bold;
+  color: #ec4c4e;
+}

@@ -47,6 +47,17 @@ DEFAULT_POLL_INTERVAL_S = 10.0
 # exceed the number of runs that can complete within one poll interval.
 DEFAULT_MAX_TRACES_PER_POLL = 200
 
+# Fraction of newly-completed, in-scope traces to actually score — 1.0 scores
+# every one (the historical default/behaviour), 0.0 scores none, 0.1 ~1-in-10,
+# etc. See control.py for how this can be changed live, without restarting the
+# process, via a small always-on HTTP control endpoint.
+DEFAULT_SAMPLE_RATE = 1.0
+
+# Host/port the sample-rate control endpoint (control.py) binds on. 0.0.0.0 so
+# it's reachable from sibling containers, not just localhost inside this pod.
+DEFAULT_CONTROL_HOST = "0.0.0.0"
+DEFAULT_CONTROL_PORT = 8092
+
 
 @dataclass
 class ListenerConfig:
@@ -62,6 +73,9 @@ class ListenerConfig:
     agent_names: list[str] = field(default_factory=lambda: list(DEFAULT_AGENT_NAMES))
     poll_interval_s: float = DEFAULT_POLL_INTERVAL_S
     max_traces_per_poll: int = DEFAULT_MAX_TRACES_PER_POLL
+    sample_rate: float = DEFAULT_SAMPLE_RATE
+    control_host: str = DEFAULT_CONTROL_HOST
+    control_port: int = DEFAULT_CONTROL_PORT
 
     @classmethod
     def from_mapping(cls, raw: dict[str, Any] | None) -> ListenerConfig:
@@ -78,6 +92,9 @@ class ListenerConfig:
             agent_names=list(agent_names) if agent_names is not None else defaults.agent_names,
             poll_interval_s=float(raw.get("poll_interval_s", defaults.poll_interval_s)),
             max_traces_per_poll=int(raw.get("max_traces_per_poll", defaults.max_traces_per_poll)),
+            sample_rate=float(raw.get("sample_rate", defaults.sample_rate)),
+            control_host=str(raw.get("control_host", defaults.control_host)),
+            control_port=int(raw.get("control_port", defaults.control_port)),
         )
 
     @classmethod

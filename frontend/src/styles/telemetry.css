@@ -1,0 +1,27 @@
+.metrics-table-wrap {
+  overflow-x: auto;
+}
+
+.metrics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.metrics-table th,
+.metrics-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(232, 237, 244, 0.12);
+}
+
+.metrics-table th {
+  background: rgba(232, 237, 244, 0.06);
+  font-weight: 650;
+}
+
+.metrics-table td:first-child {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}

@@ -42,15 +42,29 @@ class BpmnLookup:
         self._subprocess_id = subprocess_id
         self._root = ElementTree.parse(self._bpmn_path).getroot()
 
+    def has_subprocess(self) -> bool:
+        """Return whether this file declares an ``adHocSubProcess`` with the
+        configured ``subprocess_id`` — a non-raising existence check, useful
+        when a caller needs to try several candidate BPMN files (e.g. a Call
+        Activity's called process may live in a different file from the one
+        it's invoked from) before committing to one via ``system_prompt()``/
+        ``provider()``/``model()``, which raise ``BpmnLookupError`` instead."""
+        return (
+            self._root.find(f".//bpmn:adHocSubProcess[@id='{self._subprocess_id}']", _NS)
+            is not None
+        )
+
     def system_prompt(self) -> str:
         """Return the agent's ``systemPrompt``, as authored on ``agent:config``."""
-        config = self._agent_config_element()
-        prompt = config.get("systemPrompt")
-        if prompt is None:
-            raise BpmnLookupError(
-                f"'{self._subprocess_id}' has no agent:config@systemPrompt in {self._bpmn_path}"
-            )
-        return prompt
+        return self._agent_config_attribute("systemPrompt")
+
+    def provider(self) -> str:
+        """Return the agent's ``provider`` (e.g. ``"openai"``), as authored on ``agent:config``."""
+        return self._agent_config_attribute("provider")
+
+    def model(self) -> str:
+        """Return the agent's ``model`` (e.g. ``"gpt-4o"``), as authored on ``agent:config``."""
+        return self._agent_config_attribute("model")
 
     def context_variable_names(self) -> list[str]:
         """Return the agent's context variable names, from ``agent:context``."""
@@ -113,3 +127,12 @@ class BpmnLookup:
                 f"'{self._subprocess_id}' has no agent:config in {self._bpmn_path}"
             )
         return config
+
+    def _agent_config_attribute(self, attribute: str) -> str:
+        config = self._agent_config_element()
+        value = config.get(attribute)
+        if value is None:
+            raise BpmnLookupError(
+                f"'{self._subprocess_id}' has no agent:config@{attribute} in {self._bpmn_path}"
+            )
+        return value

@@ -151,12 +151,19 @@ More detail available in the [README](fluxnova-runner/README.md).
 ### -| [local-dev](local-dev)
 
 Local Podman configuration and scripts for running the complete development environment: PostgreSQL, Fluxnova with an
-OTel Collector, MLflow, the evaluation services, and optional Prometheus and Grafana observability tooling. The
+OTel Collector, MLflow, frontend/UI API, the evaluation services, and optional Prometheus and Grafana observability tooling. The
 `pods-up.sh` and `pods-down.sh` scripts start and stop these services in dependency order, while `compose.yaml` provides
 an equivalent Podman Compose setup. This directory also contains the shared environment, engine, collector, database,
 and dashboard configuration used by the local stack.
 
 More detail available in the [README](local-dev/README.md).
+
+### -| [frontend](frontend) and [ui-api](ui-api)
+
+The React/Vite demo UI is served by nginx and backed by a FastAPI service. It
+starts workflows, displays nested progress and agent configuration, runs the six
+golden regression scenarios with per-scorer results, and controls listener sampling.
+Both are included in the local stack; see the [UI walkthrough](local-dev/README.md#frontend-and-ui-api).
 
 ### -| [model-benchmarks](model-benchmarks)
 
@@ -189,7 +196,7 @@ variables). The scorers split into two families:
 
 They are grouped into reusable bundles:
 
-- `DETERMINISTIC_SCORERS` — the 11 code scorers below that need only tool *names* / status / input-variables / output
+- `DETERMINISTIC_SCORERS` — the 12 code scorers below that need only tool *names* / status / input-variables / output
   text (no captured arguments).
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
@@ -203,12 +210,13 @@ service's README for exactly how it sources the scorer inputs.
 
 | Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
 |-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
-| `required_tools_called`                               | Code      | DETERMINISTIC | Every tool the scenario requires was called                                       | R · W · L |
 | `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | R · W · L |
 | `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
 | `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · L |
 | `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | R · W · L |
-| `all_tool_calls_completed`                            | Code      | DETERMINISTIC | Every initiated tool call reached a completed status                              | R · W · L |
+| `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output mentions credit, fraud and affordability evidence                         | R · W · L |
+| `risk_checks_precede_affordability`                   | Code      | DETERMINISTIC | Credit and fraud checks precede affordability                                    | R · W · L |
+| `no_duplicate_tool_calls`                            | Code      | DETERMINISTIC | No tool is called successfully more than once                                    | R · W · L |
 | `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | R · W · L |
 | `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | R · W · L |
 | `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | R · W · L |
@@ -296,7 +304,7 @@ for the current AMD64-only Fluxnova image; see [platform setup](local-dev/README
 From the repository root:
 
 ```bash
-./setup.sh                         # installs all four packages editable, with dev dependencies
+./setup.sh                         # installs all five packages editable, with dev dependencies
 source .venv/bin/activate           # macOS/Linux
 # source .venv/Scripts/activate     # Windows Git Bash
 cp local-dev/.env.example local-dev/.env  # first time only
@@ -403,8 +411,8 @@ complementary paths, all using the **shared scorers/judges** in
   scorers **plus** the `decision_quality` LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway). Best for
   synchronous, in-process scoring wired into the workflow. See [
   `eval-service-worker/README.md`](eval-service-worker/README.md).
-- **`regression/`** (pytest gating suite) — drives the live agent per golden scenario via MLflow's `predict_fn`
-  pattern and asserts its real output satisfies the shared `decision_quality` and `matches_golden` judges, the
+- **`regression/`** (pytest gating suite) — drives the live agent once per parametrized golden scenario
+  and asserts its real output satisfies the shared `decision_quality` and `matches_golden` judges, the
   `evidence_citation` judge, and the full `ALL_DETERMINISTIC_SCORERS` bundle. Best as a CI gate against behavioural
   regressions. See [`regression/README.md`](regression/README.md).
 

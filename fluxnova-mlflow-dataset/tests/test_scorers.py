@@ -11,17 +11,19 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fluxnova_mlflow_dataset.scorers import (
     affordability_called_after_income_confirmed,
-    all_tool_calls_completed,
+    cites_key_evidence_terms,
     collateral_valuation_called_correctly_when_required,
     definitive_decision_stated,
     no_bank_statement_for_employed_applicant,
     no_collateral_check_when_no_collateral,
+    no_duplicate_tool_calls,
     no_tool_errors,
     no_verify_employment_for_self_employed_applicant,
     requested_amount_passed_to_affordability,
-    required_tools_called,
+    risk_checks_precede_affordability,
     step_efficiency,
     tool_argument_correctness,
     tool_correctness,
@@ -72,22 +74,6 @@ def _full_employed_calls(*, arguments: bool = False) -> list[dict]:
     return [_tool(name, arguments=args[name] if arguments else None) for name in names]
 
 
-class TestRequiredToolsCalled:
-    def test_pass_when_all_required_called(self):
-        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=_full_employed_calls())
-        assert _value(required_tools_called(inputs=inputs)) is True
-
-    def test_fail_when_required_missing(self):
-        calls = _full_employed_calls()[:-1]  # drop Assess Affordability
-        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
-        assert _value(required_tools_called(inputs=inputs)) is False
-
-    def test_fail_when_forbidden_tool_called(self):
-        calls = [*_full_employed_calls(), _tool("Analyse Bank Statements")]
-        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
-        assert _value(required_tools_called(inputs=inputs)) is False
-
-
 class TestToolCorrectness:
     def test_full_score_when_exact(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=_full_employed_calls())
@@ -95,6 +81,11 @@ class TestToolCorrectness:
 
     def test_partial_score_when_missing(self):
         calls = _full_employed_calls()[:-1]
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
+        assert _value(tool_correctness(inputs=inputs)) < 1.0
+
+    def test_penalised_when_forbidden_tool_called(self):
+        calls = [*_full_employed_calls(), _tool("Analyse Bank Statements")]
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
         assert _value(tool_correctness(inputs=inputs)) < 1.0
 
@@ -110,15 +101,46 @@ class TestNoToolErrors:
         assert _value(no_tool_errors(inputs=inputs)) is False
 
 
-class TestAllToolCallsCompleted:
-    def test_pass_when_all_ok(self):
+class TestNoDuplicateToolCalls:
+    def test_pass_when_each_tool_called_once(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=_full_employed_calls())
-        assert _value(all_tool_calls_completed(inputs=inputs)) is True
+        assert _value(no_duplicate_tool_calls(inputs=inputs)) is True
 
-    def test_fail_on_error(self):
-        calls = [_tool("Check Credit Score", status="ERROR")]
+    def test_fail_when_tool_called_twice(self):
+        calls = [*_full_employed_calls(), _tool("Check Credit Score")]
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
-        assert _value(all_tool_calls_completed(inputs=inputs)) is False
+        assert _value(no_duplicate_tool_calls(inputs=inputs)) is False
+
+    def test_ignores_a_failed_retry(self):
+        calls = [_tool("Check Credit Score", status="ERROR"), _tool("Check Credit Score")]
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
+        assert _value(no_duplicate_tool_calls(inputs=inputs)) is True
+
+
+class TestRiskChecksPrecedeAffordability:
+    def test_pass_when_risk_checks_first(self):
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=_full_employed_calls())
+        assert _value(risk_checks_precede_affordability(inputs=inputs)) is True
+
+    def test_fail_when_affordability_first(self):
+        calls = [_tool("Assess Affordability"), _tool("Check Credit Score"), _tool("Run Fraud Screening")]
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
+        assert _value(risk_checks_precede_affordability(inputs=inputs)) is False
+
+    def test_none_when_affordability_not_called(self):
+        calls = [_tool("Check Credit Score")]
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
+        assert risk_checks_precede_affordability(inputs=inputs) is None
+
+
+class TestCitesKeyEvidenceTerms:
+    def test_pass_when_all_terms_present(self):
+        output = "APPROVE. Credit score strong, fraud risk low, affordability confirmed."
+        assert _value(cites_key_evidence_terms(outputs=output)) is True
+
+    def test_fail_when_a_term_missing(self):
+        output = "APPROVE. Credit score strong, affordability confirmed."
+        assert _value(cites_key_evidence_terms(outputs=output)) is False
 
 
 class TestDefinitiveDecisionStated:
@@ -133,6 +155,20 @@ class TestDefinitiveDecisionStated:
 
     def test_handles_non_string_output(self):
         assert _value(definitive_decision_stated(outputs={"decision": "REJECT"})) is True
+
+    @pytest.mark.parametrize(
+        "output",
+        ["I recommend REJECTING the loan application.", "The loan is approved.", "Rejected."],
+    )
+    def test_pass_on_verb_inflections(self, output):
+        assert _value(definitive_decision_stated(outputs=output)) is True
+
+    @pytest.mark.parametrize(
+        "output",
+        ["Pending the loan approval process.", "Rejection risk is unclear; further review needed."],
+    )
+    def test_fail_on_noun_forms_alone(self, output):
+        assert _value(definitive_decision_stated(outputs=output)) is False
 
 
 class TestProfileForbiddenTools:

@@ -1,0 +1,119 @@
+.test-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.test-table th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+  border-bottom: 1px solid rgba(232, 237, 244, 0.16);
+}
+
+.golden-blurb p {
+  margin-top: 0;
+}
+
+.test-table-row td {
+  padding: 0.65rem 0.5rem;
+  border-top: 1px solid rgba(232, 237, 244, 0.1);
+  vertical-align: top;
+}
+
+.test-table-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+  color: var(--copper);
+  font-weight: 600;
+}
+
+.test-table-description {
+  margin: 0.25rem 0 0;
+  color: var(--paper-dim);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.test-table-duration {
+  color: var(--paper-dim);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scorer-results {
+  margin-top: 0.5rem;
+}
+
+.scorer-results summary {
+  cursor: pointer;
+  color: var(--paper-dim);
+  font-size: 0.82rem;
+}
+
+.scorer-results-failed {
+  color: #e07a7a;
+}
+
+.scorer-results-table {
+  width: 100%;
+  margin-top: 0.4rem;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.scorer-results-table td {
+  padding: 0.3rem 0.5rem 0.3rem 0;
+  border-top: 1px solid rgba(232, 237, 244, 0.08);
+  vertical-align: top;
+}
+
+.scorer-results-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.scorer-results-value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scorer-results-rationale {
+  color: var(--paper-dim);
+  line-height: 1.4;
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid rgba(232, 237, 244, 0.22);
+  border-top-color: var(--copper);
+  border-radius: 50%;
+  animation: spinner-spin 0.7s linear infinite;
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.test-run-output {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.45rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(232, 237, 244, 0.1);
+  color: var(--paper);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 18rem;
+  overflow: auto;
+}

@@ -23,6 +23,14 @@ def test_system_prompt_returns_configured_prompt(lookup: BpmnLookup) -> None:
     assert "Run Fraud Screening" in prompt
 
 
+def test_provider_returns_configured_provider(lookup: BpmnLookup) -> None:
+    assert lookup.provider() == "openai"
+
+
+def test_model_returns_configured_model(lookup: BpmnLookup) -> None:
+    assert lookup.model() == "gpt-4o"
+
+
 def test_context_variable_names_returns_full_list(lookup: BpmnLookup) -> None:
     names = lookup.context_variable_names()
     assert "customerId" in names
