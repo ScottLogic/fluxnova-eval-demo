@@ -80,7 +80,12 @@ else
   podman pod create --name "$POD_NAME" --network host
 
   echo "Starting eval-service-worker..."
+  # MLFLOW_DISABLE_TELEMETRY: MLflow's background telemetry thread can deadlock
+  # against evaluate()'s autolog import hooks (each holds an import lock the other
+  # needs), freezing the worker mid-task with the external task left locked.
   podman run -d --pod "$POD_NAME" --name eval-service-worker \
+    -e MLFLOW_DISABLE_TELEMETRY=true \
+    -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
     -e EVAL_SERVICE_FLUXNOVA_URL="$EVAL_SERVICE_FLUXNOVA_URL" \
     -e EVAL_SERVICE_TRACKING_URI="$EVAL_SERVICE_TRACKING_URI" \
     -e EVAL_SERVICE_EXPERIMENT_NAME="$EVAL_SERVICE_EXPERIMENT_NAME" \

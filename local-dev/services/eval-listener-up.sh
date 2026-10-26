@@ -83,7 +83,10 @@ else
     --publish "${EVAL_LISTENER_CONTROL_PORT}:${EVAL_LISTENER_CONTROL_PORT}"
 
   echo "Starting eval-trace-listener..."
+  # MLFLOW_DISABLE_TELEMETRY: MLflow's background telemetry thread can deadlock
+  # against evaluate()'s autolog import hooks — see eval-service-up.sh.
   podman run -d --pod "$POD_NAME" --name eval-trace-listener \
+    -e MLFLOW_DISABLE_TELEMETRY=true \
     -e EVAL_LISTENER_TRACKING_URI="$EVAL_LISTENER_TRACKING_URI" \
     -e EVAL_LISTENER_EXPERIMENT_NAME="$EVAL_LISTENER_EXPERIMENT_NAME" \
     -e LLM_JUDGE_PROVIDER="$LLM_JUDGE_PROVIDER" \
