@@ -11,8 +11,8 @@ the full background/scope and `local-dev/README.md`'s "eval-service-worker" sect
 `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
 `no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`,
 `risk_checks_precede_affordability`, `no_duplicate_tool_calls`).
-This is the deliberately narrow online set: `decision_quality` is the one judge cheap enough to run per-run through the
-`fluxnova-judge` gateway, and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
+This is the deliberately narrow online set: `decision_quality` is the one judge cheap enough to run per-run (called directly
+against OpenAI's `gpt-4o-mini`, so `OPENAI_API_KEY` must be set), and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
 `matches_golden`) are left to the offline `eval-trace-listener` / `regression` suites.
 
 **How the scorer inputs are sourced.** All scorers are decoupled from tracing, so the worker builds their plain-value
@@ -63,10 +63,10 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 | MLflow experiment       | `--experiment-name`     | `EVAL_SERVICE_EXPERIMENT_NAME`     | `fluxnova-loanAssessmentEvalProcess`                                                        |
 | Process key (tags)      | `--process-key`         | `EVAL_SERVICE_PROCESS_KEY`         | `loanAssessmentEvalProcess`                                                                 |
 | External-task topic     | `--topic`               | `EVAL_SERVICE_TOPIC`               | `agent-output-eval`                                                                         |
-| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `gateway:/fluxnova-judge`                                                                   |
+| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `openai:/gpt-4o-mini` (needs `OPENAI_API_KEY`)                                              |
 | Lock duration (ms)      | `--lock-duration-ms`    | `EVAL_SERVICE_LOCK_DURATION_MS`    | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes)                     |
 | MLflow tracking URI     | `--tracking-uri`        | `EVAL_SERVICE_TRACKING_URI`        | `http://localhost:5000`                                                                     |
-| Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `30.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
+| Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `90.0` (the collector delivers traces to MLflow asynchronously, so this retries the lookup) |
 | Trace poll interval (s) | `--trace-poll-interval` | `EVAL_SERVICE_TRACE_POLL_INTERVAL` | `3.0`                                                                                       |
 
 A CLI flag always wins over the matching env var, which always wins over the default.
@@ -101,7 +101,7 @@ outcome = score_process_instance(
     tracking_uri="http://localhost:5000",
     process_key="loanAssessmentEvalProcess",
     experiment_name="fluxnova-loanAssessmentEvalProcess",
-    judge_model="gateway:/fluxnova-judge",
+    judge_model="openai:/gpt-4o-mini",
 )
 print(outcome.eval_passed, outcome.eval_rationale)
 ```
