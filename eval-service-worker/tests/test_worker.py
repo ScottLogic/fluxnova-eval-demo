@@ -122,5 +122,16 @@ class TestMakeHandler:
         assert score.call_args[0][0] == "parent-1"
 
 
+def test_idle_long_poll_is_not_the_ten_minute_task_lease(monkeypatch):
+    factory = MagicMock()
+    monkeypatch.setattr(worker, "ExternalTaskWorker", factory)
+    monkeypatch.setattr(worker, "FluxnovaClient", MagicMock())
+    monkeypatch.setattr(worker.threading, "Thread", MagicMock())
+    worker.run(EvalServiceConfig(lock_duration_ms=600_000))
+    settings = factory.call_args.kwargs["config"]
+    assert settings["lockDuration"] == 600_000
+    assert settings["asyncResponseTimeout"] == 10_000
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

@@ -7,50 +7,43 @@ judges/scorers).
 
 ## What it does
 
-`test_mlflow_regression.py` has **one test per golden**: `test_agent_passes_golden` is parametrized over every scenario
-in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json), with the golden's
-`additional_metadata.scenario` as its test id (e.g. `test_agent_passes_golden[employed-high-fraud-reject]`). Each test:
+`test_agent_passes_golden[<scenario>]` is parametrized once for each of the six
+goldens in [`datasets/loan-assessment/goldens.json`](../datasets/loan-assessment/goldens.json).
+Each test drives the live agent once via `fluxnova-runner`, then scores that actual
+output with every scorer in one `mlflow.genai.evaluate()` call. Four gate groups:
 
-1. drives the live loan-assessment agent end-to-end once via `fluxnova-runner`;
-2. scores that one actual output with **every** gating scorer in a single `mlflow.genai.evaluate()` call;
-3. asserts every applicable scorer passed, listing *all* failing scorers (value + rationale) in the failure message.
+- `decision_quality`: an unambiguous evidence-backed APPROVE/REJECT, judged semantically.
+- `matches_golden`: agreement with the golden decision/evidence, thresholded at `GOLDEN_MATCH_THRESHOLD`.
+- `ALL_DETERMINISTIC_SCORERS` (14): tool selection, errors, duplicates, risk/income ordering,
+  inference budget, evidence keywords, plain final recommendation line and captured arguments.
+- `evidence_citation`: grounded evidence, thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`.
 
-The gating scorers:
+All groups must pass. `@mlflow.test` records one outcome per scenario. The
+`pytest-json-report` plugin exposes every scorer's name/status/value/rationale in
+`metadata.scorers` for the UI API; replayable reports preserve the process ID and
+captured output/tool data as well. `./setup.sh` installs the plugin.
 
-- `decision_quality` — guideline judge: a definitive APPROVE/REJECT backed by cited evidence.
-- `matches_golden` — judge: matches the golden's `expected_output` (thresholded at `GOLDEN_MATCH_THRESHOLD`).
-- `evidence_citation` — judge: grounds its reasoning in the applicant/tool evidence (a graded 0.0–1.0 score,
-  thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`).
-- `fluxnova_mlflow_dataset.scorers.ALL_DETERMINISTIC_SCORERS` — states an APPROVE/REJECT keyword, called exactly the
-  tools its applicant profile requires (and none it shouldn't), made no failed tool calls, called tools in the
-  expected order, and passed each tool the arguments the BPMN wires up for it. Graded scores must be a full 1.0.
+The current bundle has **17 scorers** (14 deterministic + 3 judges).
+`final_recommendation_format` is the sole deterministic decision-format check;
+`decision_quality` still judges whether the decision is supported and coherent.
+The older keyword-presence check was redundant because a valid final line already
+guarantees a decision keyword. Historical validation counts below describe the
+bundles actually used for those runs and are retained unchanged.
 
-A judge that produces no verdict, or any scorer that errors, fails the golden. A deterministic scorer returning `None`
-("not applicable" to this golden's profile, e.g. `no_collateral_check_when_no_collateral` when there is collateral) is
-reported as `n/a` and never fails it.
+### One real run per golden, one evaluation of that frozen result
 
-Running the agent once per golden and scoring that one output with every scorer guarantees they all judge the *same*
-real (non-deterministic) output, with no cross-test caching. It also means a single scenario can be rerun cheaply with
-`pytest -k <scenario>`, and a golden whose agent run times out fails only its own test.
-
-Every scorer's result (`name`, `status` of `passed`/`failed`/`n/a`, `value`, `rationale`) is also written into the
-pytest-json-report's per-test `metadata.scorers` via the `json_metadata` fixture, which `ui-api` surfaces so the UI
-can show the per-scorer breakdown for each golden.
+The combined suite follows upstream's per-scenario execution model: it captures
+one actual output and scores all gates together, replacing the older cached
+`predict_fn`/four-test layout. No gate reruns the live agent. Use `pytest -k
+<scenario>` to run one golden; the UI API lists the same six parametrized tests.
 
 ### Scorers and how the data is retrieved
 
-The regression suite is the only consumer that runs the **LLM judges that need a reference answer or input
-variables**, because it has the golden dataset on hand.
+Only regression runs `matches_golden`, which needs a reference answer from the
+golden dataset. The other judges are also used by the trace-based evaluation services.
 
-| Scorer                            | Type      | Pass rule                                            |
-|-----------------------------------|-----------|------------------------------------------------------|
-| `decision_quality`                | LLM judge | verdict `yes`                                        |
-| `matches_golden`                  | LLM judge | verdict `yes`                                        |
-| `evidence_citation`               | LLM judge | score ≥ `REGRESSION_EVIDENCE_CITATION_THRESHOLD`     |
-| `ALL_DETERMINISTIC_SCORERS` (~14) | Code      | `true` / score 1.0 (`None` = not applicable)         |
-
-**How the scorer inputs are sourced — with no MLflow trace read.** Every value the scorers need is read straight off
-the Fluxnova engine's REST API rather than the run's MLflow trace, and passed to `evaluate()` as a static row:
+**How scorer inputs are sourced.** Every scorer value comes directly from
+Fluxnova REST history/process variables, independently of trace export:
 
 - `outputs` — the agent's *actual* final answer, read from the run's `_agentConversationHistory` process variable
   (`fluxnova_runner.agent_output`).
@@ -61,18 +54,19 @@ the Fluxnova engine's REST API rather than the run's MLflow trace, and passed to
   equivalent of what `eval-service-worker`/`eval-trace-listener` read off the OTel trace's `execute_tool` spans.
 - `expectations.expected_output` — the golden's reference answer (consumed by `matches_golden`).
 
-This actually runs the agent — it's a gating check, not a coverage suite. Results are recorded to the shared
-PostgreSQL-backed MLflow tracking store under a dedicated `fluxnova-loanAssessmentProcess-regression` experiment (kept
-separate from real recorded agent runs).
+The suite also best-effort tags each raw trace `source=regression` so the listener
+can skip it. Raw traces follow `EVAL_SERVICE_EXPERIMENT_NAME`. Evaluation runs share
+that experiment by default; `MLFLOW_EXPERIMENT_NAME` can select a separate regression
+experiment (including a fresh `-v2` name when preserving legacy artifact locations).
 
 ## Running
 
 From the repo root, with the shared `.venv` active (see the root [README](../README.md#first-time-setup)):
 
 ```bash
-pytest regression -v
-# or a single golden:
-pytest regression/test_mlflow_regression.py -v -k employed-high-fraud-reject
+python -m pytest regression -v -rs
+# or a single test:
+python -m pytest regression/test_mlflow_regression.py -v -rs
 ```
 
 **Prerequisites:** the full live stack must be up (Fluxnova engine, Postgres, OTel Collector, MLflow — see
@@ -81,11 +75,233 @@ reachable rather than failing. The LLM-as-judge scorers (`decision_quality`, `ma
 default to OpenAI, so `OPENAI_API_KEY` must be set in the shell running pytest; set `LLM_JUDGE_PROVIDER=ollama`
 instead to judge fully locally (Ollama must then be running with `gemma4:e2b` pulled).
 
+## Validation sequence
+
+Use the shared `.venv` from the repository root. Stop any separately running demo
+mock-worker terminal before the live regression; the suite starts its own pool.
+
+1. **Prepare the stack.** Follow [local setup](../local-dev/README.md#quick-start-pods).
+   If upgrading an old store, follow the [artifact-experiment upgrade](../local-dev/README.md#upgrade-experiments-created-with-container-local-artifact-paths)
+   and use fresh experiment names while preserving historical results. Recreate
+   affected pods and rebuild evaluation images after source changes. Restarting
+   the VM alone does not update container environments.
+2. **Check artifact transport before model calls:**
+   ```bash
+   python local-dev/mlflow/check_artifacts.py
+   ```
+   Expected: upload/download succeeds with a `mlflow-artifacts:/...` URI. A host
+   client must not attempt to write directly to `/mlflow-artifacts`.
+3. **Run offline checks** using the [separate package suites](../local-dev/README.md#port-overrides-and-checks).
+   For real HTTP artifact/report transport against a temporary isolated server:
+   ```bash
+   RUN_MLFLOW_PROXY_TEST=1 python -m pytest local-dev/tests/test_artifact_proxy.py -q
+   ```
+   This makes no model calls. The normal local-dev suite intentionally skips this
+   opt-in test.
+4. **Check the judge independently of the agent:**
+   ```bash
+   python -m regression.calibrate
+   ```
+   Expected: eight frozen examples, zero mismatches: four valid responses receive
+   `yes` and four deliberately invalid responses receive `no`. Inspect rationales
+   and retain reports when assessing repeatability. An all-yes judge, missing
+   verdicts or provider failures are not calibration success.
+5. **Run all four live gates:**
+   ```bash
+   python -m pytest regression -v -rs
+   ```
+    Expected: six parametrized scenarios with four passing gate groups, no artifact-path
+   warnings and no skips. Inspect the experiment named by `MLFLOW_EXPERIMENT_NAME`
+    (the default name or your `-v2` override), its `regression/<scenario>/*.json` artifacts and
+   local report copies. Scored model-quality failures differ from infrastructure
+   errors; use the scenario, process ID and rationale before changing a threshold.
+6. **Replay captured results**, substituting the run ID printed by the suite:
+   ```bash
+    python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/<scenario>/deterministic.json
+    python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/<scenario>/decision_quality.json
+   ```
+   The first is offline; the second makes judge calls on the frozen outputs.
+   Neither executes the agent. Old inefficient outputs should still fail current
+   budgets; replay does not rewrite history or alter the original results.
+7. **Check online scoring and persistence** with the [demo walkthrough](../local-dev/README.md#demo-walkthrough):
+   inspect trace payloads, assessments, `evalPassed`/`evalRationale`, dashboards,
+   and retained results after normal teardown/recreation.
+
+When reporting results, include platform/Podman versions, model and rubric versions,
+calibration report paths, regression run ID, inference counts, artifact smoke result
+and online workflow outcome. All four live regression gates have passed local
+Apple Silicon validation; repeat these checks after workflow, scorer or model changes.
+
+### Review follow-up validation — 2026-10-29
+
+Merged upstream `be3abbd` (#33) in `6ef6280`, preserving the diagnostic-telemetry
+deadlock fix and direct OpenAI judging while aligning the worker's standalone
+default with calibrated `gpt-4.1-mini`. Commit `4d23900` removes the redundant
+keyword-presence scorer, its regex and exports. The active suite now has **17
+scorers** (14 deterministic + 3 judges); semantic judging and gate thresholds are
+unchanged. Earlier 18-scorer evidence below remains an accurate historical record.
+
+- Separate affected suites: shared dataset **134**, worker **23**, listener **38**,
+  UI API **24**, local-dev **76 passed, 1 expected opt-in skip**. Ruff, local
+  documentation links/anchors, affected Bash syntax and diff checks passed.
+- Replayed all six captured outputs from each integrated pod/Compose regression
+  with the current 14 deterministic checks: **12 outputs, zero failures**. Replay
+  reports were uploaded to new MLflow runs `cc573ee572f64c5da2d35fe03aba1401` and
+  `d3218cbdc6a442859e60d202d14bdac5`; the source runs/reports were not altered.
+- Rebuilt/recreated worker, listener and UI API pod containers. Verified
+  `MLFLOW_DISABLE_TELEMETRY=true` in all three and `openai:/gpt-4.1-mini` as both
+  the worker's runtime model and standalone default. Compose configuration with
+  eval/grafana profiles rendered successfully with the same telemetry settings.
+- A fresh UI workflow `8b4e7519-d338-11f1-91c1-0aae3b089c72` completed with
+  `evalPassed=true`; UI scorer definitions contained 17 entries and listener
+  sampling toggled off/on successfully. Trace `tr-8757a600321220682bde334ea2dc1895`
+  contains nine spans, passing final-line/semantic checks and evidence score **1.0**,
+  with no removed-scorer assessment. OTel trace export/assessment logging therefore
+  still works with MLflow diagnostic telemetry disabled.
+
+This follow-up used deterministic replay plus targeted live pod worker/listener/UI
+checks; it did **not** repeat full six-scenario model-driven regression, semantic
+calibration, live Compose orchestration or frontend build/browser tests. Previous
+platform/provider/environment limitations below still apply.
+The VM became unavailable again after these checks completed; its shutdown issue
+remains unresolved, so final stack availability is not claimed for this follow-up.
+
+### Combined upstream-tree validation — 2026-10-25
+
+Upstream `main` at `771e8c8` was merged in `805113e`, reconciling its UI API,
+listener sampling and per-golden regression refactors with the portability and
+evaluation changes. The environment/models are the same as the earlier matrix
+below; rebuilt ARM64 Python containers used Python 3.11.17 (host: 3.11.13).
+
+| Check | Integrated-tree result |
+| --- | --- |
+| Separate Python suites | Shared dataset **131**, runner **50**, worker **23**, listener **38**, UI API **24** passed; local-dev **73 passed, 1 expected opt-in skip**. |
+| Isolated HTTP integration | `RUN_MLFLOW_PROXY_TEST=1 python -m pytest local-dev/tests/test_artifact_proxy.py -q`: **1 passed**, including real evaluation schema/report upload/download. |
+| Frontend | `npm ci`, `npm run build` and `npm run lint` completed; lint reported three upstream warnings and the build reported a large-chunk warning. |
+| Frozen calibration | Eight labels, zero mismatches; run `40598fb63c6b4163af63e915cdbccf0c`. |
+| Pods, through nginx/UI API | UI run `063dfed1f08947b3b0eb3e3bcf1a58e7`; MLflow run `6df4f167b74d492d9f9bf571fa218317`: **6 passed**, all **18 scorers** (15 deterministic + 3 judges), four gate groups. Every scenario used four inferences. |
+| Compose, through nginx/UI API | UI run `73408eb05aa846b08b82878633d938fd`; MLflow run `bafdee4e184d4a31a00648ef83691738`: **6 passed**, same scorer/gate groups. Self-employed approval used three inferences; all others used four. |
+| Frozen replay | All six outputs passed deterministic and semantic replay for each orchestration; replay runs `c17963d64b7b42af8a968b608d164d68` and `f8d3faab160046ffb38c9bb1d2550992`. Each source run retained **24** per-scenario gate reports. |
+| UI integration | Six test descriptions, progress polling, scorer statuses/rationales, 18 scorer definitions, nested workflow stages, and listener off/on sampling control verified through HTTP APIs behind nginx under both orchestrations. |
+| Online routing | Both pod and Compose controlled-eval workflows reached approval on a genuine scoring pass and failed-evaluation review on a deliberately injected false result; worker restored afterward. |
+| Artifacts/readiness/observability | Artifact round-trips passed on both orchestrations. Recreated Compose engine and UI API reported healthy; collector scrape target UP, Grafana healthy, dashboard provisioned. |
+| Persistence | Old failed/successful runs, trace payload/assessments, eight old/new approval/review tasks and all 48 integrated gate reports re-read after recreation/restart; three UI histories re-read after the preservation fix and return to pods. |
+
+UI API persistence validation exposed upstream's cascading deployment deletion on
+each workflow start ([#32](https://github.com/ScottLogic/fluxnova-eval-demo/issues/32)).
+The first pod UI instance was deleted by the next launch before the fix. Commit
+`37ad0f7` removes that implicit deletion; a new unit check plus consecutive live
+launches and a Compose-to-pods switch verified that the prior and new histories
+remain available. This targeted follow-up did not change regression scoring.
+
+The VM shutdown recurred even after an independent Terminal start. After another
+user restart, final persistence/readiness checks passed and a fresh pod UI workflow
+`31aa9a0b-d024-11f1-ae8f-1efa7cc6c1d1` received `evalPassed=true`. The shutdown
+cause remains unconfirmed. UI behavior was checked programmatically, not through
+a browser/visual acceptance test. Windows/WSL, Intel macOS, native Linux, other VM
+providers, native ARM64 Fluxnova, Ollama, AI Gateway sampling, IDE breakpoints,
+fresh-machine/destructive-reset and load/soak testing remain unvalidated.
+
+### Recorded Apple Silicon validation — 2026-10-25 (before upstream integration)
+
+Environment: macOS ARM64, Python 3.11.13, Podman 5.8.1 with an existing
+`libkrun` VM (8 CPUs, approximately 30 GiB RAM), MLflow 3.16.0. Fluxnova runs
+as AMD64; the agent is `gpt-4o`, the decision judge `gpt-4.1-mini` (rubric 2),
+and the auxiliary judges `gpt-4o-mini`.
+
+| Check | Recorded result |
+| --- | --- |
+| Package unit suites | Shared dataset 120, runner 49, worker 23 and listener 29 passed in separate suites. |
+| Local startup/integration checks | 69 passed, one expected opt-in skip; the real HTTP artifact-proxy test also passed separately. |
+| Frozen calibration | All eight labels matched repeatedly; default-model confirmation run `d7102aab47e54f05a0db4d72550d61e0`. |
+| Pod live regression | All four gates passed, run `6f033e5d76004b29aff879a389b0bf12`; deterministic and six-output judge replay passed. |
+| Compose live regression | All four gates passed, run `87cb04a4771d4b4581f100e73e16daeb`; deterministic and six-output judge replay passed. |
+| Online evaluation routing | Approval and controlled failed-evaluation review routes verified with both pod and Compose orchestration. |
+| Artifact transport and persistence | HTTP upload/download passed; historical failed/successful runs, trace payloads/assessments, four regression reports and four approval/review tasks survived orchestration recreation and a VM restart. |
+| Fresh workflow after restart | Process `f9737fdd-d016-11f1-a555-0aa8c5b19949` completed in four inferences; trace `tr-f62e531178d8d10bb18e8481bef2c289` has nine spans, decision-quality `yes`, evidence score `1.0` and passing applicable deterministic assessments. |
+| Observability after restart | Collector scrape target UP; Grafana database healthy and the provisioned GenAI dashboard available. |
+
+Earlier automated validation sessions experienced unexpected orderly VM shutdowns.
+The final post-restart checks above passed after starting the VM from an independent
+user Terminal; this does not establish the cause of those earlier shutdowns.
+Windows, Intel macOS, native Linux and the optional Ollama path remain unvalidated.
+Run IDs refer to the retained local development store; reproduce results with the
+sequence above when using a different store or changing the workflow/scorers/models.
+
 ## Configuration
 
+Every gate group writes `regression/<scenario>/<gate>.json` to its MLflow run and a local copy
+under `local-dev/.mlflow/reports/<run-id>/<scenario>/` (`REGRESSION_REPORT_DIR` overrides the
+root). Reports contain scenario labels, engine process instance IDs, captured actual
+outputs, expectations, tool calls, total inference counts and scorer verdicts/errors/
+rationales. Failures list every affected scenario/scorer, rather than stopping at
+the first deterministic scorer. Profile-driven not-applicable checks remain skips;
+missing applicable verdicts, missing rows and scorer errors fail the gate.
+
+The four groups use one live agent result per golden. Saved reports can be
+used for judge calibration/replay without another agent execution.
+
+### Judge calibration and frozen replay
+
+The decision-quality rubric is versioned (`2`) and accepts concrete evidence
+anywhere in the response, including bullets before a final recommendation. It
+still rejects absent evidence, invented/contradictory facts and deferred or
+contradictory decisions. Semantic judging does not impose an output layout.
+The separate deterministic `final_recommendation_format` check enforces the new
+agent contract: evidence and justification first, then a plain final line exactly
+`APPROVE` or `REJECT`. The updated BPMN requests that format explicitly.
+
+```bash
+python -m regression.calibrate                         # 8 frozen positive/negative judge cases
+python -m regression.calibrate --report local-dev/.mlflow/reports/<run-id>/<scenario>/decision_quality.json
+python -m regression.calibrate --mode deterministic --report local-dev/.mlflow/reports/<run-id>/<scenario>/deterministic.json
+```
+
+Judge mode uses model calls, but never starts/deploys a workflow. The built-in suite
+has four expected `yes` and four deliberately invalid expected `no` responses; an
+all-yes judge fails calibration. Report replay expects `yes` for each recorded
+workflow output. `--model` selects an explicit candidate without changing the agent.
+The expected raw verdict mean for this balanced calibration set is `0.5`; success
+is **zero expectation mismatches**, not an all-positive verdict mean. The default
+semantic judge is `gpt-4.1-mini`, selected after `gpt-4o-mini` repeated a false-negative
+on the valid rejection example; golden matching/evidence citation remain separate.
+Auxiliary judges request structured JSON on OpenAI (native JSON mode on Ollama).
+A whole-response JSON code fence is accepted, but malformed payloads, non-finite/
+out-of-range scores and missing rationales still fail; thresholds are unchanged.
+Judge results/rationales, actual model and rubric version are saved in MLflow's
+separate `fluxnova-decision-quality-calibration-v2` experiment and locally under
+`local-dev/.mlflow/calibration/`; `--output` selects a local filename. Missing/error
+verdicts and expectation mismatches exit non-zero. Deterministic mode needs neither
+a model nor a tracking server and re-evaluates captured inputs with current scorers.
+
+Offline tests check wiring, reporting, negative-case handling and output format;
+they do not establish judge quality. Run the frozen suite against the configured
+model before claiming calibration passes. Follow the [validation sequence](#validation-sequence)
+for the ordered upgrade and end-to-end checks.
+
+To reproduce live calibration against an isolated temporary MLflow store, use
+`RUN_MLFLOW_PROXY_TEST=1 RUN_LLM_CALIBRATION_TEST=1 python -m pytest local-dev/tests/test_artifact_proxy.py -q`.
+This explicit opt-in makes eight judge calls with the configured credentials and
+keeps the demo store unchanged. Standard unit tests and proxy-only checks make no model calls.
+
+### Efficiency contract
+
+`iterations` means total LLM inference calls **including the final response** in
+both engine-variable and trace consumers. The normal budget is four calls:
+fraud+credit together, income verification, affordability after income, final answer.
+Collateral should be batched with income where possible; a separate collateral
+round permits a fifth call. Five calls without collateral, or six with collateral,
+still fail. The BPMN prompt explicitly requests this batching and keeps every
+required check and the income-before-affordability dependency. Redeploy the BPMN
+(the regression fixture does this) before validating the new instructions.
+The prompt also enumerates required tool argument names and requires exact context
+identifiers and the numeric requested amount. A captured empty `{}` remains a real
+argument failure, even if engine-bound variables let a mock service task complete.
+
 - `pytest.ini` here enables MLflow's pytest plugin (`-p mlflow.pytest.plugin`) and live console logging.
-- `conftest.py` points `MLFLOW_TRACKING_URI` / `MLFLOW_EXPERIMENT_NAME` at the shared store + regression experiment
-  before any run opens, caps noisy third-party loggers, and serialises judge calls (`MLFLOW_GENAI_EVAL_MAX_WORKERS=1`).
+- `conftest.py` selects the HTTP tracking server and regression experiment before
+  any run opens, caps noisy loggers, and limits judge concurrency to one for Ollama
+  (OpenAI defaults to ten). Explicit environment overrides are respected.
 
 ### Environment variables
 
@@ -97,11 +313,14 @@ is always respected.
 | `REGRESSION_ACTIVITY_TIMEOUT`             | `600` (seconds)                                 | `test_mlflow_regression.py`         | Max time to wait for one golden's agentic subprocess run to finish                                                                                                                                      |
 | `REGRESSION_GOLDEN_MATCH_THRESHOLD`       | `0.7`                                           | `fluxnova_mlflow_dataset.scorers`   | Min `matches_golden` judge score (0.0–1.0) counted as a "yes" verdict                                                                                                                                   |
 | `REGRESSION_EVIDENCE_CITATION_THRESHOLD`  | `0.7`                                           | `test_mlflow_regression.py`         | Min `evidence_citation` judge score (0.0–1.0) counted as a pass                                                                                                                                         |
-| `LLM_JUDGE_PROVIDER`                      | `openai` (model `gpt-4o-mini`)                  | `fluxnova_mlflow_dataset.scorers`   | Judge provider for `decision_quality`/`matches_golden`/`evidence_citation`; set to `ollama` (model `gemma4:e2b`) for a fully local fallback                                                             |
-| `OPENAI_API_KEY`                          | none                                            | read by `litellm`/MLflow            | Required while `LLM_JUDGE_PROVIDER=openai` (the default) — same key as the BPMN agent's, but a separate model (`gpt-4o-mini` vs. the agent's `gpt-4o`) so the judge never grades a model judging itself |
+| `LLM_JUDGE_PROVIDER`                      | `openai`                                       | `fluxnova_mlflow_dataset.scorers`   | Provider for semantic/auxiliary judges; Ollama defaults to `gemma4:e2b` |
+| `DECISION_QUALITY_MODEL`                  | `openai:/gpt-4.1-mini` for OpenAI               | `fluxnova_mlflow_dataset.scorers`   | Full URI override for regression/listener semantic judging; worker has its own explicit `EVAL_SERVICE_JUDGE_MODEL` |
+| `OPENAI_API_KEY`                          | none                                            | read by `litellm`/MLflow            | Required for OpenAI; semantic judge is `gpt-4.1-mini`, auxiliary judges `gpt-4o-mini`, agent `gpt-4o` |
 | `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` with `LLM_JUDGE_PROVIDER=ollama`, else `10` | `conftest.py`                       | Judge-call concurrency; capped to 1 only for the single-instance local Ollama judge                                                                                                                     |
-| `MLFLOW_TRACKING_URI`                     | shared Postgres store (`default_tracking_uri`)  | `conftest.py`                       | Where runs/assessments are recorded                                                                                                                                                                     |
-| `MLFLOW_EXPERIMENT_NAME`                  | `fluxnova-loanAssessmentProcess-regression`     | `conftest.py`                       | Experiment the regression runs land in                                                                                                                                                                  |
+| `MLFLOW_TRACKING_URI`                     | `http://localhost:5001` (`default_server_tracking_uri`) | `conftest.py`                 | HTTP tracking server; avoids direct database/schema and container-local artifact access |
+| `MLFLOW_HOST` / `MLFLOW_PORT`             | `localhost` / `5001`                            | `default_server_tracking_uri`       | Host endpoint used when no explicit tracking URI is exported |
+| `MLFLOW_EXPERIMENT_NAME`                  | `EVAL_SERVICE_EXPERIMENT_NAME` or `fluxnova-loanAssessmentEvalProcess` | `conftest.py` | Evaluation experiment override; raw traces keep the collector target |
+| `REGRESSION_REPORT_DIR`                   | `local-dev/.mlflow/reports`                     | `test_mlflow_regression.py`          | Local JSON report root; each run gets a separate directory |
 | `FLUXNOVA_USERNAME` / `FLUXNOVA_PASSWORD` | none                                            | read by `test_mlflow_regression.py` | Credentials for the Fluxnova engine / mock workers                                                                                                                                                      |
 
 > **Note:** `REGRESSION_GOLDEN_MATCH_THRESHOLD` is read inside the shared `fluxnova-mlflow-dataset` package (the

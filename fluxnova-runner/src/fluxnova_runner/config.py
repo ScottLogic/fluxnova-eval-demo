@@ -6,6 +6,7 @@ Deploy/deploy-and-start concerns only — no reporting or evaluation fields
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ class RunnerConfig:
 
         additional_bpmn_paths = [_resolve(p) for p in (raw.get("additional_bpmn_paths") or [])]
         return cls(
-            fluxnova_url=raw["fluxnova_url"].rstrip("/"),
+            fluxnova_url=os.environ.get("FLUXNOVA_URL", raw["fluxnova_url"]).rstrip("/"),
             bpmn_path=bpmn_path,
             process_key=raw["process_key"],
             deployment_name=raw.get("deployment_name"),

@@ -71,8 +71,8 @@ _DETERMINISTIC_ROW_DEFAULTS = {
     "required_tools_called/rationale": "All expected tools were called.",
     "no_tool_errors/value": True,
     "no_tool_errors/rationale": "No tool call errors.",
-    "definitive_decision_stated/value": True,
-    "definitive_decision_stated/rationale": "Final output states a definitive decision.",
+    "final_recommendation_format/value": True,
+    "final_recommendation_format/rationale": "Final recommendation line has the required format.",
 }
 
 
@@ -107,7 +107,7 @@ def _stub_common(
         [
             _FakeScorer(name="required_tools_called"),
             _FakeScorer(name="no_tool_errors"),
-            _FakeScorer(name="definitive_decision_stated"),
+            _FakeScorer(name="final_recommendation_format"),
             *[_FakeScorer(name=name) for name in (extra_scorers or [])],
         ],
     )
@@ -138,7 +138,7 @@ def _stub_common(
 
 class TestScoreProcessInstance:
     def test_passes_when_judge_says_yes(self, monkeypatch):
-        _OUTPUTS["proc-1"] = "APPROVE: strong credit history"
+        _OUTPUTS["proc-1"] = "Strong credit history.\nAPPROVE"
         calls = _stub_common(monkeypatch, "yes", "Looks good.")
 
         outcome = scoring.score_process_instance(
@@ -151,11 +151,11 @@ class TestScoreProcessInstance:
 
         assert outcome.eval_passed is True
         assert outcome.eval_rationale == "Looks good."
-        assert outcome.final_output == "APPROVE: strong credit history"
+        assert outcome.final_output == "Strong credit history.\nAPPROVE"
         assert outcome.scorer_results["decision_quality"]["value"] == "yes"
         assert outcome.scorer_results["required_tools_called"]["value"] is True
         assert outcome.scorer_results["no_tool_errors"]["value"] is True
-        assert outcome.scorer_results["definitive_decision_stated"]["value"] is True
+        assert outcome.scorer_results["final_recommendation_format"]["value"] is True
 
         # Scores against the real trace object, not a synthesized one, and passes
         # the extracted plain values as inputs plus the final output.
@@ -163,14 +163,14 @@ class TestScoreProcessInstance:
             {
                 "trace": "trace-for-proc-1",
                 "inputs": {"trace_ref": "trace-for-proc-1"},
-                "outputs": "APPROVE: strong credit history",
+                "outputs": "Strong credit history.\nAPPROVE",
             }
         ]
         assert [s.name for s in calls["evaluate_scorers"]] == [
             "decision_quality",
             "required_tools_called",
             "no_tool_errors",
-            "definitive_decision_stated",
+            "final_recommendation_format",
         ]
 
         tags = calls["dataset_kwargs"]["record"]["tags"]
@@ -178,7 +178,7 @@ class TestScoreProcessInstance:
         assert tags["decision_quality"] == "yes"
         assert tags["required_tools_called"] == "True"
         assert tags["no_tool_errors"] == "True"
-        assert tags["definitive_decision_stated"] == "True"
+        assert tags["final_recommendation_format"] == "True"
 
     def test_fails_when_judge_says_no(self, monkeypatch):
         _OUTPUTS["proc-2"] = "REJECT: insufficient income"

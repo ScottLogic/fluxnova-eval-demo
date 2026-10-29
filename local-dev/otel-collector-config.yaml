@@ -5,19 +5,13 @@
 # straight to the MLflow tracking server's native OTLP endpoint, per the main
 # README's architecture (OTel Collector -> MLflow /v1/traces -> trace store).
 #
-# This pod (fluxnova-local) runs on --network host (see OTEL-EXPORT-INVESTIGATION.md at
-# the repo root — running Fluxnova in any isolated Podman network namespace silently
-# breaks the OpenTelemetry Java SDK's OTLP export), so it isn't attached to the
-# fluxnova-dev network and can't resolve mlflow-local by pod name. MLFLOW_OTLP_ENDPOINT is
-# set per-scenario by fluxnova-up.sh — defaults to `http://localhost:5000`, reaching
-# mlflow-local via its own published host port (mlflow-up.sh's ${MLFLOW_PORT:-5000}:5000),
-# or override in .env for a different port/host-run MLflow.
+# MLFLOW_OTLP_ENDPOINT is an internal service URL in bridge mode, or the
+# VM-local published MLflow port for the pod scripts' host-network fallback.
 #
 # MLflow's OTLP endpoint requires an `x-mlflow-experiment-id` header on every request
 # (see https://mlflow.org/docs/latest/genai/tracing/opentelemetry/ingest/) — it's the
-# *numeric* experiment ID (not the name), and the experiment must already exist. Set
-# MLFLOW_EXPERIMENT_ID in .env (fluxnova-up.sh passes it through as an env var here) — see
-# local-dev/README.md for how to look this ID up.
+# *numeric* experiment ID (not the name). MLflow's startup script creates/resolves
+# the experiment by name and writes its headers to a shared volume before we start.
 
 receivers:
   otlp:
@@ -36,14 +30,12 @@ exporters:
     endpoint: ${env:MLFLOW_OTLP_ENDPOINT}
     tls:
       insecure: true
-    headers:
-      x-mlflow-experiment-id: ${env:MLFLOW_EXPERIMENT_ID}
+    headers: ${file:/mlflow-runtime/headers.yaml}
 
   # Exposes a Prometheus scrape endpoint on :8889 so the observability-local pod's
   # Prometheus (prometheus.yml) can pull the gen_ai.* metrics Fluxnova emits over OTLP,
-  # which Grafana then dashboards. This port is bound directly on the host (fluxnova-local
-  # runs on --network host — see OTEL-EXPORT-INVESTIGATION.md), reachable from Prometheus's
-  # own pod via host.containers.internal:8889 (see prometheus.yml).
+  # which Grafana then dashboards. Prometheus reaches fluxnova-local:8889 in
+  # bridge mode, or localhost:8889 with the host-network fallback.
   # `send_timestamps`/`resource_to_telemetry_conversion` keep OTLP resource attributes
   # (e.g. service.name) queryable as Prometheus labels.
   prometheus:

@@ -1,30 +1,10 @@
-# Prometheus config mounted by observability-up.sh (the observability-local pod:
-# Prometheus + Grafana in one shared network namespace).
-#
-# It scrapes the OTel Collector's Prometheus exporter (see otel-collector-config.yaml's
-# `prometheus` exporter on :8889), which republishes the gen_ai.* metrics Fluxnova emits
-# over OTLP. The fluxnova-local pod runs on --network host (see
-# OTEL-EXPORT-INVESTIGATION.md at the repo root — running Fluxnova in any isolated Podman
-# network namespace silently breaks the OpenTelemetry Java SDK's OTLP export), so
-# observability-local also runs on --network host to reach it via plain `localhost` —
-# `host.containers.internal` does NOT work here even though it looks like it should: on
-# Podman Desktop/machine (Windows), that address routes out to the actual Windows host,
-# not back into the podman-machine VM where a --network host pod's ports actually live, so
-# a bridge-networked container reaching it either times out or gets connection refused.
-# Confirmed empirically: a throwaway --network host container CAN reach another
-# --network host container via localhost; a bridge-networked one cannot, by either
-# host.containers.internal or the bridge's own gateway IP.
-#
-# The scrape interval matches default.yml's metricExportIntervalMillis: 5000 so we don't
-# poll faster than Fluxnova exports new metric points.
-
+# Bridge-networked collector; works with both pods and Compose.
 global:
   scrape_interval: 5s
   evaluation_interval: 5s
-
 scrape_configs:
   - job_name: otel-collector
     static_configs:
-      - targets: ['localhost:8889']
+      - targets: ['fluxnova-local:8889']
         labels:
           service: fluxnova-otel-collector

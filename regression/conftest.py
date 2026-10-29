@@ -112,7 +112,7 @@ def pytest_configure(config: pytest.Config) -> None:
         # expected. eval_trace_listener skips traces tagged by this suite (see
         # _tag_trace_as_regression) so sharing the experiment doesn't cause
         # real/demo-run scoring to pick them up.
-        experiment_name_for("loanAssessmentEvalProcess"),
+        os.environ.get("EVAL_SERVICE_EXPERIMENT_NAME", experiment_name_for("loanAssessmentEvalProcess")),
     )
     # Serialize scoring: mlflow.genai.evaluate fans out every row's judge call
     # concurrently (MLFLOW_GENAI_EVAL_MAX_WORKERS defaults to 10). Against the

@@ -10,6 +10,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+if [ -f ../.env ]; then source ../.env; fi
 POD_NAME="${OBSERVABILITY_POD_NAME:-observability-local}"
 
 for arg in "$@"; do

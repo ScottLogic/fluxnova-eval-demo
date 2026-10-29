@@ -21,48 +21,38 @@ import time
 from pathlib import Path
 
 import mlflow
-import pandas as pd
 import pytest
 import requests
 from fluxnova_mlflow_dataset import (
     ALL_DETERMINISTIC_SCORERS,
     BpmnLookup,
     MlflowTraceReader,
-    TraceStoreError,
     decision_quality,
     evidence_citation,
     experiment_name_for,
     matches_golden,
 )
+from fluxnova_mlflow_dataset.experiments import require_remote_artifacts
 from fluxnova_mlflow_dataset.goldens import load_goldens
+from fluxnova_mlflow_dataset.scorers import DECISION_QUALITY_RUBRIC_VERSION
 from fluxnova_runner.agent_output import agent_final_output
 from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
 from fluxnova_runner.client import Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
 
+from regression.reporting import build_report, failure_message, write_report
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CONFIG_PATH = _REPO_ROOT / "fluxnova-runner" / "config" / "loan-assesment.yml"
 _GOLDENS_PATH = _REPO_ROOT / "datasets" / "loan-assessment" / "goldens.json"
 
-# Regression runs/assessments now deliberately share the same experiment as
-# real/demo runs (rather than a separate "-regression" experiment) — this must
-# be the literal target name, not run through experiment_name_for() again
-# (which would double the "fluxnova-" prefix onto an already-prefixed name and
-# silently create/target a different, empty experiment instead).
-_REGRESSION_EXPERIMENT = experiment_name_for("loanAssessmentEvalProcess")
-
-# Where the *raw agent traces* actually land. The OTel Collector always routes
-# every trace (regardless of which MLflow experiment a caller's own client
-# happens to be pointed at) to one fixed experiment, matching
-# eval_trace_listener/eval-service-worker's shared default — see
-# local-dev/.env's MLFLOW_EXPERIMENT_ID. Now the same experiment as
-# _REGRESSION_EXPERIMENT above (see that constant's comment), but kept as its
-# own name here since it's conceptually a different thing (raw traces vs. this
-# suite's own Runs/dataset) — used to tag our own traces (see
-# _tag_trace_as_regression) so eval-trace-listener can tell them apart from
-# real/demo runs, which share this suite's exact same subprocess_id/agent_name.
-_TRACE_EXPERIMENT_NAME = _REGRESSION_EXPERIMENT
+# Match conftest/plugin selection, respecting an explicit regression override.
+# Raw agent traces always follow the collector's independently configured target.
+_TRACE_EXPERIMENT_NAME = os.environ.get(
+    "EVAL_SERVICE_EXPERIMENT_NAME", experiment_name_for("loanAssessmentEvalProcess")
+)
+_REGRESSION_EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT_NAME", _TRACE_EXPERIMENT_NAME)
 
 # Tag written onto every trace this suite generates — must match
 # eval_trace_listener.listener._REGRESSION_TAG_NAME/_REGRESSION_TAG_VALUE.
@@ -90,42 +80,6 @@ _log = logging.getLogger("fluxnova.regression")
 # (and so `pytest -k <scenario>` drives just that one golden through the agent).
 _GOLDENS = load_goldens(_GOLDENS_PATH)
 
-
-def _is_yes(value: object) -> bool:
-    return str(value).strip().lower() == "yes"
-
-
-def _meets_evidence_citation_threshold(value: object) -> bool:
-    return float(value) >= _EVIDENCE_CITATION_THRESHOLD
-
-
-def _deterministic_passed(value: object) -> bool:
-    """Pass rule for every deterministic scorer's value shape.
-
-    Plain booleans (possibly surfaced as their string form, e.g. ``"true"``,
-    depending on the store), or graded 0.0-1.0 scores (``tool_correctness`` and
-    friends — treated as a hard gate here, requiring the full 1.0, since this is
-    a regression *gate* not a benchmark).
-    """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return float(value) >= 1.0
-    return str(value).strip().lower() in {"true", "yes", "1"}
-
-
-# The LLM judges' pass rules. Unlike the deterministic scorers, a judge must
-# always produce a verdict — a missing one means scoring errored (or, for
-# matches_golden, that the golden lacks an expected_output). Gate on the
-# verdicts rather than `result.passed`: that also inspects the expected_output
-# expectation column, whose value is free text rather than a yes/no rating.
-_JUDGE_PASS_RULES = {
-    decision_quality.name: _is_yes,
-    # matches_golden thresholds at GOLDEN_MATCH_THRESHOLD inside the scorer and
-    # returns a "yes"/"no" verdict, keeping the raw score in its metadata.
-    matches_golden.name: _is_yes,
-    evidence_citation.name: _meets_evidence_citation_threshold,
-}
 
 _GATING_SCORERS = [decision_quality, matches_golden, evidence_citation, *ALL_DETERMINISTIC_SCORERS]
 
@@ -184,12 +138,12 @@ def _tag_trace_as_regression(instance_id: str) -> None:
         mlflow.MlflowClient().set_trace_tag(
             trace.info.trace_id, _REGRESSION_TAG_NAME, _REGRESSION_TAG_VALUE
         )
-    except TraceStoreError as exc:
+    except Exception as exc:  # noqa: BLE001 - tagging must not discard captured results
         _log.warning("Could not tag instance %s's trace as regression: %s", instance_id, exc)
 
 
-def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str, dict]:
-    """Drive one live agent run and return its final output plus raw process variables.
+def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str, dict, str]:
+    """Drive one live agent run and return output, raw variables and process ID.
 
     Starts a process instance, waits for the agentic subprocess to finish, then
     reads the run's process variables back — deliberately not from the MLflow
@@ -206,50 +160,24 @@ def _run_agent(client: Client, cfg: RunnerConfig, variables: dict) -> tuple[str,
     final_output = agent_final_output(run_variables)
     assert final_output, f"No agent final output found for instance {instance_id}"
     _tag_trace_as_regression(instance_id)
-    return final_output, run_variables
+    return final_output, run_variables, instance_id
 
 
-def _is_missing(value: object) -> bool:
-    return value is None or (isinstance(value, float) and value != value)  # NaN != itself
-
-
-def _jsonable(value: object) -> object:
-    """Coerce one ``eval_results`` cell to plain JSON (numpy scalars, NaN -> None)."""
-    if _is_missing(value):
-        return None
-    if hasattr(value, "item"):
-        value = value.item()  # numpy scalar -> Python
-    return value if isinstance(value, (bool, int, float, str)) else str(value)
-
-
-def _scorer_results(row: pd.Series) -> list[dict]:
-    """One ``{name, status, value, rationale}`` entry per gating scorer for one golden.
-
-    ``status`` is ``"passed"``, ``"failed"`` or ``"n/a"`` — the last for a
-    deterministic scorer that reports "not applicable" (``None``) for this
-    golden's profile, e.g. ``no_collateral_check_when_no_collateral`` when the
-    applicant has collateral. A scorer that errored, or a judge that produced no
-    verdict, is a failure.
-    """
-    results = []
-    for scorer in _GATING_SCORERS:
-        name = scorer.name
-        value = row.get(f"{name}/value")
-        rationale = _jsonable(row.get(f"{name}/rationale"))
-        error = _jsonable(row.get(f"{name}/error_message"))
-        if not _is_missing(value):
-            passes = _JUDGE_PASS_RULES.get(name, _deterministic_passed)
-            status = "passed" if passes(value) else "failed"
-        elif error:
-            status, rationale = "failed", f"Scorer errored: {error}"
-        elif name in _JUDGE_PASS_RULES:
-            status, rationale = "failed", "Judge produced no verdict"
-        else:
-            status = "n/a"
-        results.append(
-            {"name": name, "status": status, "value": _jsonable(value), "rationale": rationale}
-        )
-    return results
+def _report_gate(result, rows: list[dict], names: list[str], gate: str,
+                 thresholds=None, *, scenario: str | None = None, assert_passed=True) -> dict:
+    """Persist replayable evidence before asserting; never overwrite another scenario."""
+    report = build_report(result.tables["eval_results"], rows, names, gate, thresholds)
+    report.update(run_id=result.run_id, decision_quality_model=decision_quality.model,
+                  decision_quality_rubric_version=DECISION_QUALITY_RUBRIC_VERSION)
+    root = Path(os.environ.get("REGRESSION_REPORT_DIR", str(_REPO_ROOT / "local-dev/.mlflow/reports")))
+    relative = Path(scenario) / f"{gate}.json" if scenario else Path(f"{gate}.json")
+    path = root / result.run_id / relative
+    write_report(report, path)
+    mlflow.log_dict(report, f"regression/{relative.as_posix()}", run_id=result.run_id)
+    _log.info("%s: %d scenarios; report %s", gate, len(report["cases"]), path)
+    if assert_passed:
+        assert not report["failures"], failure_message(report)
+    return report
 
 
 @pytest.fixture(scope="session")
@@ -282,11 +210,12 @@ def regression_experiment() -> str:
     ``evaluate()``.
     """
     try:
-        mlflow.set_experiment(_REGRESSION_EXPERIMENT)
+        experiment = mlflow.set_experiment(_REGRESSION_EXPERIMENT)
     except Exception as exc:  # noqa: BLE001 - any connect/store failure => skip
         pytest.skip(
             f"MLflow tracking store not reachable at {mlflow.get_tracking_uri()}: {exc}"
         )
+    require_remote_artifacts(experiment)
     return _REGRESSION_EXPERIMENT
 
 
@@ -354,22 +283,35 @@ def test_agent_passes_golden(
     """
     variables = _golden_to_variables(cfg, golden)
     started = time.perf_counter()
-    output, run_variables = _run_agent(loan_agent, cfg, variables)
+    output, run_variables, instance_id = _run_agent(loan_agent, cfg, variables)
     _log.info(
         "Ran live agent in %.1fs (%d chars of output)", time.perf_counter() - started, len(output)
     )
 
     row = {
-        "inputs": scorer_inputs_from_variables(variables, run_variables, tool_names),
+        "inputs": {**scorer_inputs_from_variables(variables, run_variables, tool_names),
+                   "scenario": _scenario_id(golden), "process_instance_id": instance_id},
         "outputs": output,
         "expectations": {"expected_output": golden["expected_output"]},
     }
     _log.info("Scoring with %d scorers...", len(_GATING_SCORERS))
     result = mlflow.genai.evaluate(data=[row], scorers=_GATING_SCORERS)
 
-    scorer_results = _scorer_results(result.tables["eval_results"].iloc[0])
-    json_metadata["scorers"] = scorer_results
-    failed = [entry for entry in scorer_results if entry["status"] == "failed"]
-    assert not failed, f"{len(failed)}/{len(scorer_results)} scorer(s) failed:\n" + "\n".join(
-        f"  - {entry['name']} = {entry['value']!r}: {entry['rationale']}" for entry in failed
+    reports = []
+    for gate, names, thresholds in [
+        ("decision_quality", [decision_quality.name], None),
+        ("matches_golden", [matches_golden.name], None),
+        ("evidence_citation", [evidence_citation.name], {evidence_citation.name: _EVIDENCE_CITATION_THRESHOLD}),
+        ("deterministic", [s.name for s in ALL_DETERMINISTIC_SCORERS], None),
+    ]:
+        reports.append(_report_gate(result, [row], names, gate, thresholds,
+                                    scenario=_scenario_id(golden), assert_passed=False))
+    json_metadata["scorers"] = [
+        {"name": name, "status": "n/a" if assessment["status"] == "not_applicable" else assessment["status"],
+         "value": assessment["value"], "rationale": assessment["error"] or assessment["rationale"]}
+        for report in reports for name, assessment in report["cases"][0]["scorers"].items()
+    ]
+    json_metadata["process_instance_id"] = instance_id
+    assert not any(report["failures"] for report in reports), "\n".join(
+        failure_message(report) for report in reports if report["failures"]
     )

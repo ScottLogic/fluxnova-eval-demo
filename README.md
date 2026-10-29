@@ -2,6 +2,10 @@
 
 A set of tooling and evals to demonstrate the use of agentic evaluation with Fluxnova workflows.
 
+Start with the [local development guide](local-dev/README.md) for macOS, Windows
+Git Bash and Linux/WSL setup, demo execution and troubleshooting. Use the
+[regression guide](regression/README.md) for testing, judge calibration and report replay.
+
 Goals of this project are:
 
 - Create an Eval Test framework which facilitates Evaluation Driven Design (EDD). This will demonstrate how you can
@@ -32,7 +36,7 @@ Goals of this project are:
     - [Traces](#traces)
     - [Content capture (opt-in)](#content-capture-opt-in)
 - [First time setup](#first-time-setup)
-- [Running `fluxnova-runner` (Windows Git Bash)](#running-fluxnova-runner-windows-git-bash)
+- [Running `fluxnova-runner`](#running-fluxnova-runner)
     - [Running the eval workflow](#running-the-eval-workflow-fluxnova-runnerconfigloan-assesment-evalyml)
 - [Evaluating agent runs](#evaluating-agent-runs)
     - [Automatic (online) evaluation: `mlflow-judges`](#automatic-online-evaluation-mlflow-judges)
@@ -46,7 +50,7 @@ Goals of this project are:
 
 ## Overview
 
-This project is split into two several Python packages which are designed to run locally in podman. There are two main
+This project has four Python packages and backing services designed to run locally with Podman. There are two main
 flows which make up the standard use-cases.
 
 1. Production demo.
@@ -147,12 +151,19 @@ More detail available in the [README](fluxnova-runner/README.md).
 ### -| [local-dev](local-dev)
 
 Local Podman configuration and scripts for running the complete development environment: PostgreSQL, Fluxnova with an
-OTel Collector, MLflow, the evaluation services, and optional Prometheus and Grafana observability tooling. The
+OTel Collector, MLflow, frontend/UI API, the evaluation services, and optional Prometheus and Grafana observability tooling. The
 `pods-up.sh` and `pods-down.sh` scripts start and stop these services in dependency order, while `compose.yaml` provides
 an equivalent Podman Compose setup. This directory also contains the shared environment, engine, collector, database,
 and dashboard configuration used by the local stack.
 
 More detail available in the [README](local-dev/README.md).
+
+### -| [frontend](frontend) and [ui-api](ui-api)
+
+The React/Vite demo UI is served by nginx and backed by a FastAPI service. It
+starts workflows, displays nested progress and agent configuration, runs the six
+golden regression scenarios with per-scorer results, and controls listener sampling.
+Both are included in the local stack; see the [UI walkthrough](local-dev/README.md#frontend-and-ui-api).
 
 ### -| [model-benchmarks](model-benchmarks)
 
@@ -185,11 +196,12 @@ variables). The scorers split into two families:
 
 They are grouped into reusable bundles:
 
-- `DETERMINISTIC_SCORERS` — the 10 code scorers below that need only tool *names* / status / input-variables / output
+- `DETERMINISTIC_SCORERS` — the 11 code scorers below that need only tool *names* / status / input-variables / output
   text (no captured arguments).
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
-  `Feedback(None)` otherwise). Not run by any consumer by default.
+  `Feedback(None)` otherwise). Regression includes them by default; the worker and
+  trace listener use the trace-only bundle.
 - `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
 
 **Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
@@ -198,20 +210,20 @@ service's README for exactly how it sources the scorer inputs.
 
 | Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
 |-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
-| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones (graded 0.0-1.0)         | W · L     |
-| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | W · L     |
-| `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
-| `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output literally mentions credit/fraud/affordability evidence                     | W · L     |
-| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | W · L     |
-| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | W · L     |
-| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | W · L     |
-| `step_efficiency`                                     | Code      | DETERMINISTIC | Agent completes within a budget of loop iterations (+1 if collateral)             | W · L     |
-| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | W · L     |
-| `risk_checks_precede_affordability`                   | Code      | DETERMINISTIC | Credit score/fraud screening run before affordability is assessed                 | W · L     |
-| `no_duplicate_tool_calls`                             | Code      | DETERMINISTIC | No tool is called more than once in a single run                                  | W · L     |
-| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | —         |
-| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | —         |
-| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | —         |
+| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | R · W · L |
+| `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · L |
+| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | R · W · L |
+| `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output mentions credit, fraud and affordability evidence                         | R · W · L |
+| `risk_checks_precede_affordability`                   | Code      | DETERMINISTIC | Credit and fraud checks precede affordability                                    | R · W · L |
+| `no_duplicate_tool_calls`                            | Code      | DETERMINISTIC | No tool is called successfully more than once                                    | R · W · L |
+| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | R · W · L |
+| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | R · W · L |
+| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | R · W · L |
+| `step_efficiency`                                     | Code      | DETERMINISTIC | At most four total LLM calls including the final answer (+1 for collateral)       | R · W · L |
+| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | R · W · L |
+| `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | R         |
+| `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | R         |
+| `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | R         |
 | `decision_quality`                                    | LLM judge | —             | Final output is a clear, justified APPROVE/REJECT recommendation                  | R · W · L |
 | `evidence_citation`                                   | LLM judge | —             | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)          | R · L     |
 | `matches_golden`                                      | LLM judge | —             | Output reaches the same decision as the matching golden (needs `expected_output`) | R         |
@@ -223,9 +235,10 @@ Notes:
   it, so `W`/`L` cannot.
 - `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
   context (it isn't on the MLflow trace), so it can run trace-side in `L`.
-- The three LLM judges use an Ollama judge model; `eval-service-worker` reaches
-  it via the `fluxnova-judge` gateway endpoint, while `regression` and
-  `eval-trace-listener` call Ollama directly.
+- Local demo judging uses OpenAI `gpt-4.1-mini` for decision quality and `gpt-4o-mini`
+  for golden matching/evidence citation; select Ollama with the shared
+  provider configuration. The demo worker calls the configured model directly.
+  Gateway-backed automatic sampling remains available as an optional setup.
 
 ## GenAI observability (tracing & metrics)
 
@@ -282,70 +295,40 @@ data). Enable it via the Spring Boot property
 
 ## First time setup
 
-This project assumes you're on **Windows**, using **[Podman](https://podman.io)** for all backing services (Fluxnova
-engine, OTel Collector, MLflow), and **Git Bash** as your terminal — every command in this README uses forward-slash
-(`/`) paths for that reason. (Backslashes work fine in native PowerShell/`cmd.exe`, but in Git Bash/MINGW64 they're
-treated as escape characters and silently mangle paths, e.g. `fluxnova-runner\config\loan-assesment.yml` →
-`fluxnova-runnerconfigloan-assesment.yml`
-— so forward slashes are used consistently here, since they work in both shells.)
+Use **macOS Terminal**, **Windows Git Bash**, or a Linux shell. Commands use forward
+slashes on every OS. Install Python 3.11+ and [Podman](https://podman.io/docs/installation)
+with a running VM on macOS/Windows. Apple Silicon also needs x86 execution support
+for the current AMD64-only Fluxnova image; see [platform setup](local-dev/README.md#platform-setup).
 
-1. **Install prerequisites:**
-    - [Podman](https://podman.io/docs/installation), then start its VM: `podman machine init && podman machine start`
-      ([Podman Desktop](https://podman-desktop.io) is recommended, though not required, for a GUI to view/manage pods,
-      containers, and logs)
-    - Python 3.11+
-    - An **OpenAI API key**, set as `OPENAI_API_KEY` in `local-dev/.env` — the BPMN agent
-      uses OpenAI by default (see [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative)
-      to switch it to Ollama instead and skip this)
-    - [Ollama](https://ollama.com) with `gemma4:e2b` (always used for the regression/eval
-      judge) and `qwen2.5:1.5b` (online `eval-service-worker` judge) pulled
-      (`ollama pull gemma4:e2b && ollama pull qwen2.5:1.5b`)
-    - The **Fluxnova** engine image — pull the public one from GHCR:
-      `podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.1.0` (no login needed)
+From the repository root:
 
-2. **Create the shared virtual environment** — run the setup script from the repo root. It creates one venv under
-   `.venv` at the repo root and installs both packages editable into it, so changes to any package take effect
-   immediately without reinstalling:
-   ```bash
-   ./setup.sh
-   ```
-   Then activate it: `source .venv/Scripts/activate` (Windows Git Bash) or `source .venv/bin/activate` (macOS/Linux).
+```bash
+./setup.sh                         # installs all five packages editable, with dev dependencies
+source .venv/bin/activate           # macOS/Linux
+# source .venv/Scripts/activate     # Windows Git Bash
+cp local-dev/.env.example local-dev/.env  # first time only
+```
 
-   The script is idempotent (safe to re-run) and simply runs:
-   ```bash
-   python -m venv .venv
-   .venv/Scripts/python -m pip install --upgrade pip
-   .venv/Scripts/python -m pip install -e "fluxnova-mlflow-dataset[dev]" -e "fluxnova-runner[dev]"
-   ```
-   Pass a specific interpreter (must be Python 3.11+) with `PYTHON=python3.11 ./setup.sh`. This installs three
-   console-script entry points: `fluxnova-run` / `fluxnova-run-mock-workers` (runner), and `mlflow-judges`
-   (`fluxnova-mlflow-dataset`).
+Set `OPENAI_API_KEY` in `local-dev/.env`. The default demo uses OpenAI for the
+agent and judges; Ollama is optional. Startup pulls the configured public images.
+Choose a specific interpreter with `PYTHON=python3.11 ./setup.sh` if needed.
 
-3. **Start the backing services as Podman pods**, from Git Bash at the repo root:
-   ```bash
-   cd local-dev
-   cp .env.example .env   # first time only — .env is gitignored since it holds OPENAI_API_KEY
-   # set OPENAI_API_KEY in .env; FLUXNOVA_IMAGE already points at the public GHCR image pulled above
+```bash
+./local-dev/pods-up.sh postgres mlflow fluxnova
+./local-dev/pods-up.sh eval-service eval-listener observability
+set -a
+source local-dev/.env
+set +a
+```
 
-   ./pods-up.sh   # start postgres, mlflow, fluxnova, eval-service (in dependency order)
-   ```
-   `pods-up.sh` is idempotent and orchestrates the per-service scripts in `local-dev/services/`
-   (`postgres-up.sh` → `mlflow-up.sh` → `fluxnova-up.sh` → `eval-service-up.sh`); pass pod names to start only a subset
-   (e.g. `./pods-up.sh postgres mlflow fluxnova`). The mlflow/fluxnova pods open their web UI in your default browser
-   once ready. See
-   [`local-dev/README.md`](local-dev/README.md) for the full pod details, the `eval-service-worker` pod, and
-   Windows/WSL2 troubleshooting.
+MLflow creates/resolves the trace experiment automatically. The default worker
+calls the judge directly; a gateway endpoint is only needed for optional automatic
+sampling. See [local-dev/README.md](local-dev/README.md) for networking, Compose,
+provider configuration, persistence and host debugging.
 
-4. **(One-off) Register the MLflow AI Gateway judge endpoint** — required for automatic evaluation judges. See
-   `local-dev/README.md`'s "MLflow AI Gateway endpoint for automatic evaluation judges" section.
+## Running `fluxnova-runner`
 
-You're now ready to run a workflow — see "Running `fluxnova-runner`" below.
-
-## Running `fluxnova-runner` (Windows Git Bash)
-
-From a Git Bash terminal, with the repo-root `.venv` activated (`source .venv/Scripts/activate` — see Installation
-above)
-and your working directory at the repo root:
+With the shared `.venv` active and `local-dev/.env` exported as above, run from the repository root:
 
 ```bash
 fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
@@ -394,12 +377,23 @@ process:
 wait_for_activity: CallActivity_LoanAssessmentAgent   # omit to wait for the entire process
 ```
 
+In another activated terminal with `.env` exported, keep mock workers running:
+
 ```bash
-fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml --with-mock-workers
+fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment-eval.yml
+```
+
+In the original terminal:
+
+```bash
+fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml
 ```
 
 The `--wait-for-activity ACTIVITY_ID` CLI flag overrides the config field for a single run. Scoring of the agent run is
 handled asynchronously by the **eval-service-worker** (see `local-dev/README.md`), not by the runner.
+Keep the separate mock workers alive until reporting finishes, then stop them with
+Ctrl+C. The [demo walkthrough](local-dev/README.md#demo-walkthrough) describes the
+expected traces, assessments, human-review tasks and dashboards.
 
 ## Evaluating agent runs
 
@@ -408,17 +402,17 @@ complementary paths, all using the **shared scorers/judges** in
 `fluxnova_mlflow_dataset.scorers` so they never disagree on what "good" means:
 
 - **`eval-trace-listener`** (always-on service) — tails MLflow's trace store and scores each newly-completed run of the
-  configured agents once with the deterministic (trace-only) scorers, logging `Feedback` back onto the trace. Best for
+  configured agents with deterministic checks plus `decision_quality` and `evidence_citation`, logging `Feedback` back onto the trace. Best for
   passive, continuous scoring of every run as it lands. See [
   `eval-trace-listener/README.md`](eval-trace-listener/README.md).
 - **`eval-service-worker`** (BPMN external-task worker) — triggered by the eval service task in
   `loan-assesment-eval.bpmn` once the agent Call Activity finishes, it scores that one run with the deterministic
-  scorers **plus** the `decision_quality` LLM judge (via the `fluxnova-judge` MLflow AI Gateway endpoint). Best for
+  scorers **plus** the `decision_quality` LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway). Best for
   synchronous, in-process scoring wired into the workflow. See [
   `eval-service-worker/README.md`](eval-service-worker/README.md).
-- **`regression/`** (pytest gating suite) — one test per golden scenario: drives the live agent once and asserts its
-  real output satisfies the shared `decision_quality` and `matches_golden` judges, the `evidence_citation` judge, and
-  the full `ALL_DETERMINISTIC_SCORERS` bundle, all in a single `evaluate()` call. Best as a CI gate against behavioural
+- **`regression/`** (pytest gating suite) — drives the live agent once per parametrized golden scenario
+  and asserts its real output satisfies the shared `decision_quality` and `matches_golden` judges, the
+  `evidence_citation` judge, and the full `ALL_DETERMINISTIC_SCORERS` bundle. Best as a CI gate against behavioural
   regressions. See [`regression/README.md`](regression/README.md).
 
 All three write their results to the same PostgreSQL-backed MLflow tracking store (`postgres-local` pod's `mlflow`
@@ -434,9 +428,10 @@ and `local-dev/README.md`'s AI-Gateway section for the one-off endpoint setup th
 
 To view the results in the browser, use the same MLflow tracking server described in "Running the MLflow tracking
 server" below (or, if you only need read-only browsing and aren't ingesting new traces, the lighter-weight
-`mlflow ui --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --port 5000` works too).
+`mlflow ui --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --port 5001` works too).
 
-Then open [http://localhost:5000](http://localhost:5000) and open the `fluxnova-loanAssessmentProcess` experiment. Each
+Then open [http://localhost:5001](http://localhost:5001) (or your configured port) and open the experiment named by
+`EVAL_SERVICE_EXPERIMENT_NAME` (default `fluxnova-loanAssessmentEvalProcess`). Each
 evaluation run appears as a row; click into one to see per-scorer scores and rationales. Scoring further runs adds
 more rows to the same experiment for side-by-side comparison.
 
@@ -448,7 +443,7 @@ directly (`postgresql://mlflow:mlflow@localhost:5432/mlflow`, provided `local-de
 but for
 the OTel Collector to *write* traces into it, an actual MLflow tracking **server** (an HTTP process, not just the
 library) must be running and listening on the URL the Collector's `otlphttp` exporter targets
-(`http://localhost:5000/v1/traces` by default). `mlflow ui` alone does **not** accept incoming trace writes — it only
+(`MLFLOW_OTLP_ENDPOINT`, normally an internal service URL in the managed stack). `mlflow ui` alone does **not** accept incoming trace writes — it only
 reads.
 
 Start it (from the repo root, with the repo-root `.venv` activated and `local-dev/services/postgres-up.sh` already
@@ -456,11 +451,17 @@ running)
 and leave it running in its own terminal for as long as you want traces to be captured:
 
 ```bash
-.venv/Scripts/mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 127.0.0.1 --port 5000
+python -m mlflow server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --serve-artifacts --artifacts-destination local-dev/.mlflow/artifacts --default-artifact-root mlflow-artifacts:/ --host 0.0.0.0 --port 5001
 ```
 
-This single server also serves the browsable UI at [http://localhost:5000](http://localhost:5000), so once it's running
+This single server also serves the browsable UI at [http://localhost:5001](http://localhost:5001), so once it's running
 you no longer need a separate `mlflow ui` process pointed at the same store.
+
+For trace ingestion into a host-run server, also run `local-dev/mlflow/bootstrap.py`
+against that server and mount its generated header map into the collector at
+`/mlflow-runtime/headers.yaml`, with `MLFLOW_OTLP_ENDPOINT` reaching the host via
+`host.containers.internal`. The managed stack handles this automatically; use it
+for the demo and debug the editable Python services on the host.
 
 ### As an IntelliJ Run/Debug Configuration
 
@@ -470,7 +471,7 @@ you no longer need a separate `mlflow ui` process pointed at the same store.
    `.venv/Scripts/mlflow.exe` (Windows) / `.venv/bin/mlflow` (macOS/Linux).
 4. **Parameters:**
    ```
-   server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --host 127.0.0.1 --port 5000
+    server --backend-store-uri postgresql://mlflow:mlflow@localhost:5432/mlflow --serve-artifacts --artifacts-destination local-dev/.mlflow/artifacts --default-artifact-root mlflow-artifacts:/ --host 0.0.0.0 --port 5001
    ```
 5. **Working directory:** `<repo root>`
 6. **Python interpreter:** the repo-root `.venv` interpreter (add it via **Add Interpreter → Existing** if not already
@@ -484,11 +485,16 @@ See [`local-dev/README.md`](local-dev/README.md) for the full details on running
 OTel Collector, MLflow, and the `eval-service-worker` as Podman pods for local development — including troubleshooting
 notes and the MLflow AI Gateway judge-endpoint setup.
 
-For **alternative run walkthroughs** (e.g. WSL with rootless Podman), see [`RUNNING-WSL.md`](RUNNING-WSL.md).
+Use its [platform setup](local-dev/README.md#platform-setup),
+[demo walkthrough](local-dev/README.md#demo-walkthrough) and
+[troubleshooting](local-dev/README.md#troubleshooting) sections, followed by the
+[regression validation sequence](regression/README.md#validation-sequence).
 
 ## Config file
 
-All runner and evaluation behaviour is driven by a single YAML file.
+Runner deployment, process variables and mock workers are configured in workflow YAML.
+The evaluation worker uses CLI/environment settings, and the trace listener has
+its own YAML plus CLI/environment overrides; see their package READMEs.
 
 [Example](fluxnova-runner/config/loan-assesment.yml)
 
@@ -553,4 +559,4 @@ Examples:
 | Mock workers         | `camunda-external-task-client-python3`                                                                                                                |
 | LLM agent            | OpenAI / gpt-4o (default, runs inside Fluxnova) — see [local-dev/README.md](local-dev/README.md#bpmn-agent-llm-provider-openai-default-ollama-alternative) for using Ollama / gemma4:e2b instead |
 | Evaluation framework | [MLflow GenAI evaluation](https://mlflow.org/docs/latest/genai/eval-monitor/)                                                                         |
-| Judge model          | Ollama / gemma4:e2b (regression + eval services) · Ollama / qwen2.5:1.5b (online `eval-service-worker`, via the `fluxnova-judge` gateway endpoint)    |
+| Judge models         | OpenAI / gpt-4.1-mini (decision quality), gpt-4o-mini (golden matching/evidence); optional Ollama / gemma4:e2b and AI Gateway |

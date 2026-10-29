@@ -7,7 +7,7 @@
 
 # MLflow tracking server the OTel Collector exports traces into. Must be an
 # HTTP(S) URL (not a postgresql:// path) so the trace store is queryable.
-tracking_uri: http://localhost:5000
+tracking_uri: http://localhost:5001
 
 # The experiment whose traces are tailed — must match where the collector writes
 # (MLFLOW_EXPERIMENT_ID in local-dev/.env). The collector routes every trace to a

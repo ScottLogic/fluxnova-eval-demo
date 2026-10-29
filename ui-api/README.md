@@ -4,10 +4,10 @@ FastAPI backend for the demo UI (`frontend/`). There's no HTTP API for regressio
 services elsewhere in this repo — to keep those core folders (`regression/`, `fluxnova-runner/`,
 `eval-trace-listener/`, `eval-service-worker/`) purely about *how you'd build this for real* rather than cluttered
 with UI-only plumbing, this API lives on its own and wraps them as a library/CLI instead of embedding API code inside
-them. See `UI_PROPOSAL.md` at the repo root for the full plan.
+them. See the [local UI walkthrough](../local-dev/README.md#frontend-and-ui-api).
 
 One router per concern: `regression.py`, `workflow.py`, `evals.py` (all under `src/ui_api/routers/`).
-`evals.py` is still empty — see the proposal's steps 9-13 for what fills it in.
+`evals.py` exposes scorer definitions and the listener sampling toggle.
 
 ## Regression endpoints
 
@@ -16,7 +16,7 @@ One router per concern: `regression.py`, `workflow.py`, `evals.py` (all under `s
 requires `pytest-json-report` (`regression/requirements.txt`) for structured per-test results.
 
 ```
-GET  /api/regression/tests           -> {"tests": ["test_mlflow_regression.py::test_...", ...]}
+GET  /api/regression/tests           -> {"tests": [{"name": "test_mlflow_regression.py::test_...", "description": "..."}, ...]}
 POST /api/regression/runs            -> {"runId": "<uuid>"}                      (202, starts in the background)
 GET  /api/regression/runs/{run_id}   -> {"runId": ..., "status": "running"}
                                       -> {"runId": ..., "status": "passed" | "failed", "exitCode": ..., "summary": {...}, "tests": [...]}
@@ -37,19 +37,29 @@ couple of fast HTTP calls to Fluxnova rather than a slow live-agent test suite.
 GET  /api/workflow/config           -> {"processKey": "...", "variables": {...}}   (the run's default variables)
 POST /api/workflow/runs             body: {"requestedAmount": 60000, ...}   -> {"instanceId": "<id>"}   (202)
                                      (body keys override the config file's default `variables` — omit to use
-                                     the defaults from fluxnova-runner/config/loan-assesment.yml)
+                                      the defaults from fluxnova-runner/config/loan_approval_process_ai.yml)
 GET  /api/workflow/runs/{instance_id} -> {"instanceId": ..., "status": "active"}
                                        -> {"instanceId": ..., "status": "completed" | "terminated" | "error",
                                            "state": "COMPLETED", "variables": {...}}
 ```
 
-Each `POST` deploys the configured BPMN fresh (mirroring `fluxnova-run`'s default clean-redeploy behaviour) and
+Each `POST` deploys the configured BPMN using duplicate filtering (reusing unchanged
+resources or creating a new version), preserving earlier instances, history and human tasks, and
 starts the config's mock external-task workers once per ui-api process (they run forever, answering whichever
 matching task shows up — no need to restart them per run). Which workflow config file is used is controlled by
-`UI_API_WORKFLOW_CONFIG` (defaults to `fluxnova-runner/config/loan-assesment.yml`, resolved relative to the repo
+`UI_API_WORKFLOW_CONFIG` (defaults to `fluxnova-runner/config/loan_approval_process_ai.yml`, resolved relative to the repo
 root for a source/editable install — the ui-api Docker image sets this explicitly instead).
 
 ## Run locally
+
+`./setup.sh` installs UI API into the shared environment. Container startup passes
+internal Fluxnova/MLflow/listener URLs, experiment names and judge-provider settings
+explicitly; see [networking/configuration](../local-dev/README.md#frontend-and-ui-api).
+Per-test regression results include `scorers` with name/status/value/rationale; their
+replayable gate reports are retained in MLflow under `regression/<scenario>/`.
+
+`GET /api/evals/definitions` lists the shared scorer objects. `GET`/`POST
+/api/evals/auto-eval` reads/sets listener sampling through `UI_API_EVAL_LISTENER_URL`.
 
 ```bash
 cd ui-api

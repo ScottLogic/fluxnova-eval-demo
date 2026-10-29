@@ -1,14 +1,15 @@
-# Every image here is built with the repo root as context (see each
-# Dockerfile's header comment), so host-side build/test artifacts under any
-# COPY'd directory would otherwise leak straight into the image — most
-# concretely, frontend/node_modules installed by running npm/npx locally
-# clobbers the container's own freshly `npm ci`'d one in frontend/Dockerfile's
-# `COPY frontend .` step, and loses its executable bit crossing the Windows
-# host -> Linux build-VM boundary, breaking `tsc` with "Permission denied".
-**/node_modules
-**/dist
-**/__pycache__
-**/*.pyc
+.git
 .venv
 **/.venv
-.git
+.idea
+.run
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+**/.env
+local-dev/.mlflow
+**/node_modules
+**/dist
+**/.DS_Store

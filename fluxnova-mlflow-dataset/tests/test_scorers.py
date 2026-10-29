@@ -12,11 +12,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from fluxnova_mlflow_dataset.scorers import (
     affordability_called_after_income_confirmed,
     cites_key_evidence_terms,
     collateral_valuation_called_correctly_when_required,
-    definitive_decision_stated,
+    final_recommendation_format,
     no_bank_statement_for_employed_applicant,
     no_collateral_check_when_no_collateral,
     no_duplicate_tool_calls,
@@ -143,32 +144,22 @@ class TestCitesKeyEvidenceTerms:
         assert _value(cites_key_evidence_terms(outputs=output)) is False
 
 
-class TestDefinitiveDecisionStated:
-    def test_pass_when_keyword_present(self):
-        assert _value(definitive_decision_stated(outputs="APPROVE: strong credit")) is True
-
-    def test_fail_when_no_keyword(self):
-        assert _value(definitive_decision_stated(outputs="Further review needed")) is False
-
-    def test_handles_none_output(self):
-        assert _value(definitive_decision_stated(outputs=None)) is False
-
-    def test_handles_non_string_output(self):
-        assert _value(definitive_decision_stated(outputs={"decision": "REJECT"})) is True
-
-    @pytest.mark.parametrize(
-        "output",
-        ["I recommend REJECTING the loan application.", "The loan is approved.", "Rejected."],
-    )
-    def test_pass_on_verb_inflections(self, output):
-        assert _value(definitive_decision_stated(outputs=output)) is True
-
-    @pytest.mark.parametrize(
-        "output",
-        ["Pending the loan approval process.", "Rejection risk is unclear; further review needed."],
-    )
-    def test_fail_on_noun_forms_alone(self, output):
-        assert _value(definitive_decision_stated(outputs=output)) is False
+@pytest.mark.parametrize("output, expected", [
+    ("APPROVE", True),
+    ("Evidence supports repayment.\nAPPROVE", True),
+    ("Affordability failed.\nREJECT\n", True),
+    ("Evidence.\n  APPROVE  \n\n", True),
+    (None, False),
+    ("", False),
+    ({"decision": "REJECT"}, False),
+    ("APPROVE: strong credit", False),
+    ("I recommend REJECTING the loan application.", False),
+    ("Evidence.\n**REJECT**", False),
+    ("REJECT\nMore text", False),
+    ("Evidence.\napprove", False),
+])
+def test_final_recommendation_contract_replaces_keyword_presence(output, expected):
+    assert _value(final_recommendation_format(outputs=output)) is expected
 
 
 class TestProfileForbiddenTools:
@@ -209,7 +200,7 @@ class TestProfileForbiddenTools:
 
 class TestStepEfficiency:
     def test_pass_within_budget(self):
-        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, iterations=3)
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, iterations=4)
         assert _value(step_efficiency(inputs=inputs)) is True
 
     def test_fail_over_budget(self):
@@ -218,8 +209,16 @@ class TestStepEfficiency:
 
     def test_collateral_adds_one_to_budget(self):
         variables = {**_EMPLOYED_NO_COLLATERAL, "hasCollateral": True}
-        inputs = _inputs(variables=variables, iterations=4)
+        inputs = _inputs(variables=variables, iterations=5)
         assert _value(step_efficiency(inputs=inputs)) is True
+
+    def test_collateral_still_rejects_excess_calls(self):
+        variables = {**_EMPLOYED_NO_COLLATERAL, "hasCollateral": True}
+        assert _value(step_efficiency(inputs=_inputs(variables=variables, iterations=6))) is False
+
+    def test_report_explains_that_final_response_is_counted(self):
+        result = step_efficiency(inputs=_inputs(variables=_EMPLOYED_NO_COLLATERAL, iterations=4))
+        assert "including final response" in result.rationale
 
     def test_none_when_no_inference_count(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL)
@@ -243,6 +242,12 @@ class TestAffordabilityAfterIncome:
 
 
 class TestToolArgumentCorrectness:
+    def test_empty_captured_objects_are_failures_not_missing_capture(self):
+        calls = [{**call, "arguments": {}} for call in _full_employed_calls()]
+        inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=calls)
+        assert _value(tool_argument_correctness(inputs=inputs)) == 0.0
+        assert _value(requested_amount_passed_to_affordability(inputs=inputs)) is False
+
     def test_none_when_no_arguments_captured(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=_full_employed_calls())
         assert tool_argument_correctness(inputs=inputs) is None
@@ -261,6 +266,11 @@ class TestToolArgumentCorrectness:
 
 
 class TestCollateralValuationCalledCorrectly:
+    def test_empty_captured_arguments_fail(self):
+        variables = {**_EMPLOYED_NO_COLLATERAL, "hasCollateral": True}
+        inputs = _inputs(variables=variables, tool_calls=[_tool("Value Collateral", arguments={})])
+        assert _value(collateral_valuation_called_correctly_when_required(inputs=inputs)) == 0.0
+
     def test_none_when_no_collateral(self):
         inputs = _inputs(variables=_EMPLOYED_NO_COLLATERAL, tool_calls=[])
         assert collateral_valuation_called_correctly_when_required(inputs=inputs) is None

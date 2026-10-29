@@ -39,7 +39,7 @@ mlflow-judges --experiment fluxnova-loanAssessmentProcess status
 
 Registers/starts/stops/inspects `automatic_judges()` against a target experiment using MLflow's
 `Scorer.register()`/`.start()`/`.stop()` — once started, the MLflow server scores a sampled fraction of new traces
-automatically, with no code needing to run continuously. `--tracking-uri` (default `http://localhost:5000`) **must**
+automatically, with no code needing to run continuously. `--tracking-uri` (default `http://localhost:5001`, honoring `MLFLOW_HOST`/`MLFLOW_PORT`) **must**
 be the running server's HTTP(S) address, not a direct `postgresql://...` path, since gateway-backed judges route
 through that server process — see [`local-dev/README.md`](../local-dev/README.md)'s "MLflow AI Gateway endpoint for
 automatic evaluation judges" section for the one-off endpoint setup this depends on. `--filter-string` on `start`
@@ -79,8 +79,9 @@ CI-style `if` condition evaluated against a run's input variables:
 Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See the repo root README's
 "`expected_tools` rule syntax" section for the full reference table.
 
-> **Note:** `fluxnova-runner`'s `RunnerConfig` and the eval scorers both build on this `ExpectedToolRule`
-> (imported from `fluxnova_mlflow_dataset.tools`), so the rule parsing/evaluation lives in a single place.
+> **Note:** these rules are used by record shaping. The standalone runner ignores
+> evaluation-only YAML fields; trace-based scorers use the explicit applicant-profile
+> rules described below, rather than loading the runner's YAML at scoring time.
 
 ## Shared judge/scorer definitions: `scorers.py`
 
@@ -88,10 +89,10 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 `DECISION_QUALITY_GUIDELINES`) used identically by:
 
 - the regression suite (`regression/`) — called with a direct `"ollama:/gemma4:e2b"`-style URI.
-- `eval-service-worker` — synchronous per-run scoring, called with a `"gateway:/<endpoint>"` URI (required for
+- `eval-service-worker` — synchronous per-run scoring, using a direct provider URI in the local demo or a `"gateway:/<endpoint>"` URI (required for
   anything routed through the MLflow AI Gateway).
 
-`DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, and others) are non-LLM checks
+`DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `final_recommendation_format`, and others) are non-LLM checks
 used by `eval-service-worker`, `eval-trace-listener` and the regression suite. They know nothing about tracing:
 each reads plain values from MLflow's standard `inputs`/`outputs` columns (the canonical shape
 `{"input_variables", "tool_calls": [{"name", "status", "arguments"}], "iterations"}` — see

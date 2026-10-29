@@ -34,9 +34,9 @@ The listener runs `LISTENER_SCORERS` (defined in `eval_trace_listener.scoring`) 
 
 - `decision_quality` — the `Guidelines` judge (definitive, evidence-backed APPROVE/REJECT).
 - `evidence_citation` — grades how well the output grounds its reasoning in the applicant/tool evidence (0.0–1.0).
-- all 11 deterministic code scorers (`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`,
-  `cites_key_evidence_terms`, the collateral/employment guards, `step_efficiency`,
-  `affordability_called_after_income_confirmed`, `risk_checks_precede_affordability`, `no_duplicate_tool_calls`).
+- all 11 deterministic code scorers (`tool_correctness`, `no_tool_errors`, `final_recommendation_format`,
+  `cites_key_evidence_terms`, `no_duplicate_tool_calls`, `risk_checks_precede_affordability`, the collateral/employment guards,
+  `step_efficiency`, `affordability_called_after_income_confirmed`).
 
 **`matches_golden` is deliberately excluded** — it needs a golden `expected_output`, which a bare trace doesn't carry.
 That judge stays in the `regression` suite, which has the golden dataset. `agent_goal` (a Fluxnova-only field, not on
@@ -50,11 +50,9 @@ inputs entirely *from the trace it just read*:
   span (no BPMN parsing, no Fluxnova REST call).
 - `outputs` — the agent's final answer extracted from the trace's output spans.
 
-> **Operational note:** because the listener now runs the two LLM judges, its container must be able to reach
-> whichever provider `LLM_JUDGE_PROVIDER` resolves to (unlike the deterministic-only checks, which need nothing
-> external) — `openai` by default (needs `OPENAI_API_KEY`, both wired through by `eval-listener-up.sh`), or `ollama`
-> for a fully local judge (needs a reachable Ollama instance instead). Ensure whichever one you've selected is
-> reachable from wherever the listener runs.
+> **Operational note:** the listener uses the shared judge provider (OpenAI by
+> default, Ollama when `LLM_JUDGE_PROVIDER=ollama`). Local startup passes the API key,
+> provider and container Ollama URL explicitly. See [local-dev](../local-dev/README.md).
 
 ## Why poll MLflow instead of receiving OTLP?
 
@@ -80,48 +78,32 @@ alone (it would need a Fluxnova REST lookup) and is out of scope.
 
 ## Configuration
 
+Traces tagged `source=regression` are excluded from listener scoring. The runtime
+sample rate is controlled by `GET`/`PUT /config` on port 8092 (published with
+`EVAL_LISTENER_CONTROL_PORT`), including the frontend's auto-eval toggle through
+the UI API. Static `sample_rate`, `control_host` and `control_port` settings also
+accept the corresponding `EVAL_LISTENER_*` overrides.
+
 Static settings live in a **YAML config file** (`config.yaml` — the one baked into
 the image is a worked example). Every key is optional and falls back to a built-in
 default; unknown keys are ignored so the file can carry forward-looking settings.
 
 | Key                   | Default                                 | Purpose                                                                |
 |-----------------------|-----------------------------------------|------------------------------------------------------------------------|
-| `tracking_uri`        | `http://localhost:5000`                 | MLflow tracking server (HTTP, not `postgresql://`)                     |
-| `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`    | Experiment to tail (must match the collector's `MLFLOW_EXPERIMENT_ID`) |
+| `tracking_uri`        | `http://localhost:5001`                 | MLflow tracking server (HTTP, not `postgresql://`)                     |
+| `experiment_name`     | `fluxnova-loanAssessmentEvalProcess`    | Experiment to tail (local startup initializes the collector with this experiment's real ID) |
 | `agent_names`         | `[AdHocSubProcess_LoanAssessmentAgent]` | Agents to score; empty ⇒ score every agent                             |
 | `poll_interval_s`     | `10`                                    | Seconds between polls                                                  |
 | `max_traces_per_poll` | `200`                                   | Upper bound on recent traces pulled per poll                           |
-| `sample_rate`         | `1.0`                                   | Fraction of in-scope traces to actually score — see below              |
-| `control_host`        | `0.0.0.0`                               | Host the sample-rate control endpoint binds on                         |
-| `control_port`        | `8092`                                  | Port the sample-rate control endpoint binds on                         |
 
 Any setting can be overridden per-environment by an `EVAL_LISTENER_<NAME>` env var or
 a CLI flag (flag > env > file > default). See `eval_trace_listener/config.py` and
 `main.py`.
 
-## Live sampling control
-
-Unlike every other setting above, `sample_rate` can also be changed **while the listener is
-already running**, without restarting it — the process serves a tiny HTTP control endpoint on
-`control_host:control_port` (see `eval_trace_listener/control.py`):
-
-```bash
-curl http://localhost:8092/config                                          # {"sample_rate": 1.0}
-curl -X PUT -H 'Content-Type: application/json' \
-  -d '{"sample_rate": 0.1}' http://localhost:8092/config                   # ~1-in-10 traces scored
-```
-
-`0.0` scores none, `1.0` (the default) scores every trace. Each trace's sampling decision is made
-once (and cached alongside the normal dedup state) rather than re-rolled every poll — otherwise a
-trace that keeps reappearing in the recent-traces window would eventually get scored regardless of
-how low the rate is set, defeating the point. This is what backs the frontend's "Auto-eval
-(listener)" toggle (via `ui-api`'s `evals.py` router) — off sets the rate to `0.0`, on sets it to
-`1.0`.
-
 ## Running
 
 ```bash
-# Locally (against a host MLflow at :5000)
+# Locally (against a host MLflow at :5001)
 eval-trace-listener --config eval-trace-listener/config.yaml
 
 # In Podman (needs mlflow-local running — reaches it by pod name)

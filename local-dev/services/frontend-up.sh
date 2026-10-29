@@ -1,102 +1,62 @@
 #!/usr/bin/env bash
-# frontend: standalone Podman pod serving the static React/Vite UI via nginx (see
-# frontend/Dockerfile), together with ui-api (see ui-api/Dockerfile) — the FastAPI
-# backend the UI calls. Both are built from source (context = repo root), same as
-# eval-service-up.sh / eval-listener-up.sh. They share this pod's network namespace,
-# so nginx proxies /api/ to ui-api over plain localhost (see frontend/nginx.conf.template
-# and ui-api/README.md) rather than needing a separate published port for ui-api.
-#
-# ui-api's regression run needs OPENAI_API_KEY/LLM_JUDGE_PROVIDER for the LLM-judge
-# scorers (see fluxnova_mlflow_dataset.scorers) — sourced from local-dev/.env, same
-# as fluxnova-up.sh passes OPENAI_API_KEY to the engine for the BPMN agent itself.
-#
-# Requires fluxnova-up.sh already running for the UI's API calls to work once ui-api
-# grows Fluxnova-backed routes (the pod starts fine either way). fluxnova-local runs
-# on --network host (see OTEL-EXPORT-INVESTIGATION.md at the repo root), so this pod
-# also runs on --network host to reach it via plain localhost — same reasoning as
-# eval-service-up.sh/observability-up.sh (host.containers.internal from a
-# bridge-networked pod cannot reach a --network host container on Podman Desktop for
-# Windows).
-#
-# Usage (from this directory):
-#   ./frontend-up.sh
-#   ./frontend-down.sh
+# nginx and ui-api share a namespace; bridge mode uses internal dependency URLs.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
-
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 POD_NAME="${FRONTEND_POD_NAME:-frontend-local}"
 FRONTEND_IMAGE_NAME="${FRONTEND_IMAGE:-frontend:local}"
 UI_API_IMAGE_NAME="${UI_API_IMAGE:-ui-api:local}"
-# See eval-service-up.sh for why `pwd -W` is used here (Git Bash/MSYS on Windows).
-REPO_ROOT="$(cd ../.. && { pwd -W 2>/dev/null || pwd; })"
-LOCAL_DEV_DIR="$(cd .. && pwd)"
-
-if [ -f "$LOCAL_DEV_DIR/.env" ]; then
-  set -a
-  source "$LOCAL_DEV_DIR/.env"
-  set +a
-fi
-
 FRONTEND_PORT="${FRONTEND_PORT:-8081}"
 UI_API_PORT="${UI_API_PORT:-8090}"
-# This pod runs on --network host (see header), so ui-api (shares this netns) is
-# reached via plain localhost, and ui-api in turn reaches Fluxnova via localhost too.
-FRONTEND_API_PROXY_PASS="${FRONTEND_API_PROXY_PASS:-http://localhost:${UI_API_PORT}}"
-
-# Only build when the image is missing, so repeated up-runs don't pay the build cost.
-# Force a rebuild after changing frontend/ or ui-api/ with REBUILD=1.
-if [ "${REBUILD:-}" = "1" ] || ! podman image exists "$FRONTEND_IMAGE_NAME"; then
-  echo "Building $FRONTEND_IMAGE_NAME..."
-  podman build -f "$REPO_ROOT/frontend/Dockerfile" -t "$FRONTEND_IMAGE_NAME" "$REPO_ROOT"
+require_http "http://localhost:${FLUXNOVA_PORT}/engine-rest/engine" fluxnova
+if [ "$DEV_NETWORK_MODE" = host ]; then
+  network_args=(--network host)
+  frontend_listen="$FRONTEND_PORT"
+  api_listen="$UI_API_PORT"
+  engine_url="http://localhost:${FLUXNOVA_PORT}/engine-rest"
+  tracking_url="http://localhost:${MLFLOW_PORT}"
+  listener_url="http://localhost:${EVAL_LISTENER_CONTROL_PORT:-8092}"
 else
-  echo "Image '$FRONTEND_IMAGE_NAME' already exists — skipping build (REBUILD=1 to force)."
+  network_args=(--network "$DEV_NETWORK" -p "${FRONTEND_PORT}:80" -p "${UI_API_PORT}:8090")
+  frontend_listen=80
+  api_listen=8090
+  engine_url="http://${FLUXNOVA_POD_NAME}:8080/engine-rest"
+  tracking_url="http://${MLFLOW_POD_NAME}:5000"
+  listener_url="http://${EVAL_LISTENER_POD_NAME:-eval-listener-local}:8092"
 fi
-
-if [ "${REBUILD:-}" = "1" ] || ! podman image exists "$UI_API_IMAGE_NAME"; then
-  echo "Building $UI_API_IMAGE_NAME..."
-  podman build -f "$REPO_ROOT/ui-api/Dockerfile" -t "$UI_API_IMAGE_NAME" "$REPO_ROOT"
-else
-  echo "Image '$UI_API_IMAGE_NAME' already exists — skipping build (REBUILD=1 to force)."
-fi
-
-# Idempotent: if the pod already exists, just make sure it's started rather than
-# failing on `podman pod create`/`podman run` name clashes. As with eval-service-up.sh,
-# recreate it (./frontend-down.sh first) to pick up fresh images after a REBUILD.
-if podman pod exists "$POD_NAME"; then
-  echo "Pod '$POD_NAME' already exists — starting it (idempotent)..."
-  podman pod start "$POD_NAME" >/dev/null
-else
-  echo "Creating pod '$POD_NAME' on --network host (nginx binds :${FRONTEND_PORT} directly — see header)..."
-  podman pod create --name "$POD_NAME" --network host
-
-  echo "Starting ui-api..."
-  podman run -d --pod "$POD_NAME" --name ui-api \
-    -e UI_API_PORT="$UI_API_PORT" \
-    -e OPENAI_API_KEY="${OPENAI_API_KEY:-}" \
-    -e LLM_JUDGE_PROVIDER="${LLM_JUDGE_PROVIDER:-openai}" \
-    "$UI_API_IMAGE_NAME"
-
-  echo "Starting frontend..."
-  podman run -d --pod "$POD_NAME" --name frontend \
-    -e API_PROXY_PASS="$FRONTEND_API_PROXY_PASS" \
-    -e LISTEN_PORT="$FRONTEND_PORT" \
-    "$FRONTEND_IMAGE_NAME"
-fi
-
-echo
-echo "Frontend UI:   http://localhost:${FRONTEND_PORT}"
-echo "ui-api:        http://localhost:${UI_API_PORT} (proxied by the frontend at /api/)"
-echo "Logs:          podman logs -f frontend   /   podman logs -f ui-api"
-echo "Stop/remove:   ./frontend-down.sh"
-
-# Open the UI in the default browser — set FRONTEND_OPEN_BROWSER=false to skip.
-if [ "${FRONTEND_OPEN_BROWSER:-true}" = "true" ]; then
-  FRONTEND_URL="http://localhost:${FRONTEND_PORT}"
-  if command -v explorer.exe >/dev/null 2>&1; then
-    explorer.exe "$FRONTEND_URL" >/dev/null 2>&1 || true   # Windows / Git Bash
-  elif command -v open >/dev/null 2>&1; then
-    open "$FRONTEND_URL" || true                            # macOS
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$FRONTEND_URL" >/dev/null 2>&1 || true         # Linux
+if ! start_existing_pod "$POD_NAME" ui-api frontend; then
+  if [ "${REBUILD:-}" = 1 ] || ! podman image exists "$FRONTEND_IMAGE_NAME"; then
+    ensure_image docker.io/library/node:22-slim
+    ensure_image docker.io/library/nginx:1.29-alpine
+    podman build --pull=never -f "$REPO_ROOT/frontend/Dockerfile" -t "$FRONTEND_IMAGE_NAME" "$REPO_ROOT"
   fi
+  if [ "${REBUILD:-}" = 1 ] || ! podman image exists "$UI_API_IMAGE_NAME"; then
+    ensure_image docker.io/library/python:3.11-slim
+    podman build --pull=never -f "$REPO_ROOT/ui-api/Dockerfile" -t "$UI_API_IMAGE_NAME" "$REPO_ROOT"
+  fi
+  create_pod "$POD_NAME" "${network_args[@]}"
+  run_container -d --pod "$POD_NAME" --name ui-api \
+    -e MLFLOW_DISABLE_TELEMETRY=true \
+    -e UI_API_PORT="$api_listen" \
+    -e FLUXNOVA_URL="${UI_API_FLUXNOVA_URL:-$engine_url}" \
+    -e MLFLOW_TRACKING_URI="${UI_API_TRACKING_URI:-$tracking_url}" \
+    -e MLFLOW_EXPERIMENT_NAME="${MLFLOW_EXPERIMENT_NAME:-$EVAL_SERVICE_EXPERIMENT_NAME}" \
+    -e EVAL_SERVICE_EXPERIMENT_NAME="$EVAL_SERVICE_EXPERIMENT_NAME" \
+    -e UI_API_EVAL_LISTENER_URL="${UI_API_EVAL_LISTENER_URL:-$listener_url}" \
+    -e FLUXNOVA_USERNAME="${FLUXNOVA_USERNAME:-demo}" \
+    -e FLUXNOVA_PASSWORD="${FLUXNOVA_PASSWORD:-demo}" \
+    -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+    -e LLM_JUDGE_PROVIDER="$LLM_JUDGE_PROVIDER" \
+    -e DECISION_QUALITY_MODEL="$DECISION_QUALITY_MODEL" \
+    -e OLLAMA_API_BASE="$OLLAMA_CONTAINER_URL" \
+    "$UI_API_IMAGE_NAME"
+  run_container -d --pod "$POD_NAME" --name frontend \
+    -e API_PROXY_PASS="${FRONTEND_API_PROXY_PASS:-http://localhost:${api_listen}}" \
+    -e LISTEN_PORT="$frontend_listen" \
+    "$FRONTEND_IMAGE_NAME"
+  finish_pod_creation
 fi
+require_http "http://localhost:${FRONTEND_PORT}/" frontend
+require_http "http://localhost:${UI_API_PORT}/health" ui-api
+echo "Frontend UI: http://localhost:${FRONTEND_PORT}"
+echo "ui-api: http://localhost:${UI_API_PORT} (also proxied at /api/)"
+if [ "${FRONTEND_OPEN_BROWSER:-true}" = true ]; then open_browser "http://localhost:${FRONTEND_PORT}"; fi

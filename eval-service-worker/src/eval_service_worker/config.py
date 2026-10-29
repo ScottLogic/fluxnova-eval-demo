@@ -4,8 +4,8 @@ Deliberately **not** read from the runner's workflow YAML config
 (``fluxnova-runner/config/loan-assesment.yml``) — this worker is meant to be a slim,
 independently deployable service (its own Podman pod/container), and depending
 on another service's config file for its own connection settings would
-recreate exactly the coupling that was avoided everywhere else (no BPMN
-parsing, no Fluxnova REST calls — see ``EVAL-SERVICE-WORKER-PLAN.md``).
+recreate coupling between deployment and scoring. Scorer inputs come from MLflow;
+the worker uses Fluxnova history separately to resolve Call Activity child instances.
 
 Instead, all settings are simple hardcoded defaults below, overridable via CLI
 flags or environment variables (see ``main.py``) — there's only ever one
@@ -36,17 +36,16 @@ DEFAULT_PROCESS_KEY = "loanAssessmentEvalProcess"
 DEFAULT_TOPIC = "agent-output-eval"
 
 # MLflow judge model URI — calls OpenAI directly (needs OPENAI_API_KEY in this
-# process's environment), matching the regression suite's default judge model.
+# process's environment), using the same calibrated model as regression/listener.
 # Was gateway-routed (gateway:/fluxnova-judge-oai), but that endpoint only existed
 # if created by hand on the MLflow server, so a fresh database 404'd every judge
 # call; the earlier Ollama-backed gateway:/fluxnova-judge needed a host-run Ollama
 # process and hung the judge call indefinitely whenever it was unreachable.
-DEFAULT_JUDGE_MODEL = "openai:/gpt-4o-mini"
+DEFAULT_JUDGE_MODEL = "openai:/gpt-4.1-mini"
 
 # Judge calls routed through the gateway to a local Ollama model have been
 # observed taking 90+ seconds in this environment — and much longer (several
-# minutes) on CPU-only boxes under memory pressure (see
-# EDD-AND-PRODUCTION-EVAL-ANALYSIS.md / EVAL-SERVICE-WORKER-PLAN.md) — the lock
+# minutes) on CPU-only boxes under memory pressure — the lock
 # duration must comfortably exceed that so Fluxnova doesn't reassign the task
 # to another worker mid-scoring. Override per-environment with
 # EVAL_SERVICE_LOCK_DURATION_MS.
@@ -55,7 +54,7 @@ DEFAULT_LOCK_DURATION_MS = 600_000
 # MLflow tracking server address — must be an HTTP(S) URL (not a direct
 # postgresql:// path), since gateway-routed judge models are resolved by the
 # server process itself.
-DEFAULT_TRACKING_URI = "http://localhost:5000"
+DEFAULT_TRACKING_URI = "http://localhost:5001"
 
 # How long/often to retry looking up the run's trace in MLflow before giving up.
 # The OTel Collector delivers spans asynchronously, so this service task (which

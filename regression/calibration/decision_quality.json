@@ -1,0 +1,50 @@
+[
+  {
+    "scenario": "valid-approval-evidence-in-bullets",
+    "expected_verdict": "yes",
+    "inputs": {"input_variables": {"creditScore": 680, "fraudRiskScore": 8, "annualIncome": 62000, "debtToIncomeRatio": 0.32, "affordabilityPassed": true, "collateralValue": 220000}},
+    "outputs": "The checks found:\n- Credit score 680, MEDIUM risk.\n- Fraud risk score 8.\n- Employment verified, annual income £62,000.\n- DTI 0.32; affordability passed.\n- Collateral valued at £220,000.\nThe verified income supports repayment of the £75,000 loan and collateral exceeds the amount requested, reducing risk. I recommend that we APPROVE this application."
+  },
+  {
+    "scenario": "valid-rejection-evidence-before-conclusion",
+    "expected_verdict": "yes",
+    "inputs": {"input_variables": {"creditScore": 700, "fraudRiskScore": 78, "annualIncome": 38000, "debtToIncomeRatio": 0.61, "affordabilityPassed": false}},
+    "outputs": "Based on the gathered data, I recommend REJECT.\n- Fraud risk score: 78.\n- Credit score: 700, MEDIUM risk.\n- Employment verified with annual income £38,000.\n- DTI 0.61 and affordability did not pass.\nNo collateral was provided. These factors, particularly the high debt-to-income ratio and failed affordability assessment, indicate significant risk in approving the requested £40,000 loan."
+  },
+  {
+    "scenario": "valid-self-employed-approval",
+    "expected_verdict": "yes",
+    "inputs": {"input_variables": {"creditScore": 750, "fraudRiskScore": 5, "bankStatementScore": 88, "annualIncome": 72000, "debtToIncomeRatio": 0.22, "affordabilityPassed": true}},
+    "outputs": "Fraud risk is 5 and credit score is 750 (LOW risk). Bank statements scored 88 and confirmed £72,000 annual income. DTI is 0.22 and affordability passed. Together the low risk scores and verified repayment capacity support approving the £35,000 loan.\nAPPROVE"
+  },
+  {
+    "scenario": "valid-standardized-rejection",
+    "expected_verdict": "yes",
+    "inputs": {"input_variables": {"creditScore": 480, "fraudRiskScore": 19, "bankStatementScore": 32, "debtToIncomeRatio": 0.65, "affordabilityPassed": false}},
+    "outputs": "Credit score is 480 (HIGH risk), fraud score is 19, bank statements scored 32, and DTI is 0.65 with affordability failed. Poor credit and failed affordability show that repayment is not supported, despite fraud not being the primary concern. No collateral was offered to mitigate these risks.\nREJECT"
+  },
+  {
+    "scenario": "invalid-no-evidence",
+    "expected_verdict": "no",
+    "inputs": {},
+    "outputs": "APPROVE"
+  },
+  {
+    "scenario": "invalid-deferred-decision",
+    "expected_verdict": "no",
+    "inputs": {"input_variables": {"creditScore": 700, "debtToIncomeRatio": 0.61}},
+    "outputs": "Credit score is 700 and DTI is 0.61. I cannot make a recommendation; the next step is to ask a human to decide."
+  },
+  {
+    "scenario": "invalid-contradictory-recommendations",
+    "expected_verdict": "no",
+    "inputs": {"input_variables": {"creditScore": 720, "debtToIncomeRatio": 0.28}},
+    "outputs": "Credit score 720 and DTI 0.28 support repayment. My recommendation is APPROVE. My equally final recommendation is REJECT. Both are my selected decisions."
+  },
+  {
+    "scenario": "invalid-fabricated-evidence",
+    "expected_verdict": "no",
+    "inputs": {"input_variables": {"creditScore": 480, "annualIncome": 28000, "debtToIncomeRatio": 0.65, "affordabilityPassed": false}},
+    "outputs": "The credit score is 850, verified income is £200,000 and DTI is 0.10 with affordability passed. These strong results support repayment.\nAPPROVE"
+  }
+]

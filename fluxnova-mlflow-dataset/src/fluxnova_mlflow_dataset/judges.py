@@ -7,10 +7,9 @@ that: it registers the gateway-backed judges from ``fluxnova_mlflow_dataset.scor
 (see ``automatic_judges()``) against a target experiment, then starts or stops
 automatic sampling for them.
 
-Automatic judges require a `gateway:/<endpoint>` model URI (see Phase 0 in
-EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), which in turn requires the tracking URI
+Automatic judges require a `gateway:/<endpoint>` model URI, which requires the tracking URI
 to be the *running MLflow server's* HTTP(S) address (e.g.
-``http://localhost:5000``) rather than a direct ``postgresql://...`` path — the
+``http://localhost:5001``) rather than a direct ``postgresql://...`` path — the
 gateway routes judge calls through that server process. This is different
 from an offline evaluation's default tracking URI (a direct PostgreSQL connection
 used for offline evaluation), even though, in local dev, both ultimately point at the
@@ -38,8 +37,7 @@ import mlflow
 from mlflow.genai.scorers import ScorerSamplingConfig, get_scorer, list_scorers
 
 from fluxnova_mlflow_dataset.scorers import GATEWAY_JUDGE_MODEL, automatic_judges
-
-_DEFAULT_TRACKING_URI = "http://localhost:5000"
+from fluxnova_mlflow_dataset.store import default_server_tracking_uri
 
 
 def _resolve_experiment_id(experiment_name: str) -> str:
@@ -87,6 +85,7 @@ def _cmd_status(args: argparse.Namespace) -> None:
 
 
 def main(argv: Iterable[str] | None = None) -> None:
+    default_tracking_uri = default_server_tracking_uri()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--experiment",
@@ -95,8 +94,8 @@ def main(argv: Iterable[str] | None = None) -> None:
     )
     parser.add_argument(
         "--tracking-uri",
-        default=_DEFAULT_TRACKING_URI,
-        help=f"MLflow tracking server HTTP(S) URL (default: {_DEFAULT_TRACKING_URI}). "
+        default=default_tracking_uri,
+        help=f"MLflow tracking server HTTP(S) URL (default: {default_tracking_uri}). "
         "Must be the running server's address, not a direct postgresql:// path -- gateway-backed "
         "judges route through the server process.",
     )

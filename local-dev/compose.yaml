@@ -1,40 +1,7 @@
-# Single-file podman-compose equivalent of the pods-up.sh / services/*-up.sh stack.
-#
-# This is an ADDITIVE alternative to the pod scripts (pods-up.sh etc.) — both use the
-# same .env, postgres/init.sh, default.yml and otel-collector-config.yaml, so nothing
-# here forces you to abandon the scripts.
-#
-# Every service is named `<container>-local` for consistency (postgres-local,
-# mlflow-local, otel-collector-local, fluxnova-local, eval-service-worker-local,
-# eval-trace-listener-local, prometheus-local, grafana-local). The short `container_name`
-# (postgres, fluxnova, ...) is what plain `podman logs <name>` / `podman exec <name>` use.
-#
-# otel-collector-local/fluxnova-local run on `network_mode: host` (see
-# OTEL-EXPORT-INVESTIGATION.md at the repo root — running Fluxnova in any isolated Podman
-# network namespace silently breaks the OpenTelemetry Java SDK's OTLP export, with no
-# errors anywhere; only the real host namespace works), so they're addressed by `localhost`
-# / `host.containers.internal` rather than by service/container name — see default.yml,
-# otel-collector-config.yaml and prometheus.yml, all of which now expect that.
-#
-# Usage (from this local-dev/ directory):
-#   podman compose up -d                     # core stack: postgres, mlflow, fluxnova, otel, frontend
-#   podman compose --profile eval up -d      # also start the eval worker + trace listener
-#   podman compose --profile grafana up -d   # also start Prometheus + Grafana
-#   podman compose --profile eval --profile grafana up -d   # everything
-#   podman compose logs -f fluxnova-local    # by service name (not the fluxnova container_name)
-#   podman compose down                      # stop/remove (keeps the postgres volume)
-#   podman compose down -v                   # also delete the postgres data volume
-#
-# Note: unlike ./pods-down.sh --delete-data, `down -v` does NOT touch the mlflow
-# artifact files (they're a host bind-mount at ./.mlflow/artifacts) — delete
-# those by hand if you need a truly clean slate.
-
+# Portable bridge-networked alternative to the pod scripts.
+# Use one orchestration method at a time. Windows host-network fallback: pod scripts.
+# Start: podman compose --profile eval --profile grafana up -d --build
 services:
-  # PostgreSQL — shared backend for both MLflow (tracking store) and Fluxnova (engine
-  # datasource). postgres/init.sh (bind-mounted below) creates the two app DBs/roles on
-  # first startup against the empty named volume. Superuser vars feed the official
-  # image's POSTGRES_USER/POSTGRES_PASSWORD; the MLFLOW_/FLUXNOVA_ vars are consumed by
-  # init.sh. Mirrors services/postgres-up.sh.
   postgres-local:
     image: ${POSTGRES_IMAGE:-docker.io/library/postgres:16}
     container_name: postgres
@@ -53,100 +20,91 @@ services:
       - postgres-local-data:/var/lib/postgresql/data
       - ./postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U ${POSTGRES_SUPERUSER:-postgres}"]
       interval: 3s
       timeout: 5s
-      retries: 20
+      retries: 30
       start_period: 10s
 
-  # MLflow tracking server, backed by the postgres-local "mlflow" database. Same custom
-  # entrypoint as services/mlflow-up.sh: install the psycopg2 driver, then run the
-  # server. Artifacts land on the host bind-mount (Postgres only stores metadata).
   mlflow-local:
-    image: ${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:v3.15.2}
+    image: ${MLFLOW_IMAGE:-ghcr.io/mlflow/mlflow:v3.16.0}
     container_name: mlflow
     depends_on:
       postgres-local:
         condition: service_healthy
-    extra_hosts:
-      # Lets an AI-Gateway endpoint reach a host-run Ollama at host.containers.internal.
-      - "host.containers.internal:host-gateway"
-    entrypoint: ["sh", "-c"]
-    command:
-      - >
-        pip install --quiet psycopg2-binary &&
-        mlflow server
-        --backend-store-uri postgresql://${MLFLOW_POSTGRES_USER:-mlflow}:${MLFLOW_POSTGRES_PASSWORD:-mlflow}@postgres-local:5432/${MLFLOW_POSTGRES_DB:-mlflow}
-        --default-artifact-root /mlflow-artifacts
-        --host 0.0.0.0 --port 5000 --allowed-hosts '*' --cors-allowed-origins '*'
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://${MLFLOW_POSTGRES_USER:-mlflow}:${MLFLOW_POSTGRES_PASSWORD:-mlflow}@postgres-local:5432/${MLFLOW_POSTGRES_DB:-mlflow}
+      EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
+    entrypoint: [sh, /local-dev-mlflow/start.sh]
     ports:
-      - "${MLFLOW_PORT:-5000}:5000"
+      - "${MLFLOW_PORT:-5001}:5000"
     volumes:
       - ./.mlflow/artifacts:/mlflow-artifacts
+      - mlflow-local-runtime:/mlflow-runtime
+      - ./mlflow:/local-dev-mlflow:ro
     healthcheck:
-      # The mlflow image is python-based (no curl guaranteed), so probe with urllib.
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/version')\""]
+      test: [CMD-SHELL, "test -s /mlflow-runtime/headers.yaml && python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/version')\""]
       interval: 5s
       timeout: 5s
-      retries: 30
+      retries: 60
       start_period: 20s
 
-  # OTel Collector — receives OTLP traces and forwards them to MLflow's /v1/traces.
-  # Runs on --network host (see the file header / OTEL-EXPORT-INVESTIGATION.md): running
-  # Fluxnova in any isolated Podman network namespace silently breaks the OpenTelemetry
-  # Java SDK's OTLP export. fluxnova-local shares this service's namespace below (the pod
-  # analog), so it inherits host networking too. Since ports bind directly on the host with
-  # `network_mode: host`, `ports:`/`networks:` are omitted (Compose/Podman reject both
-  # alongside it) — Fluxnova and the collector are reached via plain `localhost` from the
-  # host, and via `host.containers.internal` from sibling containers (e.g. the eval worker),
-  # same as fluxnova-up.sh's pod script.
   otel-collector-local:
     image: ${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:0.160.0}
     container_name: otel-collector
-    network_mode: host
+    depends_on:
+      mlflow-local:
+        condition: service_healthy
     command: ["--config=/etc/otelcol/config.yaml"]
     environment:
-      MLFLOW_EXPERIMENT_ID: ${MLFLOW_EXPERIMENT_ID:-}
-      # mlflow-local isn't resolvable by name from a host-networked container — reach it
-      # via its own published host port instead (mlflow-local service's ${MLFLOW_PORT}:5000).
-      MLFLOW_OTLP_ENDPOINT: ${MLFLOW_OTLP_ENDPOINT:-http://localhost:${MLFLOW_PORT:-5000}}
+      MLFLOW_OTLP_ENDPOINT: ${MLFLOW_OTLP_ENDPOINT:-http://mlflow-local:5000}
+    ports:
+      - "${FLUXNOVA_PORT:-8080}:8080"
+      - "${OTEL_GRPC_PORT:-4317}:4317"
+      - "${OTEL_HTTP_PORT:-4318}:4318"
+      - "${OTEL_METRICS_PORT:-8889}:8889"
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      - mlflow-local-runtime:/mlflow-runtime:ro
+    networks:
+      default:
+        # Fluxnova shares this namespace, so this alias reaches its REST API too.
+        aliases: [fluxnova-local]
 
-  # Fluxnova engine. Shares otel-collector-local's network namespace (the pod analog), so
-  # default.yml's `exporterEndpoint: http://localhost:4317` keeps working unchanged, and it
-  # inherits --network host too. Datasource credentials are passed through for default.yml's
-  # ${VAR} placeholders.
   fluxnova-local:
-    image: ${FLUXNOVA_IMAGE:-fluxnova:local}
+    image: ${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0}
+    platform: ${FLUXNOVA_PLATFORM:-linux/amd64}
     container_name: fluxnova
-    network_mode: "service:otel-collector-local"
+    network_mode: service:otel-collector-local
     depends_on:
       postgres-local:
         condition: service_healthy
       otel-collector-local:
         condition: service_started
     environment:
-      # No port *mapping* happens under --network host — this is passed through so Spring
-      # Boot actually binds the configured port rather than just labelling one.
-      SERVER_PORT: ${FLUXNOVA_PORT:-8080}
+      SERVER_PORT: 8080
       OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      FLUXNOVA_POSTGRES_HOST: postgres-local
+      FLUXNOVA_POSTGRES_PORT: 5432
       FLUXNOVA_POSTGRES_USER: ${FLUXNOVA_POSTGRES_USER:-fluxnova}
       FLUXNOVA_POSTGRES_PASSWORD: ${FLUXNOVA_POSTGRES_PASSWORD:-fluxnova}
       FLUXNOVA_POSTGRES_DB: ${FLUXNOVA_POSTGRES_DB:-fluxnova}
-      # BPMN agent's OpenAI API key — only used while default.yml's spring.ai.model.chat
-      # is set to "openai".
+      SPRING_AI_OLLAMA_BASE_URL: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
       - ./default.yml:/fluxnova/configuration/default.yml:ro
+    # The published image does not define HEALTHCHECK. Gate dependent workers on
+    # the actual REST endpoint, including slow first boots under x86 emulation.
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, --max-time, "3", "http://localhost:8080/engine-rest/engine"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
 
-  # Optional eval worker — subscribes to Fluxnova's external-task topic and scores runs
-  # against MLflow. Built from source (context = repo root). Only started when the `eval`
-  # profile is active: `podman compose --profile eval up -d`.
-  # Mirrors services/eval-service-up.sh.
   eval-service-worker-local:
-    profiles: ["eval"]
+    profiles: [eval]
     build:
       context: ..
       dockerfile: eval-service-worker/Dockerfile
@@ -156,38 +114,23 @@ services:
       mlflow-local:
         condition: service_healthy
       fluxnova-local:
-        # Wait for fluxnova to be *healthy*, not merely *started*. `service_started`
-        # fires the instant the JVM launches, but Fluxnova is Spring Boot/Tomcat — it
-        # isn't serving engine-rest for ~30-40s after that (Hikari connects to Postgres,
-        # the engine deploys its schema, Tomcat binds :8080). This worker polls
-        # fetchAndLock the moment it starts, so gating on `service_started` races Tomcat
-        # startup and the first poll logs `[Errno 111] Connection refused`. The fluxnova
-        # image ships a HEALTHCHECK (curl -fs .../engine-rest/engine) that only passes
-        # once REST actually answers — exactly the readiness signal we need here.
         condition: service_healthy
     environment:
-      # fluxnova-local runs on --network host (see OTEL-EXPORT-INVESTIGATION.md), so it
-      # isn't resolvable by service name from this (default-network) container — reached
-      # via host.containers.internal instead (extra_hosts below).
-      EVAL_SERVICE_FLUXNOVA_URL: ${EVAL_SERVICE_FLUXNOVA_URL:-http://host.containers.internal:8080/engine-rest}
+      EVAL_SERVICE_FLUXNOVA_URL: ${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
       EVAL_SERVICE_TRACKING_URI: ${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}
-      # MLflow experiment the worker reads traces from — must match where the OTel
-      # collector writes them (MLFLOW_EXPERIMENT_ID). Single source of truth is .env.
-      EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
-      # The decision_quality judge calls OpenAI directly (openai:/gpt-4o-mini).
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # See services/eval-service-up.sh — avoids a telemetry/import-hook deadlock.
       MLFLOW_DISABLE_TELEMETRY: "true"
-    extra_hosts:
-      - "host.containers.internal:host-gateway"
+      EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
+      EVAL_SERVICE_JUDGE_MODEL: ${EVAL_SERVICE_JUDGE_MODEL:-${DECISION_QUALITY_MODEL:-openai:/gpt-4.1-mini}}
+      EVAL_SERVICE_LOCK_DURATION_MS: ${EVAL_SERVICE_LOCK_DURATION_MS:-600000}
+      FLUXNOVA_USERNAME: ${FLUXNOVA_USERNAME:-demo}
+      FLUXNOVA_PASSWORD: ${FLUXNOVA_PASSWORD:-demo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
+      DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}
+      OLLAMA_API_BASE: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
 
-  # Optional eval trace listener — tails the MLflow experiment's trace store and scores
-  # newly-completed agent runs with the deterministic (trace-only) scorers. Built from
-  # source (context = repo root). Only started when the `eval` profile is active:
-  # `podman compose --profile eval up -d`. Mirrors services/eval-listener-up.sh.
-  # Unlike eval-service-worker it depends only on MLflow (it never calls the engine).
   eval-trace-listener-local:
-    profiles: ["eval"]
+    profiles: [eval]
     build:
       context: ..
       dockerfile: eval-trace-listener/Dockerfile
@@ -198,29 +141,20 @@ services:
         condition: service_healthy
     environment:
       EVAL_LISTENER_TRACKING_URI: ${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:5000}
-      # The experiment to tail must match where the OTel collector writes traces
-      # (MLFLOW_EXPERIMENT_ID). Reuse eval-service-worker's .env value as the single
-      # source of truth so both eval services read the same experiment.
-      EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME}
-      EVAL_LISTENER_CONTROL_PORT: ${EVAL_LISTENER_CONTROL_PORT:-8092}
-      # See services/eval-service-up.sh — avoids a telemetry/import-hook deadlock.
       MLFLOW_DISABLE_TELEMETRY: "true"
-    ports:
-      # Sample-rate control endpoint (see eval_trace_listener/control.py) —
-      # published so a --network host container (ui-api, in the frontend-local
-      # pod) can reach it via host.containers.internal, same as
-      # eval-service-worker-local reaches fluxnova-local.
-      - "${EVAL_LISTENER_CONTROL_PORT:-8092}:${EVAL_LISTENER_CONTROL_PORT:-8092}"
-    extra_hosts:
-      - "host.containers.internal:host-gateway"
+      EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
+      EVAL_LISTENER_CONTROL_PORT: "8092"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
+      DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}
+      OLLAMA_API_BASE: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
 
-  # Frontend UI — served as a static build via nginx, same pattern as the eval
-  # services (built from source, context = repo root). No profile: it's core, like
-  # postgres/mlflow/fluxnova/otel-collector above. Deployed together with ui-api-local
-  # (below) — ui-api-local shares this service's network namespace (the pod analog,
-  # same as grafana-local/prometheus-local below), so nginx proxies /api/ to it over
-  # plain localhost (see frontend/nginx.conf.template) rather than needing a
-  # separately published port for ui-api.
+    ports:
+      - "${EVAL_LISTENER_CONTROL_PORT:-8092}:8092"
+    networks:
+      default:
+        aliases: [eval-listener-local]
+
   frontend-local:
     build:
       context: ..
@@ -232,91 +166,68 @@ services:
         condition: service_healthy
     ports:
       - "${FRONTEND_PORT:-8081}:80"
+      - "${UI_API_PORT:-8090}:8090"
     environment:
-      # ui-api-local shares this container's network namespace (network_mode:
-      # service:frontend-local below), so it's reached via plain localhost.
-      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://localhost:${UI_API_PORT:-8090}}
+      API_PROXY_PASS: ${FRONTEND_API_PROXY_PASS:-http://localhost:8090}
 
-  # ui-api: FastAPI backend for the frontend UI (see ui-api/README.md). Built from
-  # source (context = repo root), same as the eval services. Shares frontend-local's
-  # network namespace (the pod analog — see header comment above), so it inherits the
-  # published FRONTEND_PORT container's network stack rather than publishing its own
-  # port; reach Fluxnova via host.containers.internal here once ui-api grows
-  # Fluxnova-backed routes, same as eval-service-worker-local.
   ui-api-local:
     build:
       context: ..
       dockerfile: ui-api/Dockerfile
     image: ${UI_API_IMAGE:-ui-api:local}
     container_name: ui-api
-    network_mode: "service:frontend-local"
+    network_mode: service:frontend-local
     depends_on:
       frontend-local:
         condition: service_started
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     environment:
-      UI_API_PORT: ${UI_API_PORT:-8090}
-      # Needed for the regression run's LLM-judge scorers (see
-      # fluxnova_mlflow_dataset.scorers) — same vars fluxnova-local gets for the BPMN
-      # agent itself.
+      UI_API_PORT: "8090"
+      MLFLOW_DISABLE_TELEMETRY: "true"
+      FLUXNOVA_URL: ${UI_API_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
+      MLFLOW_TRACKING_URI: ${UI_API_TRACKING_URI:-http://mlflow-local:5000}
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
+      EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
+      UI_API_EVAL_LISTENER_URL: ${UI_API_EVAL_LISTENER_URL:-http://eval-listener-local:8092}
+      FLUXNOVA_USERNAME: ${FLUXNOVA_USERNAME:-demo}
+      FLUXNOVA_PASSWORD: ${FLUXNOVA_PASSWORD:-demo}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
-    extra_hosts:
-      - "host.containers.internal:host-gateway"
+      DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}
+      OLLAMA_API_BASE: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
 
-  # Optional observability — Prometheus + Grafana (the observability-local pod analog).
-  # Only started when the `grafana` profile is active: `podman compose --profile grafana up -d`
-  # (the core services have no profile, so that command brings up the full stack + these
-  # two). Mirrors services/observability-up.sh.
-  #
-  # Runs on --network host, same as otel-collector-local/fluxnova-local. This started as
-  # just Fluxnova's fix (see OTEL-EXPORT-INVESTIGATION.md — running it in any isolated
-  # Podman network namespace silently breaks the OpenTelemetry Java SDK's OTLP export),
-  # but Prometheus scraping otel-collector-local's :8889 from a *different* namespace hit
-  # a second, separate problem: on Podman Desktop/machine (Windows), host.containers.internal
-  # routes out to the actual Windows host, not back into the podman-machine VM where a
-  # --network host container's ports actually live — confirmed empirically (a throwaway
-  # --network host container reaches another via plain localhost; a bridge-networked one
-  # can't, by either host.containers.internal or the bridge's own gateway IP). Hence
-  # Prometheus is host-networked too, reaching the collector via localhost:8889 (see
-  # prometheus.yml). No `ports:`/`networks:` (Compose/Podman reject both alongside
-  # `network_mode: host`) — Prometheus/Grafana bind directly on the host.
   prometheus-local:
-    profiles: ["grafana"]
+    profiles: [grafana]
     image: ${PROMETHEUS_IMAGE:-docker.io/prom/prometheus:v3.14.0}
     container_name: prometheus
-    network_mode: host
     depends_on:
-      # Not a hard requirement (Prometheus just retries scrapes), but this ensures
-      # otel-collector-local exists (and is bound to :8889) before we start, so the scrape
-      # target resolves from the first tick.
       otel-collector-local:
         condition: service_started
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--web.enable-lifecycle"
-      # No port *mapping* happens under --network host — bind the configured port
-      # directly rather than just labelling a `-p`/`ports:` mapping like before.
-      - "--web.listen-address=:${PROMETHEUS_PORT:-9090}"
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "${GRAFANA_PORT:-3000}:3000"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      default:
+        aliases: [observability-local]
 
-  # Grafana shares prometheus-local's network namespace (the pod analog, and inherits
-  # --network host too), so its provisioned datasource
-  # (grafana/provisioning/datasources/prometheus.yml -> http://localhost:9090) keeps
-  # working unchanged. Datasource + the gen-ai dashboard are auto-provisioned.
   grafana-local:
-    profiles: ["grafana"]
+    profiles: [grafana]
     image: ${GRAFANA_IMAGE:-docker.io/grafana/grafana:13.2.1}
     container_name: grafana
-    network_mode: "service:prometheus-local"
+    network_mode: service:prometheus-local
     depends_on:
       prometheus-local:
         condition: service_started
     environment:
-      # No port *mapping* happens under --network host — bind the configured port
-      # directly rather than just labelling a `ports:` mapping like before.
-      GF_SERVER_HTTP_PORT: ${GRAFANA_PORT:-3000}
+      PROMETHEUS_URL: http://localhost:9090
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_AUTH_ANONYMOUS_ENABLED: "true"
@@ -327,10 +238,10 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
-  # Named volume so PGDATA survives `down` (removed only with `down -v`). Same name the
-  # scripts use, so both share one database.
   postgres-local-data:
     name: ${POSTGRES_VOLUME:-postgres-local-data}
+  mlflow-local-runtime:
+    name: ${MLFLOW_RUNTIME_VOLUME:-mlflow-local-runtime}
 
 networks:
   default:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import threading
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -142,16 +143,12 @@ def start_run(variable_overrides: dict[str, Any] | None = None) -> str:
     cfg = _load_config()
     client = _client(cfg)
 
-    try:
+    with suppress(ApiError):  # best-effort stale-lock cleanup
         client.unlock_stale_external_tasks()
-    except ApiError:
-        pass  # best-effort cleanup, same as fluxnova-run's CLI
 
-    if cfg.deployment_name:
-        try:
-            client.delete_deployments_by_name(cfg.deployment_name)
-        except ApiError:
-            pass  # best-effort clean redeploy, same as fluxnova-run's CLI
+    # The deployment API reuses unchanged resources and versions changed BPMN.
+    # Cascading deletion here would erase earlier runs, history and human tasks
+    # every time the UI starts another workflow. Cleanup must be explicit.
     client.deploy(
         cfg.bpmn_path,
         deployment_name=cfg.deployment_name,

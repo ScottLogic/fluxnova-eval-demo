@@ -9,6 +9,8 @@
 #   ./frontend-down.sh                # stop/remove the pod
 #   ./frontend-down.sh --delete-data  # same as above (no local data to delete)
 set -uo pipefail
+LOCAL_DEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$LOCAL_DEV_DIR/.env" ]; then source "$LOCAL_DEV_DIR/.env"; fi
 
 POD_NAME="${FRONTEND_POD_NAME:-frontend-local}"
 

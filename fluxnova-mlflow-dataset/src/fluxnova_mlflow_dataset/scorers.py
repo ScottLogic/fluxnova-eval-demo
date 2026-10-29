@@ -7,6 +7,7 @@ drifts between call sites:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from typing import Any
@@ -15,19 +16,32 @@ from mlflow.entities import Feedback
 from mlflow.genai.scorers import Guidelines, scorer
 
 DECISION_QUALITY_NAME = "decision_quality"
+DECISION_QUALITY_RUBRIC_VERSION = "2"
+
+# Three tool rounds (batched fraud/credit, income, affordability) plus the final
+# answer. A separate collateral round is allowed when it cannot be batched.
+BASE_INFERENCE_BUDGET = 4
+COLLATERAL_INFERENCE_ALLOWANCE = 1
 
 DECISION_QUALITY_GUIDELINES = [
-    "The final output must reach a definitive APPROVE or REJECT lending recommendation. "
-    "Ordinary phrasing of a definitive decision — e.g. 'I recommend APPROVE', "
-    "'Recommendation: REJECT', or 'My decision is to APPROVE' — fully satisfies this "
-    "guideline; the word 'recommend' here is just how the decision is phrased, not a sign "
-    "of hedging. Only mark this guideline as failed for conclusions that are actually "
-    "vague or deferred, such as 'further review required', 'additional information "
-    "needed', or 'next steps required' — i.e. cases with no clear APPROVE/REJECT outcome "
-    "at all.",
-    "The final output must state its recommendation backed by evidence: it must cite "
-    "specific data points gathered during the assessment, such as credit score, fraud "
-    "risk, affordability result, or employment status.",
+    "The response must select one unambiguous lending recommendation: APPROVE or REJECT. "
+    "Formatting, markdown and capitalization do not matter for this semantic check. "
+    "Ordinary phrasing such as 'I recommend APPROVE' is a definitive decision, not hedging. "
+    "Contradictory recommendations or only deferring the decision to a human/next steps fail.",
+    "Read the ENTIRE response, including preceding paragraphs, bullet lists and tables. "
+    "The recommendation must be supported by concrete assessment evidence, such as credit "
+    "score, fraud risk score, verified income/employment, or DTI and affordability outcome. "
+    "Evidence stated earlier in the response counts and need not be repeated in the final "
+    "sentence. A coherent connection between at least one material assessment result and "
+    "the recommendation meets the support requirement; every listed data point need not "
+    "be individually connected to the conclusion. A supplied failed-affordability result "
+    "supports rejection without needing an additional numeric DTI policy threshold. "
+    "Do not invent requirements for policy thresholds absent from the inputs. "
+    "Relevant additional context is not a reason to fail. A clear explanation is enough; "
+    "do not require a particular wording, layout, citation format, or all values in one sentence. "
+    "Missing evidence, fabricated facts, or reasons contradicting the supplied assessment facts "
+    "fail. When inputs provide facts, use them to check claims. If failing, identify the actual "
+    "missing or contradictory evidence rather than inventing additional formatting requirements.",
 ]
 
 
@@ -62,7 +76,7 @@ def decision_quality_judge(model: str) -> Guidelines:
 # provider toggle (`local-dev/default.yml`'s `spring.ai.model.chat`).
 LLM_JUDGE_PROVIDER = os.environ.get("LLM_JUDGE_PROVIDER", "openai").lower()
 
-# The judge intentionally uses a *different* model than the agent it's
+# Auxiliary judges intentionally use a *different* model than the agent they are
 # grading (the BPMN agent runs `gpt-4o` — see `bpmn/loan-assesment.bpmn` and
 # local-dev/README.md's provider-toggle section) to avoid self-preference
 # bias, while still being fast/cheap enough for many-judge-call regression
@@ -75,14 +89,22 @@ _OLLAMA_JUDGE_MODEL = "ollama/gemma4:e2b"
 # "<provider>/<model>" URI.
 _JUDGE_MODEL = _OPENAI_JUDGE_MODEL if LLM_JUDGE_PROVIDER == "openai" else _OLLAMA_JUDGE_MODEL
 
+# Semantic decision-quality judging uses the separately calibrated model below.
 # MLflow-native judges (e.g. Guidelines) use MLflow's own "<provider>:/<model>"
 # URI scheme, which differs from the litellm-style "<provider>/<model>" used by
 # the bespoke `_llm_judge()` helper above.
-_NATIVE_JUDGE_MODEL = "openai:/gpt-4o-mini" if LLM_JUDGE_PROVIDER == "openai" else "ollama:/gemma4:e2b"
+def decision_quality_model_for(provider: str, override: str | None = None) -> str:
+    """Choose the calibrated semantic judge, independently of the auxiliary judges."""
+    return override or ("openai:/gpt-4.1-mini" if provider == "openai" else "ollama:/gemma4:e2b")
+
+
+_NATIVE_JUDGE_MODEL = decision_quality_model_for(
+    LLM_JUDGE_PROVIDER, os.environ.get("DECISION_QUALITY_MODEL")
+)
 
 # Automatic (online) evaluation -- Scorer.register()/.start() -- requires a
 # `gateway:/<endpoint-name>` model URI rather than calling Ollama directly
-# (see Phase 0 in EDD-AND-PRODUCTION-EVAL-ANALYSIS.md), so the judges used
+# (see local-dev/README.md's AI Gateway section), so the judges used
 # there are separate instances built on demand by `automatic_judges` (used by
 # `fluxnova_mlflow_dataset.judges`, the start/stop toggle CLI).
 GATEWAY_JUDGE_MODEL = "gateway:/fluxnova-judge"
@@ -106,6 +128,26 @@ _EXPECTED_TOOL_INPUTS: dict[str, list[str]] = {
 }
 
 
+def _parse_judge_json(content: str) -> tuple[float, str]:
+    if not isinstance(content, str):
+        raise ValueError("Judge content must be JSON text")
+    content = content.strip()
+    fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", content, re.DOTALL | re.IGNORECASE)
+    if fence:
+        content = fence.group(1)
+    parsed = json.loads(content)
+    if not isinstance(parsed, dict):
+        raise ValueError("Judge response must be an object")
+    score, rationale = parsed.get("score"), parsed.get("rationale")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        raise ValueError("Judge score must be numeric")
+    if not math.isfinite(score) or not 0 <= score <= 1:
+        raise ValueError("Judge score must be finite and in [0, 1]")
+    if not isinstance(rationale, str) or not rationale.strip():
+        raise ValueError("Judge rationale must be non-empty text")
+    return float(score), rationale
+
+
 def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL) -> Feedback:
     """Ask an LLM (OpenAI by default, Ollama as a local fallback — see
     ``LLM_JUDGE_PROVIDER``) to judge ``context`` against ``criteria``.
@@ -124,10 +166,11 @@ def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL
         "Respond with ONLY a JSON object of the form "
         '{"score": <0.0-1.0>, "rationale": "<one or two sentences>"}.'
     )
+    json_mode = {"format": "json"} if model.startswith("ollama/") else {"response_format": {"type": "json_object"}}
     response = litellm.completion(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        format="json",
+        **json_mode,
         # Without an explicit timeout, a single hung request (observed in
         # practice: a trace-listener run stuck "RUNNING" in MLflow for 26+
         # minutes with no further log output, no CPU activity, and no error —
@@ -140,10 +183,8 @@ def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL
     )
     content = response["choices"][0]["message"]["content"]
     try:
-        parsed = json.loads(content)
-        score = float(parsed["score"])
-        rationale = str(parsed.get("rationale", ""))
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        score, rationale = _parse_judge_json(content)
+    except (TypeError, ValueError):
         score, rationale = 0.0, f"Could not parse judge response: {content!r}"
     return Feedback(value=score, rationale=rationale)
 
@@ -222,7 +263,7 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 # hardcoded mirror of `fluxnova-runner/config/loan-assesment-eval.yml`'s
 # `expected_tools` list, kept in sync manually. This keeps callers free of any
 # BPMN/YAML config read at runtime, at the cost of needing a manual update here
-# if that BPMN's tool set/rules ever change. See EVAL-SERVICE-WORKER-PLAN.md.
+# if that BPMN's tool set/rules ever change. See this package's README.
 #
 # They know nothing about tracing: each reads plain values from MLflow's
 # standard `inputs`/`outputs`/`expectations` columns. The caller is responsible
@@ -254,9 +295,6 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 # ---------------------------------------------------------------------------
 
 _ALWAYS_REQUIRED_TOOLS = ("Check Credit Score", "Run Fraud Screening", "Assess Affordability")
-# Verb forms only ("I recommend REJECTING..." is a decision), not the nouns
-# "approval"/"rejection", which also appear in neutral text like "loan approval process".
-_DECISION_KEYWORD_RE = re.compile(r"\b(APPROV(?:E|ED|ING)|REJECT(?:ED|ING)?)\b", re.IGNORECASE)
 _EVIDENCE_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
     "credit": re.compile(r"credit", re.IGNORECASE),
     "fraud": re.compile(r"fraud", re.IGNORECASE),
@@ -326,21 +364,14 @@ def no_tool_errors(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signatur
 
 
 @scorer
-def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """
-    Does the final output literally contain an APPROVE or REJECT keyword (or its
-    -ED/-ING form, e.g. "I recommend REJECTING")?
-    A hard syntactic check, complementing (not replacing)
-    the decision_quality LLM judge's opinion on whether it's well-reasoned.
-    """
-    matched = bool(_DECISION_KEYWORD_RE.search(_decision_text(outputs)))
+def final_recommendation_format(outputs) -> Feedback:  # noqa: ANN001
+    """Check the new agent output contract independently of semantic judging."""
+    lines = _decision_text(outputs).strip().splitlines()
+    passed = bool(lines) and lines[-1].strip() in {"APPROVE", "REJECT"}
     return Feedback(
-        value=matched,
-        rationale=(
-            "Final output states a definitive APPROVE/REJECT keyword."
-            if matched
-            else "Final output does not contain a definitive APPROVE or REJECT keyword."
-        ),
+        value=passed,
+        rationale="Final line must be exactly APPROVE or REJECT; justification belongs above it."
+        if not passed else "Final recommendation line has the required format.",
     )
 
 
@@ -351,7 +382,7 @@ def cites_key_evidence_terms(outputs) -> Feedback:  # noqa: ANN001 - MLflow scor
     categories (credit, fraud, affordability) by name. A free, always-on proxy
     for the evidence_citation LLM judge — complements (not replaces) that
     judge's opinion on whether the evidence is well-integrated, the same
-    relationship definitive_decision_stated has with decision_quality.
+    relationship final_recommendation_format has with decision_quality.
     """
     text = _decision_text(outputs)
     missing = [term for term, pattern in _EVIDENCE_TERM_PATTERNS.items() if not pattern.search(text)]
@@ -469,20 +500,21 @@ def risk_checks_precede_affordability(inputs) -> Feedback | None:  # noqa: ANN00
 def step_efficiency(inputs) -> Feedback | None:  # noqa: ANN001 - MLflow scorer signature
     """Agent must complete its assessment within a reasonable number of loop iterations.
 
-    The base budget is 3 LLM inference calls (fraud, credit, and either
-    employment-verification or bank-statement-analysis, then affordability);
-    an extra iteration is allowed when collateral valuation is also required.
+    Counts all inference calls, including the final response (not just tool
+    rounds). The baseline is four: batched fraud/credit, income verification,
+    affordability after income, then the final answer. A separate collateral
+    round may add one call. Variable and trace consumers use the same semantics.
+    Returns ``None`` when the caller supplied no iteration count to check.
     """
     iterations = (inputs or {}).get("iterations")
     if iterations is None:
         return None
-    max_iterations = 3 + (1 if _input_variables(inputs).get("hasCollateral") else 0)
+    max_iterations = BASE_INFERENCE_BUDGET + (
+        COLLATERAL_INFERENCE_ALLOWANCE if _input_variables(inputs).get("hasCollateral") else 0
+    )
     return Feedback(
         value=iterations <= max_iterations,
-        rationale=(
-            "OK" if iterations <= max_iterations
-            else f"Agent used {iterations} iterations; expected <= {max_iterations}"
-        ),
+        rationale=f"Agent used {iterations} total LLM calls (including final response); budget <= {max_iterations}",
     )
 
 
@@ -606,7 +638,7 @@ def requested_amount_passed_to_affordability(inputs) -> Feedback | None:  # noqa
 DETERMINISTIC_SCORERS = [
     tool_correctness,
     no_tool_errors,
-    definitive_decision_stated,
+    final_recommendation_format,
     cites_key_evidence_terms,
     no_collateral_check_when_no_collateral,
     no_bank_statement_for_employed_applicant,
