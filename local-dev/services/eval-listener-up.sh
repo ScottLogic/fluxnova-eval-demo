@@ -12,6 +12,7 @@ fi
 if ! start_existing_pod "$POD_NAME" eval-trace-listener; then
   create_pod "$POD_NAME" --network "$DEV_NETWORK" -p "${CONTROL_PORT}:8092"
   run_container -d --pod "$POD_NAME" --name eval-trace-listener \
+    -e MLFLOW_DISABLE_TELEMETRY=true \
     -e EVAL_LISTENER_TRACKING_URI="${EVAL_LISTENER_TRACKING_URI:-http://${MLFLOW_POD_NAME}:5000}" \
     -e EVAL_LISTENER_EXPERIMENT_NAME="${EVAL_LISTENER_EXPERIMENT_NAME:-$EVAL_SERVICE_EXPERIMENT_NAME}" \
     -e EVAL_LISTENER_CONTROL_PORT=8092 \

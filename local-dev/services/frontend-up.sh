@@ -35,6 +35,7 @@ if ! start_existing_pod "$POD_NAME" ui-api frontend; then
   fi
   create_pod "$POD_NAME" "${network_args[@]}"
   run_container -d --pod "$POD_NAME" --name ui-api \
+    -e MLFLOW_DISABLE_TELEMETRY=true \
     -e UI_API_PORT="$api_listen" \
     -e FLUXNOVA_URL="${UI_API_FLUXNOVA_URL:-$engine_url}" \
     -e MLFLOW_TRACKING_URI="${UI_API_TRACKING_URI:-$tracking_url}" \

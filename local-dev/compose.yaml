@@ -118,6 +118,7 @@ services:
     environment:
       EVAL_SERVICE_FLUXNOVA_URL: ${EVAL_SERVICE_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
       EVAL_SERVICE_TRACKING_URI: ${EVAL_SERVICE_TRACKING_URI:-http://mlflow-local:5000}
+      MLFLOW_DISABLE_TELEMETRY: "true"
       EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
       EVAL_SERVICE_JUDGE_MODEL: ${EVAL_SERVICE_JUDGE_MODEL:-${DECISION_QUALITY_MODEL:-openai:/gpt-4.1-mini}}
       EVAL_SERVICE_LOCK_DURATION_MS: ${EVAL_SERVICE_LOCK_DURATION_MS:-600000}
@@ -140,6 +141,7 @@ services:
         condition: service_healthy
     environment:
       EVAL_LISTENER_TRACKING_URI: ${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:5000}
+      MLFLOW_DISABLE_TELEMETRY: "true"
       EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
       EVAL_LISTENER_CONTROL_PORT: "8092"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -186,6 +188,7 @@ services:
       start_period: 10s
     environment:
       UI_API_PORT: "8090"
+      MLFLOW_DISABLE_TELEMETRY: "true"
       FLUXNOVA_URL: ${UI_API_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
       MLFLOW_TRACKING_URI: ${UI_API_TRACKING_URI:-http://mlflow-local:5000}
       MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}

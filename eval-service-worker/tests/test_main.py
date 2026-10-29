@@ -24,6 +24,7 @@ class TestParseArgs:
 
         assert args.fluxnova_url == "http://localhost:8080/engine-rest"
         assert args.tracking_uri == "http://localhost:5001"
+        assert args.judge_model == "openai:/gpt-4.1-mini"
         assert args.topic == "agent-output-eval"
         assert args.lock_duration_ms == 600_000
         assert args.trace_poll_timeout == 90.0

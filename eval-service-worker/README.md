@@ -50,7 +50,7 @@ is no child (e.g. running `loan-assesment.bpmn` standalone).
 For the complete shared environment run `./setup.sh` from the repository root.
 The [local development guide](../local-dev/README.md) covers host debugging and
 cross-platform container startup. Its `.env` configures a direct OpenAI judge by
-default; the standalone package default below retains the gateway URI.
+default, matching the standalone package's calibrated direct-OpenAI model.
 
 ```bash
 pip install -e ../fluxnova-mlflow-dataset   # shared trace-reader + judge definition
@@ -71,7 +71,7 @@ either a CLI flag or an `EVAL_SERVICE_<NAME>` environment variable:
 | MLflow experiment       | `--experiment-name`     | `EVAL_SERVICE_EXPERIMENT_NAME`     | `fluxnova-loanAssessmentEvalProcess`                                                        |
 | Process key (tags)      | `--process-key`         | `EVAL_SERVICE_PROCESS_KEY`         | `loanAssessmentEvalProcess`                                                                 |
 | External-task topic     | `--topic`               | `EVAL_SERVICE_TOPIC`               | `agent-output-eval`                                                                         |
-| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `gateway:/fluxnova-judge-oai` (local orchestration overrides with direct OpenAI) |
+| Judge model URI         | `--judge-model`         | `EVAL_SERVICE_JUDGE_MODEL`         | `openai:/gpt-4.1-mini` (needs `OPENAI_API_KEY`; no pre-created gateway endpoint) |
 | Lock duration (ms)      | `--lock-duration-ms`    | `EVAL_SERVICE_LOCK_DURATION_MS`    | `600000` (judge calls can take 90s+, and much longer on CPU-only boxes)                     |
 | MLflow tracking URI     | `--tracking-uri`        | `EVAL_SERVICE_TRACKING_URI`        | `http://localhost:5001`                                                                     |
 | Trace poll timeout (s)  | `--trace-poll-timeout`  | `EVAL_SERVICE_TRACE_POLL_TIMEOUT`  | `90.0` (allows asynchronous collector export) |

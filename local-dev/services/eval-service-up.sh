@@ -20,7 +20,9 @@ if [ "${REBUILD:-}" = 1 ] || ! podman image exists "$IMAGE_NAME"; then
 fi
 if ! start_existing_pod "$POD_NAME" eval-service-worker; then
   create_pod "$POD_NAME" "${network_args[@]}"
+  # Prevent MLflow diagnostic telemetry from deadlocking with autolog import hooks.
   run_container -d --pod "$POD_NAME" --name eval-service-worker \
+    -e MLFLOW_DISABLE_TELEMETRY=true \
     -e EVAL_SERVICE_FLUXNOVA_URL="${EVAL_SERVICE_FLUXNOVA_URL:-$engine_url}" \
     -e EVAL_SERVICE_TRACKING_URI="${EVAL_SERVICE_TRACKING_URI:-$tracking_uri}" \
     -e EVAL_SERVICE_EXPERIMENT_NAME="$EVAL_SERVICE_EXPERIMENT_NAME" \

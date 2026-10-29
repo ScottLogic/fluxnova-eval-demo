@@ -13,7 +13,7 @@ class TestEvalServiceConfig:
         assert config.experiment_name == "fluxnova-loanAssessmentEvalProcess"
         assert config.process_key == "loanAssessmentEvalProcess"
         assert config.topic == "agent-output-eval"
-        assert config.judge_model == "gateway:/fluxnova-judge-oai"
+        assert config.judge_model == "openai:/gpt-4.1-mini"
         assert config.lock_duration_ms == 600_000
         assert config.tracking_uri == "http://localhost:5001"
         assert config.trace_poll_timeout == 90.0
@@ -32,4 +32,4 @@ class TestEvalServiceConfig:
         assert config.tracking_uri == "http://mlflow-local:5000"
         assert config.topic == "custom-eval-topic"
         # Untouched fields keep their defaults.
-        assert config.judge_model == "gateway:/fluxnova-judge-oai"
+        assert config.judge_model == "openai:/gpt-4.1-mini"

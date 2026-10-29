@@ -431,8 +431,13 @@ the host artifact directory intact; pod scripts' `--delete-data` clears artifact
 Default demo setup uses OpenAI for both the agent and evaluation services. The
 worker is configured by `.env` to call `openai:/gpt-4.1-mini` directly, so no MLflow
 AI Gateway endpoint or local model download is needed. The worker package's
-standalone default remains `gateway:/fluxnova-judge-oai` for existing gateway users;
-the local startup scripts pass the configured model explicitly.
+standalone default also uses `openai:/gpt-4.1-mini`; gateway users can still set
+`EVAL_SERVICE_JUDGE_MODEL=gateway:/<endpoint>` explicitly.
+
+Evaluation worker/listener and UI API containers set `MLFLOW_DISABLE_TELEMETRY=true`
+to prevent MLflow diagnostic-telemetry/autolog import-lock deadlocks. This disables
+MLflow's own diagnostic telemetry, not the demo's OTel trace export or assessments.
+Recreate existing pods/containers to apply it; a restart retains old environments.
 
 Decision-quality judging defaults to `gpt-4.1-mini` after repeated calibration
 found false negatives with `gpt-4o-mini` on valid evidence-backed responses.

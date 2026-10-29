@@ -35,13 +35,13 @@ DEFAULT_PROCESS_KEY = "loanAssessmentEvalProcess"
 # External-task topic this worker subscribes to.
 DEFAULT_TOPIC = "agent-output-eval"
 
-# MLflow judge model URI — gateway-routed, matching the automatic decision_quality
-# judge registered via the mlflow-judges CLI (see local-dev/README.md). Points at
-# an OpenAI-backed endpoint (fluxnova-judge-oai) rather than the original
-# Ollama-backed fluxnova-judge — the Ollama one requires a host-run Ollama process
-# reachable at host.containers.internal:11434, which isn't always up and, when
-# unreachable, hangs/500s the judge call indefinitely rather than failing fast.
-DEFAULT_JUDGE_MODEL = "gateway:/fluxnova-judge-oai"
+# MLflow judge model URI — calls OpenAI directly (needs OPENAI_API_KEY in this
+# process's environment), using the same calibrated model as regression/listener.
+# Was gateway-routed (gateway:/fluxnova-judge-oai), but that endpoint only existed
+# if created by hand on the MLflow server, so a fresh database 404'd every judge
+# call; the earlier Ollama-backed gateway:/fluxnova-judge needed a host-run Ollama
+# process and hung the judge call indefinitely whenever it was unreachable.
+DEFAULT_JUDGE_MODEL = "openai:/gpt-4.1-mini"
 
 # Judge calls routed through the gateway to a local Ollama model have been
 # observed taking 90+ seconds in this environment — and much longer (several

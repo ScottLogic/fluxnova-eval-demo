@@ -151,6 +151,22 @@ def test_listener_receives_judge_credentials_and_container_ollama_url(run_script
     assert "OLLAMA_API_BASE=http://host.containers.internal:11434" in run
 
 
+@pytest.mark.parametrize("service, container, compose_service", [
+    ("eval-service", "eval-service-worker", "eval-service-worker-local"),
+    ("eval-listener", "eval-trace-listener", "eval-trace-listener-local"),
+    ("frontend", "ui-api", "ui-api-local"),
+])
+def test_evaluation_clients_disable_diagnostic_telemetry(run_script, service, container, compose_service):
+    import yaml
+
+    result, commands = run_script(service)
+    assert result.returncode == 0, result.stderr
+    run = next(c for c in commands if c[:1] == ["run"] and container in c)
+    assert "MLFLOW_DISABLE_TELEMETRY=true" in run
+    compose = yaml.safe_load((Path(__file__).parents[1] / "compose.yaml").read_text())
+    assert compose["services"][compose_service]["environment"]["MLFLOW_DISABLE_TELEMETRY"] == "true"
+
+
 def test_worker_host_fallback_can_reach_engine_and_mlflow(run_script):
     result, commands = run_script("eval-service", "host")
     assert result.returncode == 0, result.stderr
