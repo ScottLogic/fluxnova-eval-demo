@@ -132,6 +132,40 @@ calibration report paths, regression run ID, inference counts, artifact smoke re
 and online workflow outcome. All four live regression gates have passed local
 Apple Silicon validation; repeat these checks after workflow, scorer or model changes.
 
+### Review follow-up validation — 2026-10-29
+
+Merged upstream `be3abbd` (#33) in `6ef6280`, preserving the diagnostic-telemetry
+deadlock fix and direct OpenAI judging while aligning the worker's standalone
+default with calibrated `gpt-4.1-mini`. Commit `4d23900` removes the redundant
+keyword-presence scorer, its regex and exports. The active suite now has **17
+scorers** (14 deterministic + 3 judges); semantic judging and gate thresholds are
+unchanged. Earlier 18-scorer evidence below remains an accurate historical record.
+
+- Separate affected suites: shared dataset **134**, worker **23**, listener **38**,
+  UI API **24**, local-dev **76 passed, 1 expected opt-in skip**. Ruff, local
+  documentation links/anchors, affected Bash syntax and diff checks passed.
+- Replayed all six captured outputs from each integrated pod/Compose regression
+  with the current 14 deterministic checks: **12 outputs, zero failures**. Replay
+  reports were uploaded to new MLflow runs `cc573ee572f64c5da2d35fe03aba1401` and
+  `d3218cbdc6a442859e60d202d14bdac5`; the source runs/reports were not altered.
+- Rebuilt/recreated worker, listener and UI API pod containers. Verified
+  `MLFLOW_DISABLE_TELEMETRY=true` in all three and `openai:/gpt-4.1-mini` as both
+  the worker's runtime model and standalone default. Compose configuration with
+  eval/grafana profiles rendered successfully with the same telemetry settings.
+- A fresh UI workflow `8b4e7519-d338-11f1-91c1-0aae3b089c72` completed with
+  `evalPassed=true`; UI scorer definitions contained 17 entries and listener
+  sampling toggled off/on successfully. Trace `tr-8757a600321220682bde334ea2dc1895`
+  contains nine spans, passing final-line/semantic checks and evidence score **1.0**,
+  with no removed-scorer assessment. OTel trace export/assessment logging therefore
+  still works with MLflow diagnostic telemetry disabled.
+
+This follow-up used deterministic replay plus targeted live pod worker/listener/UI
+checks; it did **not** repeat full six-scenario model-driven regression, semantic
+calibration, live Compose orchestration or frontend build/browser tests. Previous
+platform/provider/environment limitations below still apply.
+The VM became unavailable again after these checks completed; its shutdown issue
+remains unresolved, so final stack availability is not claimed for this follow-up.
+
 ### Combined upstream-tree validation — 2026-10-25
 
 Upstream `main` at `771e8c8` was merged in `805113e`, reconciling its UI API,
