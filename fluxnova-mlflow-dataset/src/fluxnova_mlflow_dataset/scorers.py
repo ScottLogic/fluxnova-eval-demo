@@ -295,9 +295,6 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 # ---------------------------------------------------------------------------
 
 _ALWAYS_REQUIRED_TOOLS = ("Check Credit Score", "Run Fraud Screening", "Assess Affordability")
-# Verb forms only ("I recommend REJECTING..." is a decision), not the nouns
-# "approval"/"rejection", which also appear in neutral text like "loan approval process".
-_DECISION_KEYWORD_RE = re.compile(r"\b(APPROV(?:E|ED|ING)|REJECT(?:ED|ING)?)\b", re.IGNORECASE)
 _EVIDENCE_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
     "credit": re.compile(r"credit", re.IGNORECASE),
     "fraud": re.compile(r"fraud", re.IGNORECASE),
@@ -367,25 +364,6 @@ def no_tool_errors(inputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signatur
 
 
 @scorer
-def definitive_decision_stated(outputs) -> Feedback:  # noqa: ANN001 - MLflow scorer signature
-    """
-    Does the final output literally contain an APPROVE or REJECT keyword (or its
-    -ED/-ING form, e.g. "I recommend REJECTING")?
-    A hard syntactic check, complementing (not replacing)
-    the decision_quality LLM judge's opinion on whether it's well-reasoned.
-    """
-    matched = bool(_DECISION_KEYWORD_RE.search(_decision_text(outputs)))
-    return Feedback(
-        value=matched,
-        rationale=(
-            "Final output states a definitive APPROVE/REJECT keyword."
-            if matched
-            else "Final output does not contain a definitive APPROVE or REJECT keyword."
-        ),
-    )
-
-
-@scorer
 def final_recommendation_format(outputs) -> Feedback:  # noqa: ANN001
     """Check the new agent output contract independently of semantic judging."""
     lines = _decision_text(outputs).strip().splitlines()
@@ -404,7 +382,7 @@ def cites_key_evidence_terms(outputs) -> Feedback:  # noqa: ANN001 - MLflow scor
     categories (credit, fraud, affordability) by name. A free, always-on proxy
     for the evidence_citation LLM judge — complements (not replaces) that
     judge's opinion on whether the evidence is well-integrated, the same
-    relationship definitive_decision_stated has with decision_quality.
+    relationship final_recommendation_format has with decision_quality.
     """
     text = _decision_text(outputs)
     missing = [term for term, pattern in _EVIDENCE_TERM_PATTERNS.items() if not pattern.search(text)]
@@ -660,7 +638,6 @@ def requested_amount_passed_to_affordability(inputs) -> Feedback | None:  # noqa
 DETERMINISTIC_SCORERS = [
     tool_correctness,
     no_tool_errors,
-    definitive_decision_stated,
     final_recommendation_format,
     cites_key_evidence_terms,
     no_collateral_check_when_no_collateral,

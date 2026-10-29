@@ -92,7 +92,7 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 - `eval-service-worker` — synchronous per-run scoring, using a direct provider URI in the local demo or a `"gateway:/<endpoint>"` URI (required for
   anything routed through the MLflow AI Gateway).
 
-`DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, and others) are non-LLM checks
+`DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `final_recommendation_format`, and others) are non-LLM checks
 used by `eval-service-worker`, `eval-trace-listener` and the regression suite. They know nothing about tracing:
 each reads plain values from MLflow's standard `inputs`/`outputs` columns (the canonical shape
 `{"input_variables", "tool_calls": [{"name", "status", "arguments"}], "iterations"}` — see

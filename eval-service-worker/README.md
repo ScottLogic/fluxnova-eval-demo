@@ -9,7 +9,7 @@ for container startup and expected results.
 
 **Scorers run per task:** `decision_quality` (the non-deterministic `Guidelines` LLM judge) plus the full
 `DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`
-(`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, `cites_key_evidence_terms`,
+(`tool_correctness`, `no_tool_errors`, `cites_key_evidence_terms`,
 `no_duplicate_tool_calls`, `risk_checks_precede_affordability`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
 `no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`,
 `final_recommendation_format`). The final-format check is independent of semantic judging:

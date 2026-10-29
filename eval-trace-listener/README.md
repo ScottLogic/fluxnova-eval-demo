@@ -34,7 +34,7 @@ The listener runs `LISTENER_SCORERS` (defined in `eval_trace_listener.scoring`) 
 
 - `decision_quality` — the `Guidelines` judge (definitive, evidence-backed APPROVE/REJECT).
 - `evidence_citation` — grades how well the output grounds its reasoning in the applicant/tool evidence (0.0–1.0).
-- all 12 deterministic code scorers (`tool_correctness`, `no_tool_errors`, `definitive_decision_stated`, `final_recommendation_format`,
+- all 11 deterministic code scorers (`tool_correctness`, `no_tool_errors`, `final_recommendation_format`,
   `cites_key_evidence_terms`, `no_duplicate_tool_calls`, `risk_checks_precede_affordability`, the collateral/employment guards,
   `step_efficiency`, `affordability_called_after_income_confirmed`).
 

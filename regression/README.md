@@ -14,7 +14,7 @@ output with every scorer in one `mlflow.genai.evaluate()` call. Four gate groups
 
 - `decision_quality`: an unambiguous evidence-backed APPROVE/REJECT, judged semantically.
 - `matches_golden`: agreement with the golden decision/evidence, thresholded at `GOLDEN_MATCH_THRESHOLD`.
-- `ALL_DETERMINISTIC_SCORERS` (15): tool selection, errors, duplicates, risk/income ordering,
+- `ALL_DETERMINISTIC_SCORERS` (14): tool selection, errors, duplicates, risk/income ordering,
   inference budget, evidence keywords, plain final recommendation line and captured arguments.
 - `evidence_citation`: grounded evidence, thresholded at `REGRESSION_EVIDENCE_CITATION_THRESHOLD`.
 
@@ -22,6 +22,13 @@ All groups must pass. `@mlflow.test` records one outcome per scenario. The
 `pytest-json-report` plugin exposes every scorer's name/status/value/rationale in
 `metadata.scorers` for the UI API; replayable reports preserve the process ID and
 captured output/tool data as well. `./setup.sh` installs the plugin.
+
+The current bundle has **17 scorers** (14 deterministic + 3 judges).
+`final_recommendation_format` is the sole deterministic decision-format check;
+`decision_quality` still judges whether the decision is supported and coherent.
+The older keyword-presence check was redundant because a valid final line already
+guarantees a decision keyword. Historical validation counts below describe the
+bundles actually used for those runs and are retained unchanged.
 
 ### One real run per golden, one evaluation of that frozen result
 

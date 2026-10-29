@@ -196,7 +196,7 @@ variables). The scorers split into two families:
 
 They are grouped into reusable bundles:
 
-- `DETERMINISTIC_SCORERS` — the 12 code scorers below that need only tool *names* / status / input-variables / output
+- `DETERMINISTIC_SCORERS` — the 11 code scorers below that need only tool *names* / status / input-variables / output
   text (no captured arguments).
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
@@ -211,7 +211,6 @@ service's README for exactly how it sources the scorer inputs.
 | Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
 |-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
 | `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | R · W · L |
-| `definitive_decision_stated`                          | Code      | DETERMINISTIC | Output literally states an APPROVE/REJECT decision                                | R · W · L |
 | `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · L |
 | `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | R · W · L |
 | `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output mentions credit, fraud and affordability evidence                         | R · W · L |
