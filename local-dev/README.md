@@ -232,7 +232,8 @@ The runner returns when the agent Call Activity (`AgentTask_CreditRisk`) finishe
 The process then forks, and trace export and judging continue on both branches:
 
 - **Guardrail** (`eval-service-worker`): in Cockpit, confirm the process receives
-  `evalPassed` and `evalRationale`. A failed evaluation routes to the
+  `evalPassed`, `evalScore`, `evalFailedScorers` and `evalRationale`. The pass
+  thresholds are the task's `evalMinScore`/`evalRequiredScorers` inputs. A failed evaluation routes to the
   `Human: Risk Assessment Review` task; a pass carries on through the loan process.
   Waiting at a human task is expected.
 - **Async Eval** (`eval-async-worker`): the `Eval: Record Agent Output Scores` task

@@ -12,9 +12,10 @@ from eval_service_worker.config import EvalServiceConfig
 from eval_service_worker.scoring import NoFinalOutputError
 
 
-def _task(process_instance_id: str = "proc-1") -> MagicMock:
+def _task(process_instance_id: str = "proc-1", variables: dict | None = None) -> MagicMock:
     task = MagicMock()
     task.get_process_instance_id.return_value = process_instance_id
+    task.get_variable.side_effect = (variables or {}).get
     return task
 
 
@@ -71,7 +72,7 @@ class TestMakeHandler:
         assert task.failure.call_args.kwargs["max_retries"] == worker._MAX_RETRIES
 
     def test_passes_fluxnova_client_to_scoring(self, monkeypatch):
-        score = MagicMock(return_value=MagicMock(eval_passed=True, eval_rationale="ok"))
+        score = MagicMock(return_value=MagicMock(eval_passed=True, eval_rationale="ok", eval_score=1.0, failed_scorers=()))
         monkeypatch.setattr(worker, "score_process_instance", score)
         client = _client(child_id="child-9")
 
@@ -93,7 +94,7 @@ class TestMakeHandler:
         assert kwargs["max_retries"] == 0
 
     def test_completes_task_on_success(self, monkeypatch):
-        outcome = MagicMock(eval_passed=True, eval_rationale="Looks good.")
+        outcome = MagicMock(eval_passed=True, eval_rationale="Looks good.", eval_score=1.0, failed_scorers=())
         score = MagicMock(return_value=outcome)
         monkeypatch.setattr(worker, "score_process_instance", score)
         handler = worker.make_handler(EvalServiceConfig(), _client())
@@ -108,7 +109,7 @@ class TestMakeHandler:
     def test_scores_child_instance_when_present(self, monkeypatch):
         """When the parent (eval) instance has a Call Activity child, scoring
         must target the child's instance id, not the parent's."""
-        outcome = MagicMock(eval_passed=True, eval_rationale="ok")
+        outcome = MagicMock(eval_passed=True, eval_rationale="ok", eval_score=1.0, failed_scorers=())
         score = MagicMock(return_value=outcome)
         monkeypatch.setattr(worker, "score_process_instance", score)
         handler = worker.make_handler(EvalServiceConfig(), _client(child_id="child-9"))
@@ -119,7 +120,7 @@ class TestMakeHandler:
         assert scored_id == "child-9"
 
     def test_falls_back_to_parent_when_no_child(self, monkeypatch):
-        outcome = MagicMock(eval_passed=True, eval_rationale="ok")
+        outcome = MagicMock(eval_passed=True, eval_rationale="ok", eval_score=1.0, failed_scorers=())
         score = MagicMock(return_value=outcome)
         monkeypatch.setattr(worker, "score_process_instance", score)
         handler = worker.make_handler(EvalServiceConfig(), _client(child_id=None))
@@ -131,7 +132,7 @@ class TestMakeHandler:
     def test_falls_back_to_parent_when_lookup_errors(self, monkeypatch):
         from fluxnova_mlflow_dataset import ApiError
 
-        outcome = MagicMock(eval_passed=True, eval_rationale="ok")
+        outcome = MagicMock(eval_passed=True, eval_rationale="ok", eval_score=1.0, failed_scorers=())
         score = MagicMock(return_value=outcome)
         monkeypatch.setattr(worker, "score_process_instance", score)
         client = MagicMock()
@@ -141,6 +142,58 @@ class TestMakeHandler:
         handler(_task(process_instance_id="parent-1"))
 
         assert score.call_args[0][0] == "parent-1"
+
+
+class TestGuardrailThresholds:
+    def _outcome(self) -> MagicMock:
+        return MagicMock(
+            eval_passed=True,
+            eval_rationale="ok",
+            eval_score=0.9,
+            failed_scorers=("step_efficiency",),
+        )
+
+    def test_passes_bpmn_thresholds_to_scoring_and_returns_score(self, monkeypatch):
+        score = MagicMock(return_value=self._outcome())
+        monkeypatch.setattr(worker, "score_process_instance", score)
+        task = _task(variables={"evalMinScore": 0.8, "evalRequiredScorers": "decision_quality"})
+
+        worker.make_handler(EvalServiceConfig(), _client())(task)
+
+        thresholds = score.call_args.kwargs["thresholds"]
+        assert thresholds.min_score == 0.8
+        assert thresholds.required_scorers == ("decision_quality",)
+        variables = task.complete.call_args.kwargs["global_variables"]
+        assert variables["evalScore"] == {"value": 0.9, "type": "Double"}
+        assert variables["evalFailedScorers"]["value"] == "step_efficiency"
+
+    def test_defaults_when_bpmn_sets_no_thresholds(self, monkeypatch):
+        score = MagicMock(return_value=self._outcome())
+        monkeypatch.setattr(worker, "score_process_instance", score)
+
+        worker.make_handler(EvalServiceConfig(), _client())(_task())
+
+        thresholds = score.call_args.kwargs["thresholds"]
+        assert thresholds.min_score == 1.0
+        assert thresholds.required_scorers == ()
+
+    @pytest.mark.parametrize(
+        "variables",
+        [
+            {"evalMinScore": "high"},
+            {"evalMinScore": 1.5},
+            {"evalRequiredScorers": "decision_quality,not_a_scorer"},
+        ],
+    )
+    def test_invalid_thresholds_raise_incident_without_scoring(self, monkeypatch, variables):
+        score = MagicMock()
+        monkeypatch.setattr(worker, "score_process_instance", score)
+        task = _task(variables=variables)
+
+        worker.make_handler(EvalServiceConfig(), _client())(task)
+
+        score.assert_not_called()
+        assert task.failure.call_args.kwargs["max_retries"] == 0
 
 
 def test_idle_long_poll_is_not_the_ten_minute_task_lease(monkeypatch):

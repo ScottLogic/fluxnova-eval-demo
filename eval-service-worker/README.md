@@ -32,8 +32,8 @@ for the Call Activity child, see below) from Fluxnova:
 
 If the variables can't be read (Fluxnova REST error) or the run has no final answer yet, the task is retried.
 
-All scorers gate the BPMN outcome: `evalPassed` is `True` only when the `decision_quality` judge *and* every
-deterministic scorer pass. Every scorer's `Feedback` is logged back onto the same real trace as MLflow assessments,
+`evalPassed` is decided by thresholds set on the BPMN task (see [Guardrail thresholds](#guardrail-thresholds)); by
+default every applicable scorer, including the `decision_quality` judge, must pass. Every scorer's `Feedback` is logged back onto the same real trace as MLflow assessments,
 grouped under one MLflow Evaluation Run (via
 `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}], scorers=[...])`), plus a
 lightweight MLflow evaluation-dataset record. The record is content-free: process instance id, the
@@ -65,6 +65,44 @@ default, matching the standalone package's calibrated direct-OpenAI model.
 pip install -e ../fluxnova-mlflow-dataset   # shared trace-reader + judge definition
 pip install -e .
 ```
+
+## Guardrail thresholds
+
+The pass/fail thresholds live in the BPMN, not in this worker, so they can be changed in the Modeler without
+redeploying it. They are `camunda:inputParameter`s on the Eval service task (in the Modeler: select the task,
+**Inputs**):
+
+```xml
+<camunda:inputParameter name="evalMinScore">${execution.hasVariable('evalMinScore') ? evalMinScore : 1.0}</camunda:inputParameter>
+<camunda:inputParameter name="evalRequiredScorers">${execution.hasVariable('evalRequiredScorers') ? evalRequiredScorers : 'decision_quality'}</camunda:inputParameter>
+```
+
+The value at the end of each expression is the default. A run can override it by starting with a process variable of
+the same name; the UI's Workflow run page does this from its "Guardrail thresholds for the next run" controls, and
+`fluxnova-run` does it if you add `evalMinScore`/`evalRequiredScorers` to the config's `variables`. A plain literal
+(e.g. `1.0`) also works, but then runs can't override it.
+
+| Input                 | Meaning                                                                                       | Default when absent |
+|-----------------------|-----------------------------------------------------------------------------------------------|---------------------|
+| `evalMinScore`        | Minimum fraction (0–1) of applicable scorers that must pass. `1.0` means every one must pass. | `1.0`               |
+| `evalRequiredScorers` | Comma-separated scorer names that must pass whatever the score.                               | none                |
+
+A scorer that gives no verdict (not applicable to this run, e.g. the self-employed check for an employed applicant)
+is left out of the score and can't fail the run, even if it's required. `LoanApprovalProcess_AI.bpmn` sets
+`1.0` / `decision_quality`, which is the same behaviour as before thresholds existed. `loan-assesment-eval.bpmn` sets
+none, so it uses the defaults.
+
+The task completes with these process variables:
+
+| Variable            | Type    | Value                                                                         |
+|---------------------|---------|-------------------------------------------------------------------------------|
+| `evalPassed`        | Boolean | Whether the thresholds were met; the gateway routes on this                   |
+| `evalScore`         | Double  | Fraction of applicable scorers that passed                                    |
+| `evalFailedScorers` | String  | Comma-separated applicable scorers that failed, even if the run still passed |
+| `evalRationale`     | String  | Why it passed or failed, including the failed scorers' rationales            |
+
+Invalid thresholds (a non-numeric or out-of-range `evalMinScore`, or an unknown name in `evalRequiredScorers`) fail
+the task straight away with an incident naming the problem, before any judge call.
 
 ## Config
 

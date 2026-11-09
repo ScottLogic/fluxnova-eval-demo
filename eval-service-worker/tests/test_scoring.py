@@ -10,6 +10,7 @@ import pytest
 from fluxnova_mlflow_dataset import AgentRun
 
 from eval_service_worker import scoring
+from eval_service_worker.guardrail import GuardrailThresholds
 
 
 @dataclass
@@ -338,3 +339,45 @@ class TestScoreProcessInstance:
                 experiment_name=None,
                 judge_model="gateway:/fluxnova-judge",
             )
+
+
+class TestThresholds:
+    def _score(self, monkeypatch, thresholds):
+        _OUTPUTS["proc-thr"] = "APPROVE"
+        _stub_common(
+            monkeypatch,
+            "yes",
+            "Well reasoned.",
+            deterministic_overrides={
+                "no_tool_errors/value": False,
+                "no_tool_errors/rationale": "Fraud screening errored.",
+            },
+        )
+        return scoring.score_process_instance(
+            "proc-thr",
+            client=MagicMock(),
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+            thresholds=thresholds,
+        )
+
+    def test_default_threshold_fails_on_any_scorer(self, monkeypatch):
+        outcome = self._score(monkeypatch, None)
+        assert outcome.eval_passed is False
+        assert outcome.eval_score == 0.75
+        assert outcome.failed_scorers == ("no_tool_errors",)
+        assert "below the minimum 1.00" in outcome.eval_rationale
+
+    def test_lower_threshold_passes_and_names_tolerated_failure(self, monkeypatch):
+        outcome = self._score(monkeypatch, GuardrailThresholds(min_score=0.75))
+        assert outcome.eval_passed is True
+        assert "Tolerated failures" in outcome.eval_rationale
+        assert "Fraud screening errored." in outcome.eval_rationale
+
+    def test_required_scorer_overrides_score(self, monkeypatch):
+        thresholds = GuardrailThresholds(min_score=0.5, required_scorers=("no_tool_errors",))
+        outcome = self._score(monkeypatch, thresholds)
+        assert outcome.eval_passed is False
+        assert outcome.eval_rationale.startswith("Required scorer(s) failed: no_tool_errors")

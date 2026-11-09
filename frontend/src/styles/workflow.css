@@ -2,6 +2,14 @@
   margin: 0;
 }
 
+.guardrail-thresholds {
+  margin-top: 0.75rem;
+}
+
+.guardrail-result .result-grid {
+  margin-top: 0.5rem;
+}
+
 .workflow-section {
   display: grid;
   gap: 1rem;
@@ -116,4 +124,58 @@
   word-break: break-word;
   max-height: 16rem;
   overflow: auto;
+}
+
+.guardrail-settings {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(232, 237, 244, 0.18);
+  border-radius: 0.35rem;
+}
+
+.guardrail-settings:disabled {
+  opacity: 0.55;
+}
+
+.guardrail-settings .field input[type='range'] {
+  appearance: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--copper);
+}
+
+.guardrail-scorer-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.guardrail-scorer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* These checkboxes sit inside a .field, whose text-input styling
+   (appearance: none, padding, width: 100%) hides the native checkmark.
+   Restore a normal checkbox; the extra class outranks forms.css's rules. */
+.guardrail-settings .guardrail-scorer input[type='checkbox'] {
+  appearance: auto;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--copper);
+  cursor: pointer;
+}
+
+.btn-small {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
 }

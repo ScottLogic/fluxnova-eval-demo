@@ -447,7 +447,9 @@ they never disagree on what "good" means:
   [`eval-async-worker/README.md`](eval-async-worker/README.md).
 - **`eval-service-worker`** (blocking BPMN external-task worker) — handles the guardrail task
   `ServiceTask_EvaluateAgentOutput`. Scores that one run with the deterministic scorers **plus** the `decision_quality`
-  LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway) and returns `evalPassed`/`evalRationale`,
+  LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway) and returns `evalPassed`/`evalRationale`
+  (plus `evalScore`/`evalFailedScorers`), using pass thresholds (`evalMinScore`, `evalRequiredScorers`) set as inputs
+  on the BPMN task,
   which route failed runs to human review. Best for guardrails wired into the workflow. See
   [`eval-service-worker/README.md`](eval-service-worker/README.md).
 - **`regression/`** (pytest gating suite) — drives the live agent once per parametrized golden scenario

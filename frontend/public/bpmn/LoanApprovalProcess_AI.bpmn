@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:modeler="http://fluxnova.finos.org/schema/modeler/1.0" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" id="Definitions_123" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Fluxnova Modeler" exporterVersion="1.3.0-dev" modeler:executionPlatform="Fluxnova Platform" modeler:executionPlatformVersion="2.0.0">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" xmlns:modeler="http://fluxnova.finos.org/schema/modeler/1.0" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_123" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Fluxnova Modeler" exporterVersion="1.3.0-dev" modeler:executionPlatform="Fluxnova Platform" modeler:executionPlatformVersion="2.0.0">
   <bpmn:process id="LoanApprovalProcess_AI" name="Loan Approval Process" isExecutable="true" camunda:historyTimeToLive="40">
     <bpmn:startEvent id="StartEvent_1" name="Loan Application Submitted">
-      <bpmn:outgoing>SequenceFlow_1</bpmn:outgoing>
       <bpmn:outgoing>Flow_1y6wy99</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:serviceTask id="ServiceTask_DocumentIntelligence" name="AI: Extract Data from Documents" camunda:type="external" camunda:topic="document-intelligence">
-      <bpmn:incoming>SequenceFlow_1</bpmn:incoming>
+      <bpmn:incoming>Flow_1y6wy99</bpmn:incoming>
       <bpmn:outgoing>SequenceFlow_2</bpmn:outgoing>
+      <bpmn:outgoing>Flow_0s9x5o6</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:exclusiveGateway id="Gateway_1" name="Automated Validation" default="SequenceFlow_3">
       <bpmn:incoming>SequenceFlow_2</bpmn:incoming>
@@ -107,7 +107,6 @@
       <bpmn:incoming>SequenceFlow_18</bpmn:incoming>
       <bpmn:incoming>SequenceFlow_24</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:sequenceFlow id="SequenceFlow_1" sourceRef="StartEvent_1" targetRef="ServiceTask_DocumentIntelligence" />
     <bpmn:sequenceFlow id="SequenceFlow_2" sourceRef="ServiceTask_DocumentIntelligence" targetRef="Gateway_1" />
     <bpmn:sequenceFlow id="SequenceFlow_4" name="Invalid" sourceRef="Gateway_1" targetRef="EndEvent_Loan_Rejected">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isInvalid eq true}</bpmn:conditionExpression>
@@ -135,9 +134,9 @@
     <bpmn:sequenceFlow id="SequenceFlow_27" sourceRef="ServiceTask_DisburseFunds" targetRef="EndEvent_1" />
     <bpmn:sequenceFlow id="SequenceFlow_3" name="Valid" sourceRef="Gateway_1" targetRef="ServiceTask_FraudDetection" />
     <bpmn:task id="Activity_1q0ttb5" name="Store Documents">
-      <bpmn:incoming>Flow_1y6wy99</bpmn:incoming>
+      <bpmn:incoming>Flow_0s9x5o6</bpmn:incoming>
     </bpmn:task>
-    <bpmn:sequenceFlow id="Flow_1y6wy99" sourceRef="StartEvent_1" targetRef="Activity_1q0ttb5" />
+    <bpmn:sequenceFlow id="Flow_1y6wy99" sourceRef="StartEvent_1" targetRef="ServiceTask_DocumentIntelligence" />
     <bpmn:endEvent id="Event_Loan_Rejected_By_Compliance" name="Loan Rejected by Compliance">
       <bpmn:incoming>Flow_1vkf6s8</bpmn:incoming>
     </bpmn:endEvent>
@@ -164,7 +163,13 @@
       <bpmn:outgoing>Flow_144jgp8</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:serviceTask id="ServiceTask_EvaluateAgentOutput" name="Evaluate Agent Output" camunda:type="external" camunda:topic="agent-output-eval">
-      <bpmn:documentation>Run MLFlow Evaluation against the output of the AI Credit Risk Agent</bpmn:documentation>
+      <bpmn:documentation>Blocking guardrail: eval-service-worker scores the AI Credit Risk Agent's output and returns evalPassed, evalRationale, evalScore (fraction of applicable scorers that passed) and evalFailedScorers. Thresholds are the input parameters below, editable here without changing the worker: evalMinScore (0-1; 1.0 means every applicable scorer must pass) and evalRequiredScorers (comma-separated scorer names that must pass whatever the score). Each uses a process variable of the same name when the run was started with one (e.g. from the UI's Workflow run page), otherwise the default at the end of the expression.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="evalMinScore">${execution.hasVariable('evalMinScore') ? evalMinScore : 1.0}</camunda:inputParameter>
+          <camunda:inputParameter name="evalRequiredScorers">${execution.hasVariable('evalRequiredScorers') ? evalRequiredScorers : 'decision_quality'}</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_SkipEval_Run</bpmn:incoming>
       <bpmn:outgoing>Flow_1ag9u0i</bpmn:outgoing>
     </bpmn:serviceTask>
@@ -201,6 +206,7 @@
     </bpmn:userTask>
     <bpmn:sequenceFlow id="Flow_144jgp8" name="yes" sourceRef="Gateway_13tt7bu" targetRef="UserTask_ReviewFailedEval" />
     <bpmn:sequenceFlow id="Flow_0l6ly0q" sourceRef="UserTask_ReviewFailedEval" targetRef="Gateway_4" />
+    <bpmn:sequenceFlow id="Flow_0s9x5o6" sourceRef="ServiceTask_DocumentIntelligence" targetRef="Activity_1q0ttb5" />
     <bpmn:textAnnotation id="TextAnnotation_1y46zec">
       <bpmn:text>Connect to the fraud detection agent</bpmn:text>
     </bpmn:textAnnotation>
@@ -212,21 +218,6 @@
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="LoanApprovalProcess_AI">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="180" y="330" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="158" y="366" width="81" height="27" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="ServiceTask_DocumentIntelligence_di" bpmnElement="ServiceTask_DocumentIntelligence" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
-        <dc:Bounds x="280" y="310" width="120" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Gateway_1_di" bpmnElement="Gateway_1" isMarkerVisible="true">
-        <dc:Bounds x="435" y="323" width="50" height="50" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="433" y="286" width="54" height="27" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ServiceTask_FraudDetection_di" bpmnElement="ServiceTask_FraudDetection" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
         <dc:Bounds x="580" y="303" width="120" height="80" />
       </bpmndi:BPMNShape>
@@ -236,15 +227,47 @@
           <dc:Bounds x="744" y="299" width="82" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_0etjc6a_di" bpmnElement="ServiceTask_EvaluateAgentOutput">
-        <dc:Bounds x="780" y="480" width="100" height="80" />
+      <bpmndi:BPMNShape id="EndEvent_2_di" bpmnElement="EndEvent_Loan_Rejected">
+        <dc:Bounds x="1122" y="682" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1104.5" y="728" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_AsyncEvalRecorded_di" bpmnElement="EndEvent_AsyncEvalRecorded">
+        <dc:Bounds x="722" y="622" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="705" y="665" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="92" y="330" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="70" y="366" width="81" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_DocumentIntelligence_di" bpmnElement="ServiceTask_DocumentIntelligence" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
+        <dc:Bounds x="160" y="310" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1q0ttb5_di" bpmnElement="Activity_1q0ttb5" bioc:stroke="#0d4372" bioc:fill="#bbdefb" color:background-color="#bbdefb" color:border-color="#0d4372">
+        <dc:Bounds x="170" y="460" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Gateway_SkipEvalServiceWorker_di" bpmnElement="Gateway_SkipEvalServiceWorker" isMarkerVisible="true">
-        <dc:Bounds x="670" y="495" width="50" height="50" />
+      <bpmndi:BPMNShape id="Gateway_1_di" bpmnElement="Gateway_1" isMarkerVisible="true">
+        <dc:Bounds x="335" y="323" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="654" y="445" width="83" height="27" />
+          <dc:Bounds x="333" y="286" width="54" height="27" />
         </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ForkAsyncEval_di" bpmnElement="Gateway_ForkAsyncEval">
+        <dc:Bounds x="555" y="495" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_041p3wl_di" bpmnElement="AgentTask_CreditRisk" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
+        <dc:Bounds x="400" y="480" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_AsyncEvaluateAgentOutput_di" bpmnElement="ServiceTask_AsyncEvaluateAgentOutput">
+        <dc:Bounds x="460" y="600" width="100" height="80" />
+        <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="SubProcess_ComplianceReview_di" bpmnElement="SubProcess_ComplianceReview" isExpanded="true">
         <dc:Bounds x="890" y="80" width="660" height="260" />
@@ -338,25 +361,17 @@
           <dc:Bounds x="2363" y="503" width="75" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_2_di" bpmnElement="EndEvent_Loan_Rejected">
-        <dc:Bounds x="1122" y="652" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="1104" y="698" width="71" height="14" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_1q0ttb5_di" bpmnElement="Activity_1q0ttb5" bioc:stroke="#0d4372" bioc:fill="#bbdefb" color:background-color="#bbdefb" color:border-color="#0d4372">
-        <dc:Bounds x="290" y="420" width="100" height="80" />
-        <bpmndi:BPMNLabel />
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Event_1jvtnvk_di" bpmnElement="Event_Loan_Rejected_By_Compliance">
         <dc:Bounds x="1682" y="182" width="36" height="36" />
         <bpmndi:BPMNLabel>
           <dc:Bounds x="1658" y="225" width="86" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_041p3wl_di" bpmnElement="AgentTask_CreditRisk" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
-        <dc:Bounds x="440" y="480" width="100" height="80" />
-        <bpmndi:BPMNLabel />
+      <bpmndi:BPMNShape id="Gateway_SkipEvalServiceWorker_di" bpmnElement="Gateway_SkipEvalServiceWorker" isMarkerVisible="true">
+        <dc:Bounds x="670" y="495" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="654" y="445" width="83" height="27" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_13tt7bu_di" bpmnElement="Gateway_13tt7bu" isMarkerVisible="true">
         <dc:Bounds x="955" y="495" width="50" height="50" />
@@ -364,10 +379,18 @@
           <dc:Bounds x="946" y="555" width="68" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0etjc6a_di" bpmnElement="ServiceTask_EvaluateAgentOutput">
+        <dc:Bounds x="780" y="480" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_14wtxy4_di" bpmnElement="UserTask_ReviewFailedEval">
         <dc:Bounds x="930" y="370" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Association_1qib9ly_di" bpmnElement="Association_1qib9ly">
+        <di:waypoint x="276" y="313" />
+        <di:waypoint x="345" y="268" />
+      </bpmndi:BPMNEdge>
       <bpmndi:BPMNShape id="TextAnnotation_1y46zec_di" bpmnElement="TextAnnotation_1y46zec">
         <dc:Bounds x="630" y="213" width="130" height="47" />
         <bpmndi:BPMNLabel />
@@ -376,20 +399,16 @@
         <dc:Bounds x="340" y="213" width="120" height="55" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="SequenceFlow_1_di" bpmnElement="SequenceFlow_1">
-        <di:waypoint x="216" y="348" />
-        <di:waypoint x="280" y="348" />
-      </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_2_di" bpmnElement="SequenceFlow_2">
-        <di:waypoint x="400" y="348" />
-        <di:waypoint x="435" y="348" />
+        <di:waypoint x="280" y="348" />
+        <di:waypoint x="335" y="348" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_4_di" bpmnElement="SequenceFlow_4">
-        <di:waypoint x="460" y="373" />
-        <di:waypoint x="460" y="670" />
-        <di:waypoint x="1122" y="670" />
+        <di:waypoint x="360" y="373" />
+        <di:waypoint x="360" y="700" />
+        <di:waypoint x="1122" y="700" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="589" y="682" width="32" height="14" />
+          <dc:Bounds x="314" y="660" width="32" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_5_di" bpmnElement="SequenceFlow_5">
@@ -416,9 +435,9 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_18_di" bpmnElement="SequenceFlow_18">
         <di:waypoint x="1140" y="545" />
-        <di:waypoint x="1140" y="652" />
+        <di:waypoint x="1140" y="682" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1152" y="593" width="15" height="14" />
+          <dc:Bounds x="1152" y="608" width="15" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_19_di" bpmnElement="SequenceFlow_19">
@@ -454,10 +473,10 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_24_di" bpmnElement="SequenceFlow_24">
         <di:waypoint x="1780" y="585" />
-        <di:waypoint x="1780" y="670" />
-        <di:waypoint x="1158" y="670" />
+        <di:waypoint x="1780" y="700" />
+        <di:waypoint x="1158" y="700" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="1682" y="657" width="15" height="14" />
+          <dc:Bounds x="1682" y="687" width="15" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_25_di" bpmnElement="SequenceFlow_25">
@@ -473,17 +492,17 @@
         <di:waypoint x="2382" y="485" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_3_di" bpmnElement="SequenceFlow_3">
-        <di:waypoint x="484" y="347" />
+        <di:waypoint x="384" y="347" />
         <di:waypoint x="580" y="347" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="490" y="334" width="24" height="14" />
+          <dc:Bounds x="409" y="334" width="24" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1y6wy99_di" bpmnElement="Flow_1y6wy99">
-        <di:waypoint x="216" y="348" />
-        <di:waypoint x="250" y="348" />
-        <di:waypoint x="250" y="460" />
-        <di:waypoint x="290" y="460" />
+        <di:waypoint x="128" y="348" />
+        <di:waypoint x="144" y="348" />
+        <di:waypoint x="144" y="350" />
+        <di:waypoint x="160" y="350" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1vkf6s8_di" bpmnElement="Flow_1vkf6s8">
         <di:waypoint x="1550" y="200" />
@@ -492,37 +511,26 @@
       <bpmndi:BPMNEdge id="Flow_1gum3id_di" bpmnElement="Flow_1gum3id">
         <di:waypoint x="785" y="373" />
         <di:waypoint x="785" y="420" />
-        <di:waypoint x="490" y="420" />
-        <di:waypoint x="490" y="480" />
+        <di:waypoint x="450" y="420" />
+        <di:waypoint x="450" y="480" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_043ab0n_di" bpmnElement="Flow_043ab0n">
-        <di:waypoint x="540" y="520" />
-        <di:waypoint x="575" y="520" />
+        <di:waypoint x="500" y="520" />
+        <di:waypoint x="555" y="520" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNShape id="Gateway_ForkAsyncEval_di" bpmnElement="Gateway_ForkAsyncEval">
-        <dc:Bounds x="575" y="495" width="50" height="50" />
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_Fork_ToGuardrail_di" bpmnElement="Flow_Fork_ToGuardrail">
-        <di:waypoint x="625" y="520" />
+        <di:waypoint x="605" y="520" />
         <di:waypoint x="670" y="520" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNShape id="ServiceTask_AsyncEvaluateAgentOutput_di" bpmnElement="ServiceTask_AsyncEvaluateAgentOutput">
-        <dc:Bounds x="550" y="710" width="100" height="80" />
-        <bpmndi:BPMNLabel />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_AsyncEvalRecorded_di" bpmnElement="EndEvent_AsyncEvalRecorded">
-        <dc:Bounds x="702" y="732" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="685" y="775" width="70" height="14" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_Fork_ToAsyncEval_di" bpmnElement="Flow_Fork_ToAsyncEval">
-        <di:waypoint x="600" y="545" />
-        <di:waypoint x="600" y="710" />
+        <di:waypoint x="580" y="545" />
+        <di:waypoint x="580" y="573" />
+        <di:waypoint x="510" y="573" />
+        <di:waypoint x="510" y="600" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_AsyncEval_ToEnd_di" bpmnElement="Flow_AsyncEval_ToEnd">
-        <di:waypoint x="650" y="750" />
-        <di:waypoint x="702" y="750" />
+        <di:waypoint x="560" y="640" />
+        <di:waypoint x="722" y="640" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_SkipEval_Run_di" bpmnElement="Flow_SkipEval_Run">
         <di:waypoint x="720" y="520" />
@@ -568,9 +576,9 @@
         <di:waypoint x="654" y="303" />
         <di:waypoint x="669" y="260" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Association_1qib9ly_di" bpmnElement="Association_1qib9ly">
-        <di:waypoint x="356" y="310" />
-        <di:waypoint x="374" y="268" />
+      <bpmndi:BPMNEdge id="Flow_0s9x5o6_di" bpmnElement="Flow_0s9x5o6">
+        <di:waypoint x="220" y="390" />
+        <di:waypoint x="220" y="460" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

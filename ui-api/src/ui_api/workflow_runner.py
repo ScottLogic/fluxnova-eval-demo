@@ -9,10 +9,12 @@ test suite, so there's no need to isolate them in a subprocess.
 from __future__ import annotations
 
 import os
+import re
 import threading
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 from fluxnova_mlflow_dataset.bpmn import BpmnLookup, BpmnLookupError
 from fluxnova_runner.client import ApiError, Client
@@ -120,15 +122,88 @@ def _agent_config(cfg: RunnerConfig) -> dict[str, str] | None:
         return None
 
 
+# The blocking guardrail Eval task is identified by its external-task topic,
+# and its pass thresholds are camunda:inputParameters on it (see
+# eval-service-worker's guardrail.py for their meaning and defaults).
+_GUARDRAIL_TOPIC = "agent-output-eval"
+_BPMN_NS = {
+    "bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL",
+    "camunda": "http://camunda.org/schema/1.0/bpmn",
+}
+_CAMUNDA_TOPIC = "{http://camunda.org/schema/1.0/bpmn}topic"
+_DEFAULT_MIN_SCORE = 1.0
+# An input like ${execution.hasVariable('evalMinScore') ? evalMinScore : 1.0}
+# takes the run's process variable when set, else the trailing default.
+_OVERRIDABLE_INPUT = re.compile(r"^\$\{\s*execution\.hasVariable\(\s*['\"](\w+)['\"]\s*\)\s*\?.*:\s*(.+?)\s*\}$", re.S)
+
+
+def _input_default(text: str, name: str) -> tuple[str, bool]:
+    """Returns ``(default value, overridable per run)`` for one input parameter."""
+    match = _OVERRIDABLE_INPUT.match(text)
+    if match and match.group(1) == name:
+        return match.group(2).strip("'\""), True
+    return text, False
+
+
+def _guardrail_config(cfg: RunnerConfig) -> dict[str, Any] | None:
+    """Returns the guardrail Eval task's pass thresholds as authored on the
+    BPMN, or ``None`` if the workflow has no guardrail task.
+
+    ``minScore``/``requiredScorers`` fall back to the worker's defaults when
+    the task sets no input; ``configuredInBpmn`` says whether either was set.
+    """
+    try:
+        root = ElementTree.parse(cfg.bpmn_path).getroot()
+    except (OSError, ElementTree.ParseError):
+        return None
+    task = next(
+        (
+            t
+            for t in root.iter("{http://www.omg.org/spec/BPMN/20100524/MODEL}serviceTask")
+            if t.get(_CAMUNDA_TOPIC) == _GUARDRAIL_TOPIC
+        ),
+        None,
+    )
+    if task is None:
+        return None
+    params = {
+        p.get("name"): (p.text or "").strip()
+        for p in task.findall(
+            "./bpmn:extensionElements/camunda:inputOutput/camunda:inputParameter", _BPMN_NS
+        )
+    }
+    min_text, min_overridable = _input_default(params.get("evalMinScore", ""), "evalMinScore")
+    required_text, required_overridable = _input_default(
+        params.get("evalRequiredScorers", ""), "evalRequiredScorers"
+    )
+    try:
+        min_score = float(min_text) if min_text else _DEFAULT_MIN_SCORE
+    except ValueError:
+        min_score = None  # invalid in the BPMN; the worker will raise an incident
+    required = [n.strip() for n in required_text.split(",") if n.strip()]
+    return {
+        "taskId": task.get("id"),
+        "taskName": task.get("name") or task.get("id"),
+        "minScore": min_score,
+        "requiredScorers": required,
+        "configuredInBpmn": "evalMinScore" in params or "evalRequiredScorers" in params,
+        # Whether a run can override each threshold by starting with a process
+        # variable of the same name (the task input reads it if present).
+        "overridable": min_overridable and required_overridable,
+    }
+
+
 def get_config() -> dict[str, Any]:
     """Returns the default process variables a run starts with, for a form to
     pre-populate and selectively override (the "random input" a caller can
-    edit), plus the agent's model/provider/prompt as authored on the BPMN."""
+    edit), plus the agent's model/provider/prompt and the guardrail's pass
+    thresholds as authored on the BPMN."""
     cfg = _load_config()
     return {
         "processKey": cfg.process_key,
         "variables": cfg.variables,
         "agentConfig": _agent_config(cfg),
+        "guardrail": _guardrail_config(cfg),
     }
 
 

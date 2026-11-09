@@ -163,7 +163,13 @@
       <bpmn:outgoing>Flow_144jgp8</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:serviceTask id="ServiceTask_EvaluateAgentOutput" name="Evaluate Agent Output" camunda:type="external" camunda:topic="agent-output-eval">
-      <bpmn:documentation>Run MLFlow Evaluation against the output of the AI Credit Risk Agent</bpmn:documentation>
+      <bpmn:documentation>Blocking guardrail: eval-service-worker scores the AI Credit Risk Agent's output and returns evalPassed, evalRationale, evalScore (fraction of applicable scorers that passed) and evalFailedScorers. Thresholds are the input parameters below, editable here without changing the worker: evalMinScore (0-1; 1.0 means every applicable scorer must pass) and evalRequiredScorers (comma-separated scorer names that must pass whatever the score). Each uses a process variable of the same name when the run was started with one (e.g. from the UI's Workflow run page), otherwise the default at the end of the expression.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="evalMinScore">${execution.hasVariable('evalMinScore') ? evalMinScore : 1.0}</camunda:inputParameter>
+          <camunda:inputParameter name="evalRequiredScorers">${execution.hasVariable('evalRequiredScorers') ? evalRequiredScorers : 'decision_quality'}</camunda:inputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_SkipEval_Run</bpmn:incoming>
       <bpmn:outgoing>Flow_1ag9u0i</bpmn:outgoing>
     </bpmn:serviceTask>

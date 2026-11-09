@@ -71,6 +71,7 @@ def test_get_config_returns_defaults(client: TestClient) -> None:
         "processKey": "someProcess",
         "variables": {"applicantName": "Jane Smith", "requestedAmount": 50000},
         "agentConfig": None,
+        "guardrail": None,
     }
 
 
@@ -119,6 +120,84 @@ variables:
         "model": "gpt-4o",
         "systemPrompt": "Be a good agent.",
     }
+
+
+def _config_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task_xml: str) -> TestClient:
+    bpmn_path = tmp_path / "guardrail.bpmn"
+    bpmn_path.write_text(
+        f"""<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_1">
+  <process id="someProcess">{task_xml}</process>
+</definitions>
+"""
+    )
+    config_path = tmp_path / "workflow.yml"
+    config_path.write_text(
+        f"fluxnova_url: http://fluxnova.invalid/engine-rest\nbpmn_path: {bpmn_path.as_posix()}\n"
+        "process_key: someProcess\ndeployment_name: Some Deployment\nvariables: {}\n"
+    )
+    monkeypatch.setattr(workflow_runner, "CONFIG_PATH", config_path)
+    return TestClient(create_app())
+
+
+def test_get_config_returns_guardrail_thresholds_from_bpmn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    test_client = _config_client(
+        tmp_path,
+        monkeypatch,
+        """<serviceTask id="Eval" name="Evaluate" camunda:type="external" camunda:topic="agent-output-eval">
+          <extensionElements><camunda:inputOutput>
+            <camunda:inputParameter name="evalMinScore">0.8</camunda:inputParameter>
+            <camunda:inputParameter name="evalRequiredScorers">decision_quality, no_tool_errors</camunda:inputParameter>
+          </camunda:inputOutput></extensionElements>
+        </serviceTask>""",
+    )
+
+    assert test_client.get("/api/workflow/config").json()["guardrail"] == {
+        "taskId": "Eval",
+        "taskName": "Evaluate",
+        "minScore": 0.8,
+        "requiredScorers": ["decision_quality", "no_tool_errors"],
+        "configuredInBpmn": True,
+        "overridable": False,
+    }
+
+
+def test_get_config_reads_defaults_from_overridable_threshold_expressions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    test_client = _config_client(
+        tmp_path,
+        monkeypatch,
+        """<serviceTask id="Eval" camunda:type="external" camunda:topic="agent-output-eval">
+          <extensionElements><camunda:inputOutput>
+            <camunda:inputParameter name="evalMinScore">${execution.hasVariable('evalMinScore') ? evalMinScore : 0.9}</camunda:inputParameter>
+            <camunda:inputParameter name="evalRequiredScorers">${execution.hasVariable('evalRequiredScorers') ? evalRequiredScorers : 'decision_quality'}</camunda:inputParameter>
+          </camunda:inputOutput></extensionElements>
+        </serviceTask>""",
+    )
+
+    guardrail = test_client.get("/api/workflow/config").json()["guardrail"]
+    assert guardrail["minScore"] == 0.9
+    assert guardrail["requiredScorers"] == ["decision_quality"]
+    assert guardrail["overridable"] is True
+
+
+def test_get_config_guardrail_defaults_when_task_sets_no_thresholds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    test_client = _config_client(
+        tmp_path,
+        monkeypatch,
+        '<serviceTask id="Eval" camunda:type="external" camunda:topic="agent-output-eval"/>',
+    )
+
+    guardrail = test_client.get("/api/workflow/config").json()["guardrail"]
+    assert guardrail["minScore"] == 1.0
+    assert guardrail["requiredScorers"] == []
+    assert guardrail["configuredInBpmn"] is False
 
 
 def test_start_run_returns_instance_id(client: TestClient) -> None:

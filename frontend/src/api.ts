@@ -92,10 +92,26 @@ export interface AgentConfig {
   systemPrompt: string
 }
 
+// The blocking guardrail Eval task's pass thresholds, as authored on the BPMN
+// (camunda:inputParameters evalMinScore / evalRequiredScorers).
+export interface GuardrailConfig {
+  taskId: string
+  taskName: string
+  // null when the BPMN's evalMinScore isn't a number (the worker raises an incident).
+  minScore: number | null
+  requiredScorers: string[]
+  // false when the task sets neither input, so the worker's defaults apply.
+  configuredInBpmn: boolean
+  // true when the task's inputs take a same-named process variable if the run
+  // was started with one, so the UI can set per-run thresholds.
+  overridable: boolean
+}
+
 export interface WorkflowConfig {
   processKey: string
   variables: WorkflowVariables
   agentConfig: AgentConfig | null
+  guardrail: GuardrailConfig | null
 }
 
 export interface WorkflowRunStarted {

@@ -3,6 +3,9 @@ import type { WorkflowVariables } from '../api'
 import AgentConfigPanel from '../components/AgentConfigPanel'
 import AgentDecision from '../components/AgentDecision'
 import EvalToggles from '../components/EvalToggles'
+import GuardrailResult from '../components/GuardrailResult'
+import GuardrailSettings from '../components/GuardrailSettings'
+import GuardrailThresholds from '../components/GuardrailThresholds'
 import WorkflowCurrentStage from '../components/WorkflowCurrentStage'
 import WorkflowForm from '../components/WorkflowForm'
 import WorkflowProcessDiagram from '../components/WorkflowProcessDiagram'
@@ -17,9 +20,10 @@ import { useWorkflowStore } from '../store/workflowStore'
 const FLUXNOVA_UI_URL = 'http://localhost:8080/fluxnova-welcome/index.html'
 
 function WorkflowPage() {
-  const { skipEvalServiceWorker } = useEvalSettings()
+  const { skipEvalServiceWorker, minScore, requiredScorers } = useEvalSettings()
   const defaults = useWorkflowStore((state) => state.defaults)
   const agentConfig = useWorkflowStore((state) => state.agentConfig)
+  const guardrail = useWorkflowStore((state) => state.guardrail)
   const configError = useWorkflowStore((state) => state.configError)
   const run = useWorkflowStore((state) => state.run)
   const runError = useWorkflowStore((state) => state.runError)
@@ -32,7 +36,16 @@ function WorkflowPage() {
   }, [loadConfig])
 
   function handleSubmit(values: WorkflowVariables) {
-    startRun({ ...values, skipEvalServiceWorker })
+    // Send the guardrail thresholds the run should use, so the BPMN task's
+    // inputs pick them up (and the run records exactly which ones applied).
+    const thresholds: WorkflowVariables =
+      guardrail?.overridable && !skipEvalServiceWorker
+        ? {
+            evalMinScore: minScore ?? guardrail.minScore ?? 1,
+            evalRequiredScorers: (requiredScorers ?? guardrail.requiredScorers).join(','),
+          }
+        : {}
+    startRun({ ...values, ...thresholds, skipEvalServiceWorker })
   }
 
   // A run has been triggered at least once this session — show the Output
@@ -55,10 +68,13 @@ function WorkflowPage() {
       <div className="finos-panel evals-section">
         <p className="sample-preview-label">Evals</p>
         <p className="hint">
-          Every run is scored by the non-blocking async eval. The eval service worker guardrail setting
-          applies to the next run started below.
+          Every run is scored by the non-blocking async eval, which records results in MLflow without
+          affecting the run. The eval service worker is the blocking guardrail: it scores the agent's
+          decision and routes failures to human review. Its toggle applies to the next run started below.
         </p>
         <EvalToggles />
+        <GuardrailThresholds guardrail={guardrail} />
+        <GuardrailSettings guardrail={guardrail} />
       </div>
 
       {configError && <p className="hint danger">{configError}</p>}
@@ -81,6 +97,13 @@ function WorkflowPage() {
           </div>
           <WorkflowCurrentStage deploying={submitting} run={run} />
           {run && <AgentDecision variables={run.variables} />}
+          {run && (
+            <GuardrailResult
+              variables={run.variables}
+              guardrail={guardrail}
+              skipped={run.variables?.skipEvalServiceWorker === true}
+            />
+          )}
           {run && (
             <details className="workflow-details">
               <summary>Show run details</summary>

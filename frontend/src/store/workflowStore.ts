@@ -4,6 +4,7 @@ import {
   fetchWorkflowRun,
   startWorkflowRun,
   type AgentConfig,
+  type GuardrailConfig,
   type WorkflowRunStatus,
   type WorkflowVariables,
 } from '../api'
@@ -13,6 +14,7 @@ const POLL_MS = 2000
 interface WorkflowState {
   defaults: WorkflowVariables | null
   agentConfig: AgentConfig | null
+  guardrail: GuardrailConfig | null
   configError: string | null
   configLoaded: boolean
 
@@ -56,6 +58,7 @@ function pollRun(instanceId: string, set: (partial: Partial<WorkflowState>) => v
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   defaults: null,
   agentConfig: null,
+  guardrail: null,
   configError: null,
   configLoaded: false,
 
@@ -73,6 +76,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         set({
           defaults: config.variables,
           agentConfig: config.agentConfig,
+          guardrail: config.guardrail,
           configError: null,
           configLoaded: true,
         }),

@@ -107,7 +107,7 @@ const NODES: Node[] = [
         position: {x: -100, y: 400},
         data: {
             label: 'eval-service-worker',
-            description: 'Blocking guardrail eval worker. Handles the Eval service task on topic agent-output-eval. Scores the run and returns evalPassed/evalRationale, which route failed runs to human review (See Loan Assessment BPMN).'
+            description: 'Blocking guardrail eval worker. Handles the Eval service task on topic agent-output-eval. Scores the run against pass thresholds set as inputs on the BPMN task (evalMinScore, evalRequiredScorers) and returns evalPassed, evalScore, evalFailedScorers and evalRationale; failed runs go to human review (See Loan Assessment BPMN).'
         },
         ...nodeDefaults,
     },

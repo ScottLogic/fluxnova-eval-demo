@@ -49,7 +49,7 @@ export const TABS: TabDefinition[] = [
     id: 'evals',
     label: 'Evals',
     description:
-      'See which scorers run in the non-blocking async eval, the blocking eval service worker guardrail and the regression suite.',
+      'See which scorers run in the non-blocking async eval, the blocking eval service worker guardrail and the regression suite, and how the guardrail pass thresholds work.',
     Component: EvalsPage,
   },
   {

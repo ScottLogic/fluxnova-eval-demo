@@ -19,7 +19,15 @@ interface WorkflowFormProps {
 //   conditions (Gateway_4 "Risk Approved?" / Gateway_5 "Manual Review
 //   Required?"), not data about the applicant — they get set for real
 //   partway through the run, not by the person triggering it.
-const HIDDEN_FIELDS = new Set(['skipEvalServiceWorker', 'aiRiskScore', 'approvalDecision'])
+// - evalMinScore / evalRequiredScorers are set by the guardrail threshold
+//   controls in the Evals section (GuardrailSettings.tsx).
+const HIDDEN_FIELDS = new Set([
+  'skipEvalServiceWorker',
+  'aiRiskScore',
+  'approvalDecision',
+  'evalMinScore',
+  'evalRequiredScorers',
+])
 
 function WorkflowForm({ defaults, submitting, onSubmit }: WorkflowFormProps) {
   const [values, setValues] = useState<WorkflowVariables>({})

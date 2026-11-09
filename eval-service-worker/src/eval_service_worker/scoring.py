@@ -40,6 +40,8 @@ from fluxnova_mlflow_dataset import (
     write_to_mlflow_dataset,
 )
 
+from eval_service_worker.guardrail import GuardrailThresholds, apply_guardrail
+
 # The Guidelines judge reports a categorical "yes"/"no" adherence value (not a
 # numeric score) — confirmed by inspecting a real logged `decision_quality`
 # assessment during this session's investigation. Deterministic scorers report
@@ -86,6 +88,10 @@ class EvalOutcome:
     eval_passed: bool
     eval_rationale: str
     final_output: str
+    # Fraction of applicable scorers that passed (compared with evalMinScore).
+    eval_score: float
+    # Applicable scorers that failed, whether or not the run still passed.
+    failed_scorers: tuple[str, ...]
     # One entry per scorer that ran (including decision_quality), each
     # {"value": ..., "rationale": ...} — every one of these checks (the
     # decision_quality judge and the deterministic scorers) must pass for
@@ -103,6 +109,7 @@ def score_process_instance(
     judge_model: str,
     trace_poll_timeout: float = 30.0,
     trace_poll_interval: float = 3.0,
+    thresholds: GuardrailThresholds | None = None,
 ) -> EvalOutcome:
     """Read a completed subprocess run's process variables from Fluxnova, run
     the ``decision_quality`` judge plus the deterministic scorers against them,
@@ -146,22 +153,29 @@ def score_process_instance(
         for s in scorers
     }
 
-    failed = {
-        name: res
-        for name, res in scorer_results.items()
-        if not _scorer_passed(name, res["value"])
-    }
-    eval_passed = not failed
+    thresholds = thresholds or GuardrailThresholds()
+    guardrail = apply_guardrail(scorer_results, thresholds, _scorer_passed)
+    eval_passed = guardrail.passed
+    failures = "; ".join(
+        f"{name}: {scorer_results[name]['rationale'] or 'failed'}" for name in guardrail.failed
+    )
 
-    if eval_passed:
+    if eval_passed and not guardrail.failed:
         decision_quality = scorer_results[_DECISION_QUALITY_NAME]
         rationale = (
             decision_quality["rationale"]
             or "All deterministic and non-deterministic evaluation checks passed."
         )
+    elif eval_passed:
+        rationale = (
+            f"Passed with score {guardrail.score:.2f} (minimum {thresholds.min_score:.2f}). "
+            f"Tolerated failures: {failures}"
+        )
+    elif guardrail.required_failed:
+        rationale = f"Required scorer(s) failed: {', '.join(guardrail.required_failed)}. {failures}"
     else:
-        rationale = "; ".join(
-            f"{name}: {res['rationale'] or 'failed'}" for name, res in failed.items()
+        rationale = (
+            f"Score {guardrail.score:.2f} is below the minimum {thresholds.min_score:.2f}. {failures}"
         )
 
     _log_dataset_record(
@@ -180,6 +194,8 @@ def score_process_instance(
         eval_rationale=rationale,
         final_output=final_output,
         scorer_results=scorer_results,
+        eval_score=guardrail.score,
+        failed_scorers=guardrail.failed,
     )
 
 
