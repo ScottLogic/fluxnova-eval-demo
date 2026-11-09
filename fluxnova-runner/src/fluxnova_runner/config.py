@@ -41,9 +41,9 @@ class RunnerConfig:
         """Load a workflow YAML config file.
 
         ``bpmn_path`` is resolved relative to the repo root if not absolute.
-        Extra keys (e.g. ``available_tools``, ``mlflow_dataset`` — used by the
-        eval services) are simply ignored, so the same YAML file used
-        for evaluation config can be reused here unchanged.
+        Extra keys (e.g. ``available_tools``, ``mlflow_dataset``) are simply
+        ignored; they are reference/legacy only and not read by any current
+        service.
         """
         root_dir = Path(__file__).resolve().parent.parent.parent.parent
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))

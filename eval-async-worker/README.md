@@ -6,9 +6,9 @@ scorers (the deterministic code checks plus the `decision_quality` and
 `evidence_citation` LLM judges) and records the results in MLflow, without ever
 holding up or routing the process.
 
-> The name is historical: this service used to poll MLflow's trace store for any
-> completed agent run. Scoring is now triggered by the process itself, once per
-> run, through a BPMN service task.
+> Formerly `eval-trace-listener`, which polled MLflow's trace store for completed
+> agent runs. Scoring is now triggered by the process itself, once per run,
+> through a BPMN service task.
 
 ## Where it sits in the process
 
@@ -24,7 +24,7 @@ the loan decision. The async branch runs even when `skipEvalServiceWorker` is
 
 | Service               | Topic                     | Role                         | Completes with                |
 |-----------------------|---------------------------|------------------------------|-------------------------------|
-| `eval-service-worker` | `agent-output-eval`       | Blocking guardrail           | `evalPassed`, `evalRationale` |
+| `eval-service-worker` | `agent-output-eval`       | Blocking guardrail           | `evalPassed`, `evalScore`, `evalFailedScorers`, `evalRationale`, `evalSampled`, `reviewRequired`, `reviewReason`, `runNumber` |
 | `eval-async-worker` | `agent-output-eval-async` | Non-blocking production Eval | no variables                  |
 
 ## What it does per task

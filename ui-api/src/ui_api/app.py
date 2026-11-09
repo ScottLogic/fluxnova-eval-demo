@@ -2,7 +2,7 @@
 
 Routers are one per concern (regression, workflow, evals), each wrapping the
 existing core packages as a library/CLI rather than embedding API code inside
-them — see UI_PROPOSAL.md's "Implementation plan" section.
+them.
 """
 
 from __future__ import annotations

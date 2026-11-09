@@ -1,6 +1,7 @@
 # Fluxnova workflow configuration (read by fluxnova-runner)
 #
 # Run with:  fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
+# Also used by the regression suite (it deploys without cascade delete).
 
 # Engine REST base URL
 fluxnova_url: http://localhost:8080/engine-rest
@@ -14,6 +15,8 @@ subprocess_id: AdHocSubProcess_LoanAssessmentAgent
 
 # Path to the golden dataset used for evaluation (relative to the repo root).
 # Maintained by hand as a fixture — see datasets/loan-assessment/goldens.json.
+# Reference only — dataset_path/available_tools/expected_tools are not read at
+# runtime; the scorers' rules are hardcoded in fluxnova_mlflow_dataset.scorers.
 dataset_path: datasets/loan-assessment/goldens.json
 
 # Tools available to the agent inside the ad-hoc subprocess.
@@ -41,7 +44,9 @@ expected_tools:
   - if: '$hasCollateral == true'
     tool: Value Collateral
 
-# Human-readable deployment name shown in Cockpit
+# Human-readable deployment name shown in Cockpit. WARNING: fluxnova-run (without
+# --skip-deploy) cascade-deletes existing deployments with this name, including
+# their instances and history.
 deployment_name: Loan Assessment
 
 # Initial process variables (plain key: value pairs)

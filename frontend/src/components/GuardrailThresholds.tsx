@@ -43,8 +43,8 @@ function GuardrailThresholds({ guardrail }: GuardrailThresholdsProps) {
       <p className="hint">
         {guardrail.overridable && 'Adjust the thresholds for the next run below. '}
         To change the default, edit the <em>{taskName}</em> task's inputs in the BPMN (Modeler → Inputs):{' '}
-        <code>evalMinScore</code> (0–1) and <code>evalRequiredScorers</code> (comma-separated scorer
-        names, see the Evals tab). No worker change or restart is needed; the next deployment uses them.
+        <code>evalMinScore</code> (0–1), <code>evalRequiredScorers</code> (comma-separated scorer
+        names, see the Evals tab), <code>evalSampleRate</code> (0–1) and <code>forceReviewEveryN</code> (0 = off). No worker change or restart is needed; the next deployment uses them.
         {!configuredInBpmn && ' This BPMN sets neither, so the defaults (every scorer must pass) apply.'}
       </p>
     </div>

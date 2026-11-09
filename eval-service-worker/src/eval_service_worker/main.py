@@ -8,7 +8,7 @@ Usage
 
 All settings have sensible defaults (see ``config.py``) — flags/env vars only
 need to be set to override them for a given environment (e.g. pod-name-based
-URLs when running as a container — see local-dev/eval-service-up.sh).
+URLs when running as a container — see local-dev/services/eval-service-up.sh).
 """
 
 from __future__ import annotations

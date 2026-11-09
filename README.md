@@ -102,11 +102,13 @@ Fluxnova.
 ### -| [eval-service-worker](eval-service-worker)
 
 The external-task worker for the blocking guardrail Eval service task (`ServiceTask_EvaluateAgentOutput`, topic
-`agent-output-eval`). It synchronously scores a just-completed agentic subprocess run. It reads the
-run's MLflow trace, evaluates the final output with the `decision_quality` LLM judge and deterministic trace-based
-scorers, and stores each scorer's feedback in MLflow. The evaluation passes only when every scorer passes. It returns
-`evalPassed` and `evalRationale` workflow variables, which subsequent BPMN steps can use to continue automatically or
-route the work for human review.
+`agent-output-eval`). It synchronously scores a just-completed agent run. It builds the scorer inputs from the agent
+run's Fluxnova process variables (`fluxnova_mlflow_dataset.load_agent_run`), evaluates the final output with the
+`decision_quality` LLM judge and the deterministic scorers, and attaches each scorer's feedback to the run's MLflow
+trace. Pass/fail uses the task's `evalMinScore`/`evalRequiredScorers` inputs, and `evalSampleRate`/`forceReviewEveryN`
+decide which runs are scored and which are always reviewed. It returns `evalPassed`, `evalScore`, `evalFailedScorers`,
+`evalRationale`, `evalSampled`, `reviewRequired` and `reviewReason` (plus `runNumber` when every-Nth review is on);
+`reviewRequired` decides whether the run goes to human review.
 
 More detail available in the [README](eval-service-worker/README.md).
 
@@ -114,10 +116,11 @@ More detail available in the [README](eval-service-worker/README.md).
 
 The external-task worker for the non-blocking Eval service task (`ServiceTask_AsyncEvaluateAgentOutput`, topic
 `agent-output-eval-async`). `LoanApprovalProcess_AI.bpmn` forks after the agent call, and this task sits on its own
-branch, so scoring never holds up the loan decision. For each task it reads the agent run's trace, runs the
-deterministic scorers plus the `decision_quality` and `evidence_citation` LLM judges, and records the feedback on the
-same trace in MLflow. It completes the task without returning workflow variables, so it never alters the flow of the
-process. A live sample rate controls what fraction of runs are scored.
+branch, so scoring never holds up the loan decision. For each task it loads the agent run's process variables, runs
+the deterministic scorers plus the `decision_quality` and `evidence_citation` LLM judges, and attaches the feedback to
+the run's MLflow trace. It completes the task without returning workflow variables, so it never alters the flow of the
+process. Its own sample rate (default 1.0, every run; adjustable live at `http://localhost:8092/config`) controls what
+fraction of runs are scored; the UI has no switch for it.
 
 More detail available in the [README](eval-async-worker/README.md).
 
@@ -126,6 +129,9 @@ More detail available in the [README](eval-async-worker/README.md).
 An installable library providing MLflow-specific functionality for reuse across the evaluation services and regression
 suite. It provides:
 
+- **Agent-run loading** (`load_agent_run`): builds scorer inputs and outputs from an agent instance's process
+  variables (`agent:context` variables, `_agentConversationHistory`, `_agentLoopIndex`) and its deployed BPMN, over
+  the Fluxnova REST API. Both eval workers use this.
 - **Trace reading**: Reads `gen_ai.*` span data (`invoke_agent`, `execute_tool`, `chat`) straight out of MLflow's trace
   store (populated by an OTel Collector exporting directly to MLflow).
 - **Record shaping/read/write**: Builds MLflow-dataset records from agent-history data and reads/writes the
@@ -163,9 +169,11 @@ More detail available in the [README](local-dev/README.md).
 
 ### -| [frontend](frontend) and [ui-api](ui-api)
 
-The React/Vite demo UI is served by nginx and backed by a FastAPI service. It
-starts workflows, displays nested progress and agent configuration, runs the six
-golden regression scenarios with per-scorer results.
+The React/Vite demo UI is served by nginx and backed by a FastAPI service. Its Workflow run page starts
+`LoanApprovalProcess_AI`, with an "Eval service worker" toggle (`skipEvalServiceWorker`) and a "Guardrail settings for
+the next run" panel (minimum score, sample rate, every-Nth review, required scorers). It shows nested progress, the
+agent configuration and decision, and the Guardrail and Human review results. The Regression page runs the six golden
+scenarios with per-scorer results, and the Evals, Telemetry, Loan assessment and Architecture pages explain the setup.
 Both are included in the local stack; see the [UI walkthrough](local-dev/README.md#frontend-and-ui-api).
 
 ### -| [model-benchmarks](model-benchmarks)
@@ -308,7 +316,7 @@ evaluation path needs it, because both eval workers read their scorer inputs fro
 | Applicant inputs, the agent's conversation (prompts, responses, tool arguments and results), loop count | Fluxnova process variables (`agent:context` variables, `_agentConversationHistory`, `_agentLoopIndex`) in the Fluxnova Postgres database, including history tables kept for the process's `historyTimeToLive` | Fluxnova REST API, Cockpit and Tasklist users (`demo`/`demo` locally), and both eval workers |
 | Trace structure: spans, timings, token counts, tool names and status | MLflow trace store (via the OTel Collector) | Anyone who can reach MLflow (no auth locally) |
 | Prompt/response content on traces | Not exported unless `FLUXNOVA_CAPTURE_GENAI_CONTENT=true` | as above when enabled |
-| Eval results: per-scorer values and rationales, pass/fail | MLflow assessments on the run's trace, one MLflow Evaluation Run per scoring, and (guardrail) `evalPassed`/`evalRationale` process variables | MLflow users; Fluxnova users for the process variables |
+| Eval results: per-scorer values and rationales, pass/fail | MLflow assessments on the run's trace, one MLflow Evaluation Run per scoring, and (guardrail) `evalPassed`/`evalScore`/`evalFailedScorers`/`evalRationale`/`evalSampled`/`reviewRequired`/`reviewReason`/`runNumber` process variables | MLflow users; Fluxnova users for the process variables |
 | Guardrail dataset record | MLflow evaluation dataset: process instance id, decision keyword (`APPROVE`/`REJECT`), scorer values and rationales; no applicant inputs or full response | MLflow users |
 | Regression results | MLflow regression runs and reports (golden inputs are synthetic) | MLflow users |
 
@@ -386,9 +394,12 @@ tasks in `LoanApprovalProcess_AI.bpmn` (below).
 Other flags:
 
 ```bash
-fluxnova-run --skip-deploy fluxnova-runner/config/loan-assesment.yml   # BPMN already deployed
+fluxnova-run --skip-deploy fluxnova-runner/config/loan-assesment.yml   # BPMN already deployed; keeps earlier runs
 fluxnova-run fluxnova-runner/config/loan-assesment.yml                 # no mock workers (needs real service-task workers/backends)
 ```
+
+Without `--skip-deploy`, every run first deletes the existing deployment of the same name, with cascade, which removes
+that workflow's earlier runs and their Fluxnova history (see the warning below).
 
 ### Running the loan approval workflow (`fluxnova-runner/config/loan_approval_process_ai.yml`)
 
@@ -415,7 +426,10 @@ After the agent, `Gateway_ForkAsyncEval` forks the process into two branches tha
   **eval-service-worker**) → `Further action required?` routes on the worker's `reviewRequired` → the
   `Human: Risk Assessment Review` user task (when required) → `Risk Approved?`. A run is sent to review when its
   evaluation fails (`reviewReason` `FAILED_EVAL`) or it is one of every `forceReviewEveryN` runs (`FORCED_EVERY_N`).
-  `evalSampleRate` limits scoring to a fraction of runs; the rest carry on unscored. Setting the
+  `evalSampleRate` limits scoring to a fraction of runs; the rest carry on unscored. Defaults: `evalMinScore` 1.0,
+  `evalRequiredScorers` `decision_quality`, `evalSampleRate` 1.0, `forceReviewEveryN` 0 (off); each input is
+  `${execution.hasVariable('X') ? X : default}`, so a run's start variables override it. The async worker's sample
+  rate is a separate, worker-side setting. Setting the
   `skipEvalServiceWorker` variable to `true` bypasses the guardrail. All four guardrail settings are task inputs,
   editable in the Modeler and overridable per run (see `eval-service-worker/README.md`).
 - **Human review:** the task opens the `risk_assessment_review` form in Fluxnova Tasklist. It shows the agent's decision
@@ -444,6 +458,13 @@ In the original terminal:
 fluxnova-run fluxnova-runner/config/loan_approval_process_ai.yml
 ```
 
+> **Warning:** unless you pass `--skip-deploy`, `fluxnova-run` first deletes every existing deployment with the
+> config's `deployment_name`, with `cascade=true`. For this config that is `Loan Approvals Process (Eval)`, the same
+> deployment the UI uses, so it removes all earlier runs of the workflow and their Fluxnova history: UI runs, open
+> review tasks, and the history the every-Nth review count (`runNumber`) is based on. MLflow traces and scores are not
+> affected. The UI deploys without deleting. To keep earlier runs, deploy once and then use
+> `fluxnova-run --skip-deploy fluxnova-runner/config/loan_approval_process_ai.yml`.
+
 Both Eval tasks are real jobs, not mocked, so start the `eval-service` and `eval-async` pods first (see
 `local-dev/README.md`). Without them, the run waits at the guardrail and the async task. Keep the separate mock workers
 alive until the run finishes, then stop them with Ctrl+C. The [demo walkthrough](local-dev/README.md#demo-walkthrough)
@@ -464,10 +485,10 @@ they never disagree on what "good" means:
   [`eval-async-worker/README.md`](eval-async-worker/README.md).
 - **`eval-service-worker`** (blocking BPMN external-task worker) — handles the guardrail task
   `ServiceTask_EvaluateAgentOutput`. Scores that one run with the deterministic scorers **plus** the `decision_quality`
-  LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway) and returns `evalPassed`/`evalRationale`
-  (plus `evalScore`/`evalFailedScorers`), using pass thresholds (`evalMinScore`, `evalRequiredScorers`) set as inputs
-  on the BPMN task,
-  which route failed runs to human review. Best for guardrails wired into the workflow. See
+  LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway) and returns `evalPassed`/`evalScore`/
+  `evalFailedScorers`/`evalRationale` plus `evalSampled`/`reviewRequired`/`reviewReason`, using the task inputs
+  `evalMinScore`/`evalRequiredScorers` (pass thresholds) and `evalSampleRate`/`forceReviewEveryN` (sampling and
+  forced review). `reviewRequired` routes failed or every-Nth runs to human review. Best for guardrails wired into the workflow. See
   [`eval-service-worker/README.md`](eval-service-worker/README.md).
 - **`regression/`** (pytest gating suite) — drives the live agent once per parametrized golden scenario
   and asserts its real output satisfies the shared `decision_quality` and `matches_golden` judges, the

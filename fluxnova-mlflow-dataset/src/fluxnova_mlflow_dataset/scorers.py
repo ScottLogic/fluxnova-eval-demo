@@ -1,7 +1,7 @@
 """All MLflow scorer/judge definitions for the Fluxnova loan-assessment agent.
 
 Single source of truth for every scorer used across the project, so nothing
-drifts between call sites:
+drifts between call sites.
 """
 
 from __future__ import annotations
@@ -51,7 +51,8 @@ def decision_quality_judge(model: str) -> Guidelines:
     ``model`` differs by call site: a direct ``"<provider>:/<model>"`` URI (e.g.
     ``"ollama:/llama3.2"``) for direct offline/regression evaluation, or a
     ``"gateway:/<endpoint>"`` URI for anything routed through the MLflow AI
-    Gateway (automatic/online scoring, and the synchronous eval-service-worker).
+    Gateway (automatic/online scoring via ``mlflow-judges``). The eval-service-worker
+    uses a direct ``openai:/gpt-4.1-mini`` URI by default.
     """
     return Guidelines(
         name=DECISION_QUALITY_NAME, guidelines=DECISION_QUALITY_GUIDELINES, model=model,
@@ -283,13 +284,15 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 #       ],
 #       "iterations": int | None,   # agent-loop / LLM inference-call count
 #   }
-# A tool call's "arguments" is None (not {}) when content capture is disabled.
+# A tool call's "arguments" is None (not {}) only when the source didn't record
+# them (e.g. a trace exported without content capture). Process-variable inputs
+# always include them.
 #
 # Two tiers, exposed as separate bundles at the bottom of this section:
 #   - DETERMINISTIC_SCORERS   — need only tool *names*/status/input-variables/
 #     iteration count, all captured by default.
-#   - TOOL_ARGUMENT_SCORERS   — also inspect tool-call *arguments*, only present
-#     when content capture is enabled (off by default — see local-dev/default.yml).
+#   - TOOL_ARGUMENT_SCORERS   — also inspect tool-call *arguments*, always present
+#     in process-variable inputs; on traces only with content capture on.
 #     They return a "not applicable" `Feedback(None)` when arguments aren't
 #     captured, so they are always safe to include.
 # ---------------------------------------------------------------------------
@@ -649,14 +652,13 @@ DETERMINISTIC_SCORERS = [
     no_duplicate_tool_calls,
 ]
 
-# Opt-in bundle: scorers that inspect tool-call *arguments* — only meaningful
-# when content capture is enabled (they self-skip with Feedback(None) otherwise).
+# Opt-in bundle: scorers that inspect tool-call *arguments* — available from
+# process variables (they self-skip with Feedback(None) when arguments are missing).
 TOOL_ARGUMENT_SCORERS = [
     tool_argument_correctness,
     collateral_valuation_called_correctly_when_required,
     requested_amount_passed_to_affordability,
 ]
 
-# Everything deterministic — the full set, for callers that run with content
-# capture on and want maximal coverage.
+# Everything deterministic — the full set, for callers that want maximal coverage.
 ALL_DETERMINISTIC_SCORERS = DETERMINISTIC_SCORERS + TOOL_ARGUMENT_SCORERS

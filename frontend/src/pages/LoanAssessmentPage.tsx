@@ -19,15 +19,22 @@ const DIAGRAMS = [
                     which calls out to a separate bpmn (loan Assessment).
                 </p>
                 <p>
-                    After the agent, the process forks. One branch runs the optional blocking guardrail Eval (Evaluate
-                    Agent Output), which routes failed runs to human review, and carries on with the loan. Its pass
-                    rule is set by the task's <code>evalMinScore</code> and <code>evalRequiredScorers</code> inputs
-                    (select the task in the Modeler, then Inputs). A failed run goes to <em>Human: Risk
+                    After the agent, the process forks and the branches never rejoin. One branch runs the optional
+                    blocking guardrail Eval (Evaluate Agent Output; skippable per run) and carries on with the loan.
+                    Its inputs <code>evalMinScore</code>, <code>evalRequiredScorers</code>,{' '}
+                    <code>evalSampleRate</code> and <code>forceReviewEveryN</code> decide which runs are scored and
+                    which go to review (select the task in the Modeler, then Inputs); each can be overridden per run
+                    from the Workflow run tab. A run that fails, or is one of every Nth, goes to <em>Human: Risk
                     Assessment Review</em>, whose Tasklist form lets the reviewer approve the agent's decision, amend
-                    it, or reject the assessment, with a comment. <em>Risk Approved?</em> then follows the reviewer's
-                    decision, or the agent's own APPROVE/REJECT when there was no review. The other
-                    branch runs the non-blocking Eval (Eval: Record Agent Output Scores), which scores the run and
-                    records the results without holding up the loan.
+                    it to approve or decline, or reject the assessment, with a comment. <em>Risk Approved?</em> then
+                    follows the reviewer's decision, or the agent's own APPROVE/REJECT when there was no review (an
+                    UNKNOWN decision declines the loan). The other branch runs the non-blocking Eval (Eval: Record
+                    Agent Output Scores), which scores the run and records the results without holding up the loan.
+                </p>
+                <p>
+                    <em>Human: Loan Officer Review</em> is a placeholder: it only runs when{' '}
+                    <code>approvalDecision</code> is <code>MANUAL_REVIEW</code>, and its form{' '}
+                    (<code>credit_approval_review</code>) is not included in this demo.
                 </p>
             </>
         ),

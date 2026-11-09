@@ -138,6 +138,9 @@ stops automatic exporting of new assignments without removing the variables just
 | UI API | `http://localhost:8090/health` | `localhost:8090` from nginx |
 | Async eval worker control | `http://localhost:8092/config` | `eval-async-local:8092` |
 
+`GET`/`PUT http://localhost:8092/config` reads or changes the async eval worker's live sample rate (default 1.0,
+every run), e.g. `curl -X PUT localhost:8092/config -d '{"sample_rate": 0.5}'`. The UI has no switch for it.
+
 Fluxnova login is `demo` / `demo`; Grafana allows anonymous viewing and uses
 `admin` / `admin` for editing. The provisioned dashboard is **Fluxnova → Fluxnova
 GenAI Metrics**. Prometheus/Grafana storage is ephemeral.
@@ -189,6 +192,9 @@ their first startup builds the images. Logs: `podman logs <container-name>`.
 fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
 ```
 
+> `fluxnova-run` deletes the existing `Loan Assessment` deployment (with cascade) before deploying, removing its
+> earlier runs and their Fluxnova history. Add `--skip-deploy` once it's deployed to keep them.
+
 Expected: deployment, a printed process instance ID, and process completion. Save
 the ID. The downstream tools are mocked, but the agent makes real model calls.
 Inspect the completed process in Fluxnova Cockpit (`demo` / `demo`).
@@ -228,22 +234,30 @@ podman logs --tail 80 eval-service-worker
 podman logs --tail 80 eval-async-worker
 ```
 
+> **Warning:** this redeploy deletes the `Loan Approvals Process (Eval)` deployment with cascade. That is the same
+> deployment the UI uses, so every earlier run is removed with its Fluxnova history, including UI runs, open review
+> tasks and the history the every-Nth review count relies on. MLflow is unaffected. Use `--skip-deploy` once the
+> workflow is deployed (by this command or by starting a run from the UI, which never deletes) to keep them.
+
 The runner returns when the agent Call Activity (`AgentTask_CreditRisk`) finishes.
 The process then forks, and trace export and judging continue on both branches:
 
 - **Guardrail** (`eval-service-worker`): in Cockpit, confirm the process receives
-  `evalPassed`, `evalScore`, `evalFailedScorers` and `evalRationale`. The pass
-  thresholds are the task's `evalMinScore`/`evalRequiredScorers` inputs. A failed evaluation routes to the
-  `Human: Risk Assessment Review` task; a pass carries on through the loan process.
-  Waiting at a human task is expected.
-- **Human review** (failed guardrail only): open Tasklist from
+  `evalPassed`, `evalScore`, `evalFailedScorers`, `evalRationale`, `evalSampled`,
+  `reviewRequired` and `reviewReason`. The task's `evalMinScore`/`evalRequiredScorers`
+  inputs set the pass thresholds, and `evalSampleRate`/`forceReviewEveryN` control
+  sampling and forced review; all four can be overridden per run, e.g. from the UI's
+  "Guardrail settings for the next run" panel. When `reviewRequired` is true (failed
+  evaluation or every-Nth run) the process waits at `Human: Risk Assessment Review`;
+  otherwise it carries on through the loan process.
+- **Human review** (when `reviewRequired` is true): open Tasklist from
   `http://localhost:8080/fluxnova-welcome/index.html` (`demo` / `demo`) and complete the
   review task's form: approve, amend or reject the agent's decision, with a comment.
   Confirm `reviewOutcome` and `reviewDecision` are set and that `Risk Approved?`
   follows `reviewDecision`. The UI's Workflow run page shows the same outcome.
-  To force this path, set the guardrail's minimum score to 100% and pick an
-  applicant the agent is likely to struggle with, or use the controlled routing
-  check below.
+  To force this path, set "Review every Nth run" to 1 in the UI's guardrail
+  settings (or start the run with `forceReviewEveryN=1`), or use the controlled
+  routing check below.
 - **Async Eval** (`eval-async-worker`): the `Eval: Record Agent Output Scores` task
   completes with no variables and its branch ends at `Eval Recorded`. In MLflow,
   the run's trace gains `decision_quality`, `evidence_citation` and the deterministic
@@ -520,6 +534,11 @@ Use an HTTP `--tracking-uri`, not a direct PostgreSQL URI. This gateway setup is
 optional for the default demo's direct eval worker and regression judges.
 
 ## Host debugging and rebuilds
+
+`REBUILD=1` only takes effect when a pod is created, so remove the pod first:
+`./local-dev/pods-down.sh <svc> && REBUILD=1 ./local-dev/pods-up.sh <svc>`. Each
+rebuild leaves the previous image behind untagged; reclaim the space with
+`podman image prune -f` (inside the Podman machine/WSL distro).
 
 `./setup.sh` installs all five packages editable (including UI API and regression
 JSON-report dependencies). To debug Python services against

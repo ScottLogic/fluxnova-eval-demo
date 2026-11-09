@@ -22,7 +22,7 @@ function reviewReasons(variables: WorkflowVariables): string {
 const OUTCOME_LABELS: Record<string, string> = {
   APPROVE: "Approved: kept the agent's decision",
   AMEND: "Amended the agent's decision",
-  REJECT: 'Rejected the assessment',
+  REJECT: 'Rejected the assessment: loan declined',
 }
 
 interface ReviewResultProps {
@@ -59,8 +59,8 @@ function ReviewResult({ variables, active }: ReviewResultProps) {
         <p className="hint">
           Open Fluxnova Tasklist (login <code>demo</code> / <code>demo</code>) and complete the{' '}
           <em>Human: Risk Assessment Review</em> task. Its form shows why the run is being reviewed, the agent's
-          assessment, the evidence and the guardrail result. Choose to approve the agent's decision, amend it, or reject the assessment; the loan
-          then follows your decision.
+          assessment, the evidence and the guardrail result. Choose to approve the agent's decision, amend it to approve or decline, or reject the
+          assessment (which declines the loan); the loan then follows your decision.
         </p>
         <a className="btn ghost" href={FLUXNOVA_UI_URL} target="_blank" rel="noreferrer">
           Open Fluxnova Tasklist
@@ -80,7 +80,10 @@ function ReviewResult({ variables, active }: ReviewResultProps) {
       <dl className="result-grid">
         <div>
           <dt>Outcome</dt>
-          <dd>{OUTCOME_LABELS[outcome] ?? outcome}</dd>
+          <dd>
+            {OUTCOME_LABELS[outcome] ?? outcome}
+            {outcome === 'AMEND' && typeof variables.amendedDecision === 'string' && ` to ${variables.amendedDecision}`}
+          </dd>
         </div>
         <div>
           <dt>Final decision</dt>

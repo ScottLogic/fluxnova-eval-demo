@@ -30,18 +30,22 @@ for the Call Activity child, see below) from Fluxnova:
 - `trace` — the run's MLflow trace, looked up only so MLflow attaches every `Feedback` to it. Passing it with the
   inputs/outputs doesn't copy them into MLflow, so the trace stays content-free.
 
-If the variables can't be read (Fluxnova REST error) or the run has no final answer yet, the task is retried.
+If the variables can't be read (Fluxnova REST error), the run has no final answer yet, the trace hasn't reached
+MLflow yet, or the run number can't be read, the task fails with 3 retries 10 seconds apart. Invalid thresholds or
+any other error raise an incident straight away, with no retries.
 
 `evalPassed` is decided by thresholds set on the BPMN task (see [Guardrail thresholds](#guardrail-thresholds)); by
 default every applicable scorer, including the `decision_quality` judge, must pass. Every scorer's `Feedback` is logged back onto the same real trace as MLflow assessments,
 grouped under one MLflow Evaluation Run (via
 `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}], scorers=[...])`), plus a
 lightweight MLflow evaluation-dataset record. The record is content-free: process instance id, the
-`APPROVE`/`REJECT` decision keyword, and each scorer's value and rationale. The task completes with `evalPassed` (Boolean, driven by all scorers) /
-`evalRationale` (String) output variables that route the flow:
+`APPROVE`/`REJECT` decision keyword, and each scorer's value and rationale. The task completes with the output
+variables listed under [Guardrail thresholds](#guardrail-thresholds); `evalPassed` follows the thresholds.
+`LoanApprovalProcess_AI.bpmn` routes on `reviewRequired`; `loan-assesment-eval.bpmn` routes on `evalPassed`:
 
-- `LoanApprovalProcess_AI.bpmn` (current workflow): `Gateway_13tt7bu` ("Further action required?") sends a pass to the
-  `Risk Approved?` gateway and the rest of the loan process, and a fail to `UserTask_ReviewFailedEval`, where a
+- `LoanApprovalProcess_AI.bpmn` (current workflow): `Gateway_13tt7bu` ("Further action required?") continues to the
+  `Risk Approved?` gateway and the rest of the loan process when `reviewRequired == false`. Anything else (a failed
+  eval or a forced every-Nth review) goes to `UserTask_ReviewFailedEval`, where a
   reviewer approves, amends or rejects the agent's decision in Tasklist (see the root README). The task is
   skipped entirely when the `skipEvalServiceWorker` variable is `true`.
 - `loan-assesment-eval.bpmn` (older eval workflow): `ExclusiveGateway_EvalPassed` sends a pass to
@@ -52,7 +56,8 @@ lightweight MLflow evaluation-dataset record. The record is content-free: proces
 (`AgentTask_CreditRisk` or `CallActivity_LoanAssessmentAgent` → `loanAssessmentProcess`), so the agent — and therefore its trace — runs in a
 *child* process instance, while `ServiceTask_EvaluateAgentOutput` fires in the *parent*. The worker resolves the child
 instance for the parent it's handed (via Fluxnova's history API,
-`FluxnovaClient.get_child_instance_id`) and scores the child's trace, falling back to the parent instance id when there
+`FluxnovaClient.get_child_instance_id`), reads the child's process variables and attaches results to the child's
+trace, falling back to the parent instance id when there
 is no child (e.g. running `loan-assesment.bpmn` standalone).
 
 ## Install (editable, into the shared repo venv or your own)
@@ -91,7 +96,8 @@ the same name; the UI's Workflow run page does this from its "Guardrail threshol
 A scorer that gives no verdict (not applicable to this run, e.g. the self-employed check for an employed applicant)
 is left out of the score and can't fail the run, even if it's required. `LoanApprovalProcess_AI.bpmn` sets
 `1.0` / `decision_quality`, which is the same behaviour as before thresholds existed. `loan-assesment-eval.bpmn` sets
-none, so it uses the defaults.
+none, so it uses the defaults. Its gateway reads `${evalPassed == true}`, so don't set `evalSampleRate` below 1 for it:
+an unsampled run leaves `evalPassed` unset.
 
 The task completes with these process variables:
 
@@ -106,7 +112,8 @@ The task completes with these process variables:
 | `reviewReason`      | String  | `FAILED_EVAL` and/or `FORCED_EVERY_N` (comma-separated); empty when no review |
 | `runNumber`         | Integer | The run's position among this process's runs; only set when every-Nth review is on |
 
-An unsampled run gets only `evalSampled=false`, `reviewRequired=false` and an empty `reviewReason`: it isn't scored,
+An unsampled run gets only `evalSampled=false`, `reviewRequired=false` and an empty `reviewReason` (plus `runNumber`
+when `forceReviewEveryN > 0`): it isn't scored,
 so `evalPassed`/`evalScore` aren't set.
 
 Invalid settings (a non-numeric or out-of-range `evalMinScore` or `evalSampleRate`, a negative or fractional
@@ -126,7 +133,8 @@ Two more inputs on the same task decide which runs are scored and which go to a 
 reasons are recorded when both apply. The run number is the run's position among all runs of the process, counted
 from the engine's history (`FluxnovaClient.get_run_number`), so the count survives worker restarts. It counts every
 version of the process, and restarts only if that history is removed (e.g. once runs pass the process's
-`historyTimeToLive`). The async eval (eval-async-worker) is separate: it has its own sample rate and never routes runs.
+`historyTimeToLive`). `fluxnova-run` (without `--skip-deploy`) deletes earlier deployments with cascade, which removes
+their history and restarts this count. The async eval (eval-async-worker) is separate: it has its own sample rate and never routes runs.
 
 ## Config
 
@@ -176,16 +184,18 @@ for a targeted validation handoff instead of trying to lock an already-owned tas
 Useful for one-off re-scoring, or for testing without waiting on a live BPMN run:
 
 ```python
+from fluxnova_mlflow_dataset import FluxnovaClient
 from eval_service_worker.scoring import score_process_instance
 
 outcome = score_process_instance(
-    "<processInstanceId>",
+    "<agent (child) processInstanceId>",
+    client=FluxnovaClient("http://localhost:8080/engine-rest"),
     tracking_uri="http://localhost:5001",
     process_key="loanAssessmentEvalProcess",
     experiment_name="fluxnova-loanAssessmentEvalProcess",
-    judge_model="gateway:/fluxnova-judge",
+    judge_model="openai:/gpt-4.1-mini",
 )
-print(outcome.eval_passed, outcome.eval_rationale)
+print(outcome.eval_passed, outcome.eval_score, outcome.eval_rationale)
 ```
 
 ## Tests

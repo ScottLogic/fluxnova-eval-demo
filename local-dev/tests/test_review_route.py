@@ -79,3 +79,23 @@ def test_local_container_must_be_stopped(monkeypatch):
         SimpleNamespace(returncode=0), SimpleNamespace(returncode=0, stdout="running", stderr="")]))
     with pytest.raises(RuntimeError, match="podman stop"):
         require_stopped_worker()
+
+
+@pytest.mark.parametrize("process_key", ["LoanApprovalProcess_AI", "loanAssessmentEvalProcess"])
+def test_current_and_older_workflows_get_review_routing_variables(process_key):
+    task = {**_task(None), "processDefinitionKey": process_key}
+    responses = [_response([]), _response([task]), _response(), _response(),
+                 _response([{"taskDefinitionKey": REVIEW_TASK}])]
+    session = Mock(request=Mock(side_effect=responses))
+    check_review_route(session, "http://engine", "parent", ensure_worker_stopped=Mock())
+    complete = next(c for c in session.request.call_args_list if c.args[1].endswith("/complete"))
+    variables = complete.kwargs["json"]["variables"]
+    assert variables["reviewRequired"]["value"] is True
+    assert variables["reviewReason"]["value"] == "FAILED_EVAL"
+
+
+def test_unrelated_process_definition_is_refused():
+    task = {**_task(None), "processDefinitionKey": "someOtherProcess"}
+    session = Mock(request=Mock(side_effect=[_response([]), _response([task])]))
+    with pytest.raises(RuntimeError, match="unrelated process"):
+        check_review_route(session, "http://engine", "parent", ensure_worker_stopped=Mock())

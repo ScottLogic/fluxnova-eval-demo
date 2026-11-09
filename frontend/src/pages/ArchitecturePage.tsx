@@ -31,7 +31,7 @@ const NODES: Node[] = [
         position: {x: 0, y: 0},
         data: {
             label: 'Fluxnova engine',
-            description: 'Runs deployed BPMN processes, including the AI agentic subprocess, and exports OTel traces for every run.',
+            description: 'Runs deployed BPMN processes, including the AI agentic subprocess, and exports OTLP gen_ai traces and metrics for every run. Agent content (prompts, responses) is not exported by default.',
         },
         ...nodeDefaults,
         height: 150,
@@ -51,7 +51,7 @@ const NODES: Node[] = [
         position: {x: 150, y: 250},
         data: {
             label: 'OTel Collector',
-            description: 'Receives OTLP traces from Fluxnova and forwards them to MLflow\'s trace store.'
+            description: 'Receives OTLP from Fluxnova, forwards traces to MLflow\'s trace store and exposes metrics for Prometheus/Grafana.'
         },
         ...nodeDefaults,
     },
@@ -107,7 +107,7 @@ const NODES: Node[] = [
         position: {x: -100, y: 400},
         data: {
             label: 'eval-service-worker',
-            description: 'Blocking guardrail eval worker. Handles the Eval service task on topic agent-output-eval. Scores the run against pass thresholds set as inputs on the BPMN task (evalMinScore, evalRequiredScorers) and returns evalPassed, evalScore, evalFailedScorers and evalRationale; failed runs go to human review (See Loan Assessment BPMN).'
+            description: 'Blocking guardrail eval worker (skippable per run). Handles the Eval service task on topic agent-output-eval, using the BPMN task inputs evalMinScore, evalRequiredScorers, evalSampleRate and forceReviewEveryN. Returns evalPassed, evalScore, evalFailedScorers, evalRationale, evalSampled, reviewRequired and reviewReason; runs that fail, or are one of every Nth, go to Human: Risk Assessment Review in Tasklist (see the Loan assessment tab).'
         },
         ...nodeDefaults,
     },
@@ -154,10 +154,10 @@ const EDGES: Edge[] = [
     },
     {
         id: 'e-fluxnova-otel',
-        source: 'otel',
-        sourceHandle: 'top',
-        target: 'fluxnova',
-        targetHandle: 'bottom',
+        source: 'fluxnova',
+        sourceHandle: 'sbottom',
+        target: 'otel',
+        targetHandle: 'ttop',
         label: 'OTLP Export', ...edgeDefaults
     },
     {
@@ -174,7 +174,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'grafana',
         targetHandle: 'left',
-        label: 'Exposes Metrics', ...edgeDefaults
+        label: 'Metrics', ...edgeDefaults
     },
     {
         id: 'e-regression-mlflow',

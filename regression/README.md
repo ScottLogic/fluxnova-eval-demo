@@ -40,7 +40,7 @@ one actual output and scores all gates together, replacing the older cached
 ### Scorers and how the data is retrieved
 
 Only regression runs `matches_golden`, which needs a reference answer from the
-golden dataset. The other judges are also used by the trace-based evaluation services.
+golden dataset. The other judges are also used by the eval workers, which score from process variables.
 
 **How scorer inputs are sourced.** Every scorer value comes directly from
 Fluxnova REST history/process variables, independently of trace export:
@@ -51,7 +51,8 @@ Fluxnova REST history/process variables, independently of trace export:
 - `inputs.tool_calls` / `inputs.iterations` — the agent's tool-call history (name, status, arguments) and loop
   iteration count, parsed from the same `_agentConversationHistory` (now enriched with `toolCalls`/`toolResult` per
   turn) plus the `_agentLoopIndex` process variable (`fluxnova_mlflow_dataset.process_variables`) — the process-variable
-  equivalent of what `eval-service-worker`/`eval-async-worker` read off the OTel trace's `execute_tool` spans.
+  source the eval workers use (`load_agent_run`); no trace content is needed. GenAI content capture is not required:
+  tool arguments come from `_agentConversationHistory`.
 - `expectations.expected_output` — the golden's reference answer (consumed by `matches_golden`).
 
 The suite also best-effort tags each raw trace `source=regression` so regression runs
@@ -315,7 +316,7 @@ is always respected.
 | `REGRESSION_GOLDEN_MATCH_THRESHOLD`       | `0.7`                                           | `fluxnova_mlflow_dataset.scorers`   | Min `matches_golden` judge score (0.0–1.0) counted as a "yes" verdict                                                                                                                                   |
 | `REGRESSION_EVIDENCE_CITATION_THRESHOLD`  | `0.7`                                           | `test_mlflow_regression.py`         | Min `evidence_citation` judge score (0.0–1.0) counted as a pass                                                                                                                                         |
 | `LLM_JUDGE_PROVIDER`                      | `openai`                                       | `fluxnova_mlflow_dataset.scorers`   | Provider for semantic/auxiliary judges; Ollama defaults to `gemma4:e2b` |
-| `DECISION_QUALITY_MODEL`                  | `openai:/gpt-4.1-mini` for OpenAI               | `fluxnova_mlflow_dataset.scorers`   | Full URI override for regression/listener semantic judging; worker has its own explicit `EVAL_SERVICE_JUDGE_MODEL` |
+| `DECISION_QUALITY_MODEL`                  | `openai:/gpt-4.1-mini` for OpenAI               | `fluxnova_mlflow_dataset.scorers`   | Full URI override for regression/`eval-async-worker` semantic judging; worker has its own explicit `EVAL_SERVICE_JUDGE_MODEL` |
 | `OPENAI_API_KEY`                          | none                                            | read by `litellm`/MLflow            | Required for OpenAI; semantic judge is `gpt-4.1-mini`, auxiliary judges `gpt-4o-mini`, agent `gpt-4o` |
 | `MLFLOW_GENAI_EVAL_MAX_WORKERS`           | `1` with `LLM_JUDGE_PROVIDER=ollama`, else `10` | `conftest.py`                       | Judge-call concurrency; capped to 1 only for the single-instance local Ollama judge                                                                                                                     |
 | `MLFLOW_TRACKING_URI`                     | `http://localhost:5001` (`default_server_tracking_uri`) | `conftest.py`                 | HTTP tracking server; avoids direct database/schema and container-local artifact access |

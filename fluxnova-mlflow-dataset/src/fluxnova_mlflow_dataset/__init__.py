@@ -1,7 +1,9 @@
 """Shared MLflow evaluation-dataset logic for the Fluxnova eval services.
 
 Provides the building blocks the eval services share:
-- read records back (single instance or the whole dataset) and score them;
+- build scorer inputs from a run's Fluxnova process variables
+  (``process_variables.py``, ``FluxnovaClient``, ``BpmnLookup``);
+- find a run's MLflow trace to attach results to, and write dataset records;
 - the shared scorer/judge definitions (``scorers.py``) — the deterministic
   value-based scorers used by ``eval-service-worker``/``eval-async-worker``
   (and the regression suite), the golden/config-driven scorers used by

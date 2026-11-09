@@ -6,16 +6,26 @@ the Fluxnova eval services (`eval-service-worker`, `eval-async-worker`, and the 
 "Overview"/"Architecture" sections for how this fits into the wider pipeline.
 
 Keeping this logic in one standalone, installable package guarantees what gets written matches what gets read/
-evaluated — both call sites use the exact same `build_mlflow_record`/`MlflowTraceReader`/`decision_quality_judge`
-rather than two copies that could drift apart.
+evaluated — every caller uses the same scorer/judge definitions, `load_agent_run`/`scorer_inputs_from_variables`
+for inputs, and `MlflowTraceReader` to find the trace to attach results to, rather than copies that could drift apart.
 
 **What it provides:**
 
 - **Trace reading** (`MlflowTraceReader`) — reads `gen_ai.*` semantic-convention span data (`invoke_agent`,
   `execute_tool`, `chat`) straight out of MLflow's trace store, replacing the old bespoke `fluxnova_listener` OTLP
-  receiver now that the OTel Collector exports traces directly to MLflow.
+  receiver now that the OTel Collector exports traces directly to MLflow. The eval workers use it only to locate a
+  run's trace (`wait_for_trace`) as the assessment anchor.
+- **Process-variable scorer inputs** (`process_variables.py`) — `load_agent_run`, `scorer_inputs_from_variables`,
+  `agent_final_output`, `tool_calls_from_variables`, `decision_keyword`: build the canonical scorer payload from
+  `_agentConversationHistory`, `_agentLoopIndex` and the `agent:context` variables.
+- **Fluxnova REST client** (`FluxnovaClient`) — `get_variables`, `get_child_instance_id`,
+  `get_process_definition_xml`, `get_run_number`.
+- **BPMN lookup** (`BpmnLookup`, including `BpmnLookup.from_xml` for deployed XML) — tool display names,
+  `agent:context` names, agent provider/model/prompt.
 - **Record shaping/read/write** (`store.py`) — builds MLflow evaluation-dataset records from agent-history data and
-  reads/writes the persistent PostgreSQL-backed dataset, idempotently.
+  reads/writes the persistent PostgreSQL-backed dataset, idempotently. `build_mlflow_record` (with goldens/
+  `expected_tools`) is no longer used by the eval workers; they write a content-free record (process id, decision
+  keyword, scorer values/rationales).
 - **Shared judge/scorer definitions** (`scorers.py`) — the `decision_quality` `Guidelines` judge and a set of
   deterministic, value-based scorers, defined once so the eval services (`eval-service-worker`,
   `eval-async-worker`) and the regression suite never disagree on what "good" means.
@@ -88,9 +98,10 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 `decision_quality_judge(model)` builds the one `Guidelines` judge (`DECISION_QUALITY_NAME` /
 `DECISION_QUALITY_GUIDELINES`) used identically by:
 
-- the regression suite (`regression/`) — called with a direct `"ollama:/gemma4:e2b"`-style URI.
-- `eval-service-worker` — synchronous per-run scoring, using a direct provider URI in the local demo or a `"gateway:/<endpoint>"` URI (required for
-  anything routed through the MLflow AI Gateway).
+- the regression suite and `eval-async-worker` — the shared `decision_quality` (`openai:/gpt-4.1-mini` by default,
+  `ollama:/gemma4:e2b` with `LLM_JUDGE_PROVIDER=ollama`).
+- `eval-service-worker` — `EVAL_SERVICE_JUDGE_MODEL`, default `openai:/gpt-4.1-mini`.
+- `mlflow-judges` — `gateway:/fluxnova-judge` (routed through the MLflow AI Gateway).
 
 `DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `final_recommendation_format`, and others) are non-LLM checks
 used by `eval-service-worker`, `eval-async-worker` and the regression suite. They know nothing about tracing:
@@ -107,7 +118,11 @@ real trace (regardless of which columns the scorer reads), grouped under one Eva
 > on `applicantType`/`hasCollateral`) are a hardcoded mirror of `fluxnova-runner/config/loan-assesment-eval.yml`'s
 > `expected_tools` list, kept in sync manually rather than read from that YAML at runtime — this is deliberate (see
 > the module's comment) to keep callers free of any BPMN/YAML config read, at the cost of
-> needing a manual update here if that BPMN's tool set/rules ever change.
+> needing a manual update here if that BPMN's tool set/rules ever change. The `expected_tools` blocks in all three
+> runner configs are reference only; edit `scorers._expected_tools_for` to change the rules.
+
+`TOOL_ARGUMENT_SCORERS` (and `ALL_DETERMINISTIC_SCORERS` = both bundles) also check tool-call arguments. Arguments
+come from `_agentConversationHistory`, so these work with GenAI content capture off.
 
 ## Tests
 

@@ -28,9 +28,10 @@ from fluxnova_mlflow_dataset import (
 )
 
 # The scorers this service runs by default: the deterministic checks plus the two
-# LLM judges whose inputs are all derivable from the trace (decision_quality over
-# outputs, evidence_citation over outputs + input_variables). matches_golden is
-# excluded — it needs a golden expected_output the trace doesn't carry.
+# LLM judges whose inputs are all derivable from the run's process variables
+# (decision_quality over outputs, evidence_citation over outputs + input_variables).
+# matches_golden is excluded — it needs a golden expected_output a production run
+# doesn't have.
 ASYNC_EVAL_SCORERS: list[Any] = [decision_quality, evidence_citation, *DETERMINISTIC_SCORERS]
 
 

@@ -1,8 +1,7 @@
-"""Minimal read-only Fluxnova REST API client used by the ``collect`` step.
-
-Collection never deploys or starts processes (that's ``fluxnova_runner``'s
-job) — it only needs to read back a completed instance's final variables,
-which MLflow's trace store doesn't carry (only span/tool-call data does).
+"""Minimal read-only Fluxnova REST client used by the eval workers and
+``load_agent_run``: process variables, Call Activity child lookup, deployed
+BPMN XML and run numbering. It never deploys or starts processes (that's
+``fluxnova_runner``'s job).
 """
 
 from __future__ import annotations

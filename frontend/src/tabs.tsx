@@ -42,7 +42,7 @@ export const TABS: TabDefinition[] = [
     id: 'workflow',
     label: 'Workflow run',
     description:
-      'Trigger a run of the loan approval BPMN with editable input, and toggle evals independently for that run.',
+      'Trigger a run of the loan approval BPMN with editable input, optionally skip the guardrail or override its settings for that run, and follow the guardrail and human-review outcome.',
     Component: WorkflowPage,
   },
   {

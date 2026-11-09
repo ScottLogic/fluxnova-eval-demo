@@ -7,7 +7,9 @@ with UI-only plumbing, this API lives on its own and wraps them as a library/CLI
 them. See the [local UI walkthrough](../local-dev/README.md#frontend-and-ui-api).
 
 One router per concern: `regression.py`, `workflow.py`, `evals.py` (all under `src/ui_api/routers/`).
-`evals.py` exposes scorer definitions.
+`evals.py` exposes scorer definitions. ui-api imports `eval-async-worker` and `eval-service-worker` as dependencies
+to read their scorer lists. It no longer talks to eval-async-worker at runtime (no auto-eval endpoints, no
+`UI_API_EVAL_ASYNC_URL`); its sample rate is controlled only on its own `:8092` endpoint.
 
 ## Regression endpoints
 
@@ -17,6 +19,7 @@ requires `pytest-json-report` (`regression/requirements.txt`) for structured per
 
 ```
 GET  /api/regression/tests           -> {"tests": [{"name": "test_mlflow_regression.py::test_...", "description": "..."}, ...]}
+GET  /api/regression/goldens         -> {"goldens": [...]}
 POST /api/regression/runs            -> {"runId": "<uuid>"}                      (202, starts in the background)
 GET  /api/regression/runs/{run_id}   -> {"runId": ..., "status": "running"}
                                       -> {"runId": ..., "status": "passed" | "failed", "exitCode": ..., "summary": {...}, "tests": [...]}
@@ -25,7 +28,8 @@ GET  /api/regression/runs/{run_id}   -> {"runId": ..., "status": "running"}
 
 The suite needs `fluxnova-runner`/`fluxnova-mlflow-dataset` installed (see `../setup.sh`'s shared `.venv`) — if
 ui-api itself isn't running from that same environment, point it at the right interpreter with
-`UI_API_REGRESSION_PYTHON=/path/to/.venv/bin/python`.
+`UI_API_REGRESSION_PYTHON=/path/to/.venv/bin/python`. `UI_API_REGRESSION_DIR` and `UI_API_GOLDENS_PATH` override the
+suite directory and goldens file.
 
 ## Workflow endpoints
 
@@ -34,17 +38,24 @@ no subprocess needed here, unlike regression, since deploying a BPMN and startin
 couple of fast HTTP calls to Fluxnova rather than a slow live-agent test suite.
 
 ```
-GET  /api/workflow/config           -> {"processKey": "...", "variables": {...}}   (the run's default variables)
+GET  /api/workflow/config  -> {"processKey": "...", "variables": {...},
+                               "agentConfig": {"provider","model","systemPrompt"} | null,
+                               "guardrail": {"taskId","taskName","minScore","requiredScorers","sampleRate",
+                                             "forceReviewEveryN","configuredInBpmn","overridable"} | null}
 POST /api/workflow/runs             body: {"requestedAmount": 60000, ...}   -> {"instanceId": "<id>"}   (202)
                                      (body keys override the config file's default `variables` — omit to use
                                       the defaults from fluxnova-runner/config/loan_approval_process_ai.yml)
-GET  /api/workflow/runs/{instance_id} -> {"instanceId": ..., "status": "active"}
+GET  /api/workflow/runs/{instance_id} -> {"instanceId": ..., "status": "active", "variables": {...}, "stages": [...]}
                                        -> {"instanceId": ..., "status": "completed" | "terminated" | "error",
-                                           "state": "COMPLETED", "variables": {...}}
+                                           "state": "COMPLETED", "variables": {...}, "stages": [...]}
 ```
 
+`guardrail` is read from the `agent-output-eval` service task's input parameters in `bpmn_path` only. `stages`
+nests Call Activity children.
+
 Each `POST` deploys the configured BPMN using duplicate filtering (reusing unchanged
-resources or creating a new version), preserving earlier instances, history and human tasks, and
+resources or creating a new version), preserving earlier instances, history and human tasks (unlike `fluxnova-run`,
+which cascade-deletes earlier deployments), and
 starts the config's mock external-task workers once per ui-api process (they run forever, answering whichever
 matching task shows up — no need to restart them per run). Which workflow config file is used is controlled by
 `UI_API_WORKFLOW_CONFIG` (defaults to `fluxnova-runner/config/loan_approval_process_ai.yml`, resolved relative to the repo
@@ -58,7 +69,8 @@ explicitly; see [networking/configuration](../local-dev/README.md#frontend-and-u
 Per-test regression results include `scorers` with name/status/value/rationale; their
 replayable gate reports are retained in MLflow under `regression/<scenario>/`.
 
-`GET /api/evals/definitions` lists the shared scorer objects.
+`GET /api/evals/definitions` lists the shared scorer objects: each has `name`, `description`, `deterministic`,
+`usedInAutoEval` (eval-async-worker), `usedInEvalServiceWorker` and `usedInRegression`.
 
 ```bash
 cd ui-api

@@ -1,6 +1,6 @@
 """Scores one just-completed agentic subprocess run against a set of scorers —
 the nondeterministic ``decision_quality`` LLM judge plus deterministic checks
-(required tool calls, no tool errors, a definitive decision keyword).
+(required tool calls, no tool errors, final ``APPROVE``/``REJECT`` line format, ...).
 
 Scorer inputs come from the agent run's **process variables**
 (``fluxnova_mlflow_dataset.load_agent_run``: conversation history, loop count and
@@ -118,9 +118,9 @@ def score_process_instance(
     Logs every scorer's ``Feedback`` back onto the trace as an assessment and
     registers one MLflow Evaluation Run grouping them, merges a lightweight
     record into the MLflow evaluation dataset, then returns the pass/fail
-    outcome for the caller (the BPMN worker) to act on — gating requires *every*
-    scorer to pass: both the nondeterministic ``decision_quality`` judge and all
-    of the deterministic trace-only scorers.
+    outcome for the caller (the BPMN worker) to act on. Pass/fail is decided by
+    the BPMN thresholds (``guardrail.apply_guardrail``); scorers read
+    process-variable inputs.
 
     ``trace_poll_timeout``/``trace_poll_interval`` control how long to retry
     looking up the trace before giving up — the OTel Collector delivers spans

@@ -73,8 +73,10 @@ function WorkflowPage() {
         <p className="sample-preview-label">Evals</p>
         <p className="hint">
           Every run is scored by the non-blocking async eval, which records results in MLflow without
-          affecting the run. The eval service worker is the blocking guardrail: it scores the agent's
-          decision and routes failures to human review. Its toggle applies to the next run started below.
+          affecting the run. The eval service worker is the blocking guardrail: it scores a sample of runs
+          and sends failures (and, if set, every Nth run) to human review in Fluxnova Tasklist. Turning it off
+          skips review too, so the agent's decision goes straight to "Risk Approved?". Its toggle and settings
+          apply to the next run started below; invalid settings stop the run with an incident.
         </p>
         <EvalToggles />
         <GuardrailThresholds guardrail={guardrail} />

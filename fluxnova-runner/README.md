@@ -23,8 +23,8 @@ Installs two console-script entry points: `fluxnova-run` and `fluxnova-run-mock-
 
 Reads a workflow YAML config file from [`config/`](config) (e.g. `fluxnova-runner/config/loan-assesment.yml`) — see
 the repo root README's "Config file" section for the full field reference. `RunnerConfig.from_file` only reads the
-fields it needs and silently ignores the rest (`subprocess_id`, `available_tools`, `mlflow_dataset`, etc. — used by
-the eval services), so the same file works unchanged for both:
+fields it needs and silently ignores unknown fields (`available_tools`, `expected_tools`, `dataset_path`,
+`mlflow_dataset`). These are reference/legacy only; no service reads them.
 
 | Field             | Required | Description                                                                   |
 |-------------------|----------|-------------------------------------------------------------------------------|
@@ -34,8 +34,12 @@ the eval services), so the same file works unchanged for both:
 | `deployment_name` | Yes      | Human-readable deployment name shown in Cockpit                               |
 | `additional_bpmn_paths` | No | Extra `.bpmn` files deployed alongside, e.g. a Call Activity's called process |
 | `additional_resources`  | No | Other deployable files in the same deployment, e.g. a `.form` referenced by a user task's `camunda:formRef` |
-| `variables`       | No       | Initial process variables (plain `key: value` pairs)                          |
+| `variables`       | No       | Initial process variables (plain `key: value` pairs); can include the guardrail inputs `evalMinScore`, `evalRequiredScorers`, `evalSampleRate`, `forceReviewEveryN` |
 | `mock_workers`    | No       | `{topic: {output variables}}` — see "Mock workers" below                      |
+| `wait_for_activity` | No     | Return when this activity completes; `--wait-for-activity` overrides it       |
+| `subprocess_id`   | No       | Ad-hoc subprocess id, used by ui-api for the agent config                     |
+
+`loan_approval_process_ai.yml` is the current workflow.
 
 ## Usage
 
@@ -45,17 +49,22 @@ fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
 
 Deploys the BPMN, starts a process instance with the config's `variables`, starts one mock external-task worker
 thread per `mock_workers` topic (if `--with-mock-workers` is given), then polls until the process completes and
-prints the process instance ID.
+prints the process instance ID. Before deploying it clears stale external-task locks left by crashed workers.
+
+> **Warning — destructive redeploy.** Unless `--skip-deploy` is given, `fluxnova-run` first deletes every existing
+> deployment with the config's `deployment_name`, with cascade. That removes all their process instances, history,
+> open user tasks and external tasks. It also restarts the guardrail's every-Nth run count. Use `--skip-deploy` (or
+> a different `deployment_name`) to keep earlier runs. ui-api's workflow endpoint does not do this.
 
 ```bash
 fluxnova-run --skip-deploy fluxnova-runner/config/loan-assesment.yml        # BPMN already deployed — skip the deploy step
 fluxnova-run fluxnova-runner/config/loan-assesment.yml                       # no mock workers — needs real service-task backends
-fluxnova-run --wait-for-activity AdHocSubProcess_LoanAssessmentAgent fluxnova-runner/config/loan-assesment-eval.yml
+fluxnova-run --wait-for-activity CallActivity_LoanAssessmentAgent fluxnova-runner/config/loan-assesment-eval.yml
 ```
 
 `--wait-for-activity ACTIVITY_ID` returns as soon as that one BPMN activity finishes, instead of waiting for the
 whole process instance — useful when a downstream step (e.g. `eval-service-worker`'s service task) shouldn't block
-the run from being considered "done" for the runner's purposes.
+the run from being considered "done" for the runner's purposes. `--timeout SECONDS` (default 600) caps the wait.
 
 Set `FLUXNOVA_USERNAME`/`FLUXNOVA_PASSWORD` env vars if the engine has auth enabled; both are read from the
 environment, never from the config file.

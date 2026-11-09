@@ -7,6 +7,9 @@ a workflow with Eval service tasks (e.g. ``LoanApprovalProcess_AI.bpmn``) are
 scored by ``eval-service-worker`` (blocking guardrail) and ``eval-async-worker``
 (non-blocking). The run's trace is persisted in MLflow by the OTel Collector.
 
+Deploy first deletes existing deployments of the same name with cascade
+(instances and history included) unless ``--skip-deploy`` is given.
+
 Usage
 -----
     fluxnova-run config/workflow.yml
