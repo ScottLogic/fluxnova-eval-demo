@@ -96,9 +96,10 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
 used by `eval-service-worker`, `eval-async-worker` and the regression suite. They know nothing about tracing:
 each reads plain values from MLflow's standard `inputs`/`outputs` columns (the canonical shape
 `{"input_variables", "tool_calls": [{"name", "status", "arguments"}], "iterations"}` — see
-`traces.scorer_inputs_from_trace`). Each caller extracts those values from whatever source suits it — the eval
-services from the run's MLflow trace (`scorer_inputs_from_trace(trace)`), the regression suite from the live run's
-process variables — and passes them via `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}],
+`process_variables.scorer_inputs_from_variables`). Every caller builds them from the run's Fluxnova process
+variables (`process_variables.py`: the eval workers through `load_agent_run`, the regression suite through
+`scorer_inputs_from_variables`), so no prompt/response content is needed on traces. `traces.scorer_inputs_from_trace`
+is kept for traces exported with content capture on. Callers pass the values via `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}],
 scorers=[...])`. When a `trace` column is included, MLflow still logs every scorer's `Feedback` back onto that same
 real trace (regardless of which columns the scorer reads), grouped under one Evaluation Run.
 

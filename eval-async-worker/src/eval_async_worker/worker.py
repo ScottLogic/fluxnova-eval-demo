@@ -8,9 +8,13 @@ reaches ``ServiceTask_AsyncEvaluateAgentOutput`` (topic
     for each locked task:
         resolve the agent's (Call Activity child) process instance
         roll the sample-rate dice; if not sampled, complete straight away
-        wait for that run's trace to land in MLflow
+        read the run's scorer inputs from its process variables
+        wait for that run's trace to land in MLflow (the anchor for feedback)
         score it with ASYNC_EVAL_SCORERS (assessments logged onto the trace)
         complete the task with NO variables
+
+Scorer inputs never come from trace content, so gen_ai content capture can
+stay off; see ``fluxnova_mlflow_dataset.process_variables``.
 
 Completing with no variables is deliberate: the parallel token shares the
 process scope, so writing results here could change how the other branch
@@ -35,7 +39,14 @@ import mlflow
 import requests
 from camunda.external_task.external_task import ExternalTask
 from camunda.external_task.external_task_worker import ExternalTaskWorker
-from fluxnova_mlflow_dataset import ApiError, FluxnovaClient, MlflowTraceReader, TraceStoreError
+from fluxnova_mlflow_dataset import (
+    AgentRun,
+    ApiError,
+    FluxnovaClient,
+    MlflowTraceReader,
+    TraceStoreError,
+    load_agent_run,
+)
 
 from eval_async_worker.config import AsyncWorkerConfig
 from eval_async_worker.control import SampleRateControl
@@ -86,8 +97,27 @@ class AsyncEvalWorker:
             return task.complete()
 
         try:
+            run = self._load_run(instance_id)
+        except (ApiError, requests.RequestException) as exc:
+            logger.warning("Could not read process variables for %s: %s", instance_id, exc)
+            return task.failure(
+                error_message="Could not read the agent run's process variables",
+                error_details=str(exc),
+                max_retries=_MAX_RETRIES,
+                retry_timeout=_RETRY_TIMEOUT_MS,
+            )
+        if not run.outputs:
+            logger.warning("No final output in the process variables of %s", instance_id)
+            return task.failure(
+                error_message="No final agent output to score",
+                error_details=f"_agentConversationHistory of {instance_id} has no assistant reply",
+                max_retries=_MAX_RETRIES,
+                retry_timeout=_RETRY_TIMEOUT_MS,
+            )
+
+        try:
             trace = self._fetch_trace(instance_id)
-            outcome = self._score(trace)
+            outcome = self._score(trace, run)
         except (TraceStoreError, ScoringError) as exc:
             logger.warning("Trace for %s not ready to score: %s", instance_id, exc)
             return task.failure(
@@ -128,6 +158,9 @@ class AsyncEvalWorker:
             logger.warning("Could not resolve child instance for %s (%s)", parent_id, exc)
             return parent_id
 
+    def _load_run(self, instance_id: str) -> AgentRun:
+        return load_agent_run(self._client, instance_id)
+
     def _should_sample(self) -> bool:
         rate = self._sample_rate.get()
         if rate >= 1.0:
@@ -151,10 +184,10 @@ class AsyncEvalWorker:
             poll_interval=self._config.trace_poll_interval_s,
         )
 
-    def _score(self, trace: Any) -> Any:
+    def _score(self, trace: Any, run: AgentRun) -> Any:
         # Make sure the Evaluation Run lands in the traces' experiment.
         mlflow.set_experiment(experiment_id=self._experiment())
-        return score_trace(trace, self._scorers)
+        return score_trace(trace, run.inputs, run.outputs, self._scorers)
 
     # ------------------------------------------------------------------
     # Run loop

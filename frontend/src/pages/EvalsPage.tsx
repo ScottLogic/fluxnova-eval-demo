@@ -39,6 +39,11 @@ function EvalsPage() {
                     the agent's output (e.g. against fixed guidelines, or a golden reference answer) — slower and not
                     perfectly repeatable, but able to judge things a code check can't.
                 </p>
+                <p>
+                    In production runs, both eval workers build each scorer's inputs from the agent's Fluxnova process
+                    variables (its context variables, conversation history and loop count), not from trace content,
+                    and attach their results to the run's MLflow trace.
+                </p>
             </div>
 
             {error && <p className="hint danger">{error}</p>}

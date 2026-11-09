@@ -35,8 +35,7 @@ from fluxnova_mlflow_dataset import (
 from fluxnova_mlflow_dataset.experiments import require_remote_artifacts
 from fluxnova_mlflow_dataset.goldens import load_goldens
 from fluxnova_mlflow_dataset.scorers import DECISION_QUALITY_RUBRIC_VERSION
-from fluxnova_runner.agent_output import agent_final_output
-from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
+from fluxnova_mlflow_dataset.process_variables import agent_final_output, scorer_inputs_from_variables
 from fluxnova_runner.client import Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
@@ -248,7 +247,7 @@ def tool_names(cfg: RunnerConfig) -> dict[str, str | None]:
     The agent's tool-call history (``_agentConversationHistory``) records each
     call's BPMN element id (``ServiceTask_...``), but the scorers key on the
     human-readable display name — see
-    ``fluxnova_runner.agent_tool_calls.tool_calls_from_variables``.
+    ``fluxnova_mlflow_dataset.process_variables.tool_calls_from_variables``.
     """
     return BpmnLookup(cfg.bpmn_path, cfg.subprocess_id).tool_names()
 
@@ -274,7 +273,7 @@ def test_agent_passes_golden(
       ``REGRESSION_EVIDENCE_CITATION_THRESHOLD``.
     - ``ALL_DETERMINISTIC_SCORERS`` — code checks on the run's tool calls,
       ordering, arguments and iteration count, graded from the process
-      variables (see ``fluxnova_runner.agent_tool_calls``) — no MLflow trace needed.
+      variables (see ``fluxnova_mlflow_dataset.process_variables``) — no MLflow trace needed.
 
     Every scorer's result is recorded in the JSON report's per-test
     ``metadata.scorers`` (read by ``ui_api.regression_runner``), and the

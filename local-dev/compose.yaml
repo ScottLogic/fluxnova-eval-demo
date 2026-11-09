@@ -92,6 +92,7 @@ services:
       FLUXNOVA_POSTGRES_DB: ${FLUXNOVA_POSTGRES_DB:-fluxnova}
       SPRING_AI_OLLAMA_BASE_URL: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FLUXNOVA_CAPTURE_GENAI_CONTENT: ${FLUXNOVA_CAPTURE_GENAI_CONTENT:-false}
     volumes:
       - ./default.yml:/fluxnova/configuration/default.yml:ro
     # The published image does not define HEALTHCHECK. Gate dependent workers on

@@ -1,10 +1,13 @@
 """Scores one just-completed agentic subprocess run against a set of scorers —
 the nondeterministic ``decision_quality`` LLM judge plus deterministic checks
-(required tool calls, no tool errors, a definitive decision keyword). It reads
-the run's MLflow trace and extracts the plain values the scorers need (via
-``fluxnova_mlflow_dataset.scorer_inputs_from_trace`` — the scorers themselves
-know nothing about tracing); no BPMN parsing or process-variable reads for scoring.
-See this package's README for the worker's separate child-instance lookup.
+(required tool calls, no tool errors, a definitive decision keyword).
+
+Scorer inputs come from the agent run's **process variables**
+(``fluxnova_mlflow_dataset.load_agent_run``: conversation history, loop count and
+``agent:context`` variables), never from trace content, so gen_ai content capture
+can stay off. The run's MLflow trace is still looked up, but only as the anchor
+that scorer feedback is attached to: passing it to ``mlflow.genai.evaluate``
+attaches the assessments to it without copying the inputs/outputs into MLflow.
 
 Uses ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
 "outputs": ...}], scorers=[...])`` (rather than a bare ``mlflow.log_feedback``
@@ -28,11 +31,12 @@ from typing import Any
 import mlflow
 from fluxnova_mlflow_dataset import (
     DETERMINISTIC_SCORERS,
+    FluxnovaClient,
     MlflowTraceReader,
+    decision_keyword,
     decision_quality_judge,
     experiment_name_for,
-    scorer_inputs_from_trace,
-    stringify_output,
+    load_agent_run,
     write_to_mlflow_dataset,
 )
 
@@ -92,6 +96,7 @@ class EvalOutcome:
 def score_process_instance(
     process_instance_id: str,
     *,
+    client: FluxnovaClient,
     tracking_uri: str,
     process_key: str,
     experiment_name: str | None,
@@ -99,9 +104,9 @@ def score_process_instance(
     trace_poll_timeout: float = 30.0,
     trace_poll_interval: float = 3.0,
 ) -> EvalOutcome:
-    """Fetch a completed subprocess run's trace from MLflow, run the
-    ``decision_quality`` judge plus the deterministic scorers against it, and
-    record the results.
+    """Read a completed subprocess run's process variables from Fluxnova, run
+    the ``decision_quality`` judge plus the deterministic scorers against them,
+    and record the results on the run's MLflow trace.
 
     Logs every scorer's ``Feedback`` back onto the trace as an assessment and
     registers one MLflow Evaluation Run grouping them, merges a lightweight
@@ -115,6 +120,14 @@ def score_process_instance(
     to MLflow asynchronously, so this BPMN service task (which runs immediately
     after the subprocess ends) can otherwise beat the trace's arrival.
     """
+    run = load_agent_run(client, process_instance_id)
+    final_output = run.outputs
+    if not final_output:
+        raise NoFinalOutputError(
+            f"No final output found for process instance {process_instance_id!r} — "
+            "has the agentic subprocess actually completed?"
+        )
+
     mlflow.set_tracking_uri(tracking_uri)
     experiment = mlflow.set_experiment(experiment_name_for(process_key, experiment_name))
 
@@ -122,20 +135,9 @@ def score_process_instance(
     trace = reader.wait_for_trace(
         process_instance_id, timeout=trace_poll_timeout, poll_interval=trace_poll_interval
     )
-    final_output = reader.get_final_output(process_instance_id)
-    if not final_output:
-        raise NoFinalOutputError(
-            f"No final output found for process instance {process_instance_id!r} — "
-            "has the agentic subprocess actually completed and been exported to "
-            "MLflow yet?"
-        )
 
     scorers = [decision_quality_judge(judge_model), *DETERMINISTIC_SCORERS]
-    row = {
-        "trace": trace,
-        "inputs": scorer_inputs_from_trace(trace),
-        "outputs": final_output,
-    }
+    row = {"trace": trace, "inputs": run.inputs, "outputs": final_output}
     result = mlflow.genai.evaluate(data=[row], scorers=scorers)
     row = result.tables["eval_results"].iloc[0]
 
@@ -191,12 +193,11 @@ def _log_dataset_record(
     judge_model: str,
     scorer_results: dict[str, dict[str, Any]],
 ) -> None:
-    """Merge a lightweight evaluation-dataset record for this run.
+    """Merge a lightweight, content-free evaluation-dataset record for this run.
 
-    Unlike ``fluxnova_mlflow_dataset.store.build_mlflow_record`` (used by the
-    offline collector), this worker has no BPMN/Fluxnova REST access to enrich
-    the record with ``agent_goal``/``input_variables``/``tool_calls`` — only
-    the trace-derived output and every scorer's verdict are recorded.
+    Only the decision keyword (``APPROVE``/``REJECT``) and every scorer's verdict
+    and rationale are recorded — never the agent's full response or the
+    applicant inputs, which stay in Fluxnova's process variables.
     """
     tags = {
         "processInstanceId": process_instance_id,
@@ -210,7 +211,7 @@ def _log_dataset_record(
 
     record = {
         "inputs": {"process_instance_id": process_instance_id},
-        "outputs": stringify_output(final_output),
+        "outputs": decision_keyword(final_output),
         "expectations": {},
         "tags": tags,
     }

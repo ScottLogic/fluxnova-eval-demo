@@ -1,14 +1,12 @@
 # eval-service-worker
 
 The blocking **guardrail** worker: a standalone BPMN external-task worker (topic `agent-output-eval`) that scores a just-completed agentic subprocess run against the
-`decision_quality` MLflow judge plus a set of trace-only deterministic scorers, reading data purely from MLflow's
-trace store, without BPMN parsing or using process variables as scorer inputs.
-The Fluxnova history API is used only to resolve a Call Activity's child instance
-before reading its trace. See the [local demo walkthrough](../local-dev/README.md#demo-walkthrough)
+`decision_quality` MLflow judge plus the deterministic scorers. Scorer inputs come from the agent run's process
+variables over the Fluxnova REST API, so it needs no prompt/response content on traces. See the [local demo walkthrough](../local-dev/README.md#demo-walkthrough)
 for container startup and expected results.
 
 **Scorers run per task:** `decision_quality` (the non-deterministic `Guidelines` LLM judge) plus the full
-`DETERMINISTIC_SCORERS` bundle — the trace-only code checks from `fluxnova_mlflow_dataset.scorers`
+`DETERMINISTIC_SCORERS` bundle — the code checks from `fluxnova_mlflow_dataset.scorers`
 (`tool_correctness`, `no_tool_errors`, `cites_key_evidence_terms`,
 `no_duplicate_tool_calls`, `risk_checks_precede_affordability`, `no_collateral_check_when_no_collateral`, `no_bank_statement_for_employed_applicant`,
 `no_verify_employment_for_self_employed_applicant`, `step_efficiency`, `affordability_called_after_income_confirmed`,
@@ -23,21 +21,23 @@ serves the guardrail branch's `ServiceTask_EvaluateAgentOutput`, whose result ro
 `ServiceTask_AsyncEvaluateAgentOutput` (topic `agent-output-eval-async`) is served by
 [`eval-async-worker`](../eval-async-worker/README.md), which scores every run without routing it.
 
-**How the scorer inputs are sourced.** All scorers are decoupled from tracing, so the worker builds their plain-value
-inputs *from the trace itself* and passes them in explicitly:
+**How the scorer inputs are sourced.** `fluxnova_mlflow_dataset.load_agent_run` reads the agent instance (resolved
+for the Call Activity child, see below) from Fluxnova:
 
-- `trace` — the completed run's MLflow trace (resolved for the child instance, see below), so MLflow links every
-  `Feedback` back to it.
-- `inputs` — `scorer_inputs_from_trace(trace)` (from `fluxnova_mlflow_dataset`), which derives
-  `{input_variables, tool_calls, iterations}` from the `invoke_agent` span so the deterministic scorers can inspect
-  tool names/status without any BPMN parsing or REST history call.
-- `outputs` — the agent's final answer extracted from the trace's output spans.
+- `inputs` — `{input_variables, tool_calls, iterations}`: the `agent:context` variables declared in the deployed BPMN,
+  every tool call (display name, status, arguments) from `_agentConversationHistory`, and `_agentLoopIndex`.
+- `outputs` — the agent's final answer: the last assistant turn in `_agentConversationHistory`.
+- `trace` — the run's MLflow trace, looked up only so MLflow attaches every `Feedback` to it. Passing it with the
+  inputs/outputs doesn't copy them into MLflow, so the trace stays content-free.
+
+If the variables can't be read (Fluxnova REST error) or the run has no final answer yet, the task is retried.
 
 All scorers gate the BPMN outcome: `evalPassed` is `True` only when the `decision_quality` judge *and* every
 deterministic scorer pass. Every scorer's `Feedback` is logged back onto the same real trace as MLflow assessments,
 grouped under one MLflow Evaluation Run (via
 `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}], scorers=[...])`), plus a
-lightweight MLflow evaluation-dataset record. The task completes with `evalPassed` (Boolean, driven by all scorers) /
+lightweight MLflow evaluation-dataset record. The record is content-free: process instance id, the
+`APPROVE`/`REJECT` decision keyword, and each scorer's value and rationale. The task completes with `evalPassed` (Boolean, driven by all scorers) /
 `evalRationale` (String) output variables that route the flow:
 
 - `LoanApprovalProcess_AI.bpmn` (current workflow): `Gateway_13tt7bu` ("Further action required?") sends a pass to the

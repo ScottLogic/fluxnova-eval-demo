@@ -58,6 +58,27 @@ class TestMakeHandler:
         _, kwargs = task.failure.call_args
         assert kwargs["max_retries"] == worker._MAX_RETRIES
 
+    def test_retries_when_process_variables_cannot_be_read(self, monkeypatch):
+        from fluxnova_mlflow_dataset import ApiError
+
+        monkeypatch.setattr(
+            worker, "score_process_instance", MagicMock(side_effect=ApiError("HTTP 503"))
+        )
+        task = _task()
+
+        worker.make_handler(EvalServiceConfig(), _client())(task)
+
+        assert task.failure.call_args.kwargs["max_retries"] == worker._MAX_RETRIES
+
+    def test_passes_fluxnova_client_to_scoring(self, monkeypatch):
+        score = MagicMock(return_value=MagicMock(eval_passed=True, eval_rationale="ok"))
+        monkeypatch.setattr(worker, "score_process_instance", score)
+        client = _client(child_id="child-9")
+
+        worker.make_handler(EvalServiceConfig(), client)(_task())
+
+        assert score.call_args.kwargs["client"] is client
+
     def test_unexpected_error_is_not_retried(self, monkeypatch):
         monkeypatch.setattr(
             worker, "score_process_instance", MagicMock(side_effect=ValueError("boom"))

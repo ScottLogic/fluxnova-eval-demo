@@ -46,11 +46,11 @@ golden dataset. The other judges are also used by the trace-based evaluation ser
 Fluxnova REST history/process variables, independently of trace export:
 
 - `outputs` — the agent's *actual* final answer, read from the run's `_agentConversationHistory` process variable
-  (`fluxnova_runner.agent_output`).
+  (`fluxnova_mlflow_dataset.process_variables`).
 - `inputs.input_variables` — the applicant-facing variables the golden started the BPMN with.
 - `inputs.tool_calls` / `inputs.iterations` — the agent's tool-call history (name, status, arguments) and loop
   iteration count, parsed from the same `_agentConversationHistory` (now enriched with `toolCalls`/`toolResult` per
-  turn) plus the `_agentLoopIndex` process variable (`fluxnova_runner.agent_tool_calls`) — the process-variable
+  turn) plus the `_agentLoopIndex` process variable (`fluxnova_mlflow_dataset.process_variables`) — the process-variable
   equivalent of what `eval-service-worker`/`eval-async-worker` read off the OTel trace's `execute_tool` spans.
 - `expectations.expected_output` — the golden's reference answer (consumed by `matches_golden`).
 

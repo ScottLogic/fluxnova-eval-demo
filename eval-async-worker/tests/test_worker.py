@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from fluxnova_mlflow_dataset import ApiError, TraceStoreError
+from fluxnova_mlflow_dataset import AgentRun, ApiError, TraceStoreError
 
 from eval_async_worker import worker
 from eval_async_worker.config import AsyncWorkerConfig
 from eval_async_worker.control import SampleRateControl
 from eval_async_worker.scoring import ScoringError, TraceEvalOutcome
+
+_RUN = AgentRun("child-1", {"input_variables": {}, "tool_calls": [], "iterations": 3}, "APPROVE")
 
 
 def _task(instance_id: str = "parent-1") -> MagicMock:
@@ -24,6 +26,7 @@ def _worker(child_id: str | None = "child-1", rate: float = 1.0) -> worker.Async
     w = worker.AsyncEvalWorker(
         AsyncWorkerConfig(), client=client, scorers=[], sample_rate=SampleRateControl(rate)
     )
+    w._load_run = MagicMock(return_value=_RUN)
     w._fetch_trace = MagicMock(return_value="trace")
     w._score = MagicMock(
         return_value=TraceEvalOutcome(trace_id="tr-1", passed=False, scorer_results={})
@@ -39,8 +42,9 @@ def test_scores_child_trace_and_completes_without_variables() -> None:
 
     w.handle(task)
 
+    w._load_run.assert_called_once_with("child-1")
     w._fetch_trace.assert_called_once_with("child-1")
-    w._score.assert_called_once_with("trace")
+    w._score.assert_called_once_with("trace", _RUN)
     task.complete.assert_called_once_with()
     task.failure.assert_not_called()
 
@@ -64,6 +68,7 @@ def test_unsampled_task_completes_without_scoring() -> None:
 
     w.handle(task)
 
+    w._load_run.assert_not_called()
     w._fetch_trace.assert_not_called()
     w._score.assert_not_called()
     task.complete.assert_called_once_with()
@@ -74,6 +79,28 @@ def test_sample_rate_change_applies_live() -> None:
     w._sample_rate.set(1.0)
     w.handle(_task())
     w._score.assert_called_once()
+
+
+def test_process_variable_read_error_is_retried() -> None:
+    w = _worker()
+    w._load_run.side_effect = ApiError("HTTP 503")
+    task = _task()
+
+    w.handle(task)
+
+    w._fetch_trace.assert_not_called()
+    assert task.failure.call_args.kwargs["max_retries"] == worker._MAX_RETRIES
+
+
+def test_missing_final_output_is_retried() -> None:
+    w = _worker()
+    w._load_run.return_value = AgentRun("child-1", {}, None)
+    task = _task()
+
+    w.handle(task)
+
+    w._score.assert_not_called()
+    assert task.failure.call_args.kwargs["max_retries"] == worker._MAX_RETRIES
 
 
 def test_trace_not_ready_is_retried() -> None:

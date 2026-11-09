@@ -52,3 +52,25 @@ class TestGetChildInstanceId:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestGetProcessDefinitionXml:
+    def test_reads_deployed_definition_of_instance(self):
+        client = _client()
+        instance = MagicMock(ok=True)
+        instance.json.return_value = {"processDefinitionId": "def:1"}
+        xml = MagicMock(ok=True)
+        xml.json.return_value = {"bpmn20Xml": "<definitions/>"}
+        with patch.object(client._session, "get", side_effect=[instance, xml]) as mock_get:
+            assert client.get_process_definition_xml("child-1") == "<definitions/>"
+        urls = [call.args[0] for call in mock_get.call_args_list]
+        assert urls == [
+            "http://localhost:8080/engine-rest/history/process-instance/child-1",
+            "http://localhost:8080/engine-rest/process-definition/def:1/xml",
+        ]
+
+    def test_raises_on_http_error(self):
+        client = _client()
+        error = MagicMock(ok=False, status_code=404)
+        with patch.object(client._session, "get", return_value=error), pytest.raises(ApiError):
+            client.get_process_definition_xml("missing")

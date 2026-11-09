@@ -1,8 +1,8 @@
 """BPMN external-task worker: scores a just-completed agentic subprocess run.
 
 Subscribes to a single Camunda/Fluxnova external-task topic (default
-``agent-output-eval``). On each task, reads the process instance's final
-output/trace from MLflow, runs the ``decision_quality`` judge plus a set of
+``agent-output-eval``). On each task, reads the agent run's process variables
+from Fluxnova (see ``scoring.py``), runs the ``decision_quality`` judge plus a set of
 deterministic scorers (see ``scoring.py``), logs the results to MLflow (trace
 assessments + an Evaluation Run + a dataset record), and completes the task
 with ``evalPassed``/``evalRationale`` output variables that drive the BPMN
@@ -99,6 +99,7 @@ def make_handler(config: EvalServiceConfig, client: FluxnovaClient | None = None
         try:
             outcome = score_process_instance(
                 process_instance_id,
+                client=client,
                 tracking_uri=config.tracking_uri,
                 process_key=config.process_key,
                 experiment_name=config.experiment_name,
@@ -110,6 +111,14 @@ def make_handler(config: EvalServiceConfig, client: FluxnovaClient | None = None
             logger.warning("No output to score yet for %s: %s", process_instance_id, exc)
             return task.failure(
                 error_message="No final output available to score yet",
+                error_details=str(exc),
+                max_retries=_MAX_RETRIES,
+                retry_timeout=_RETRY_TIMEOUT_MS,
+            )
+        except (ApiError, requests.RequestException) as exc:
+            logger.warning("Could not read process variables for %s: %s", process_instance_id, exc)
+            return task.failure(
+                error_message="Could not read the agent run's process variables",
                 error_details=str(exc),
                 max_retries=_MAX_RETRIES,
                 retry_timeout=_RETRY_TIMEOUT_MS,

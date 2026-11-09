@@ -41,6 +41,7 @@ if ! start_existing_pod "$FLUXNOVA_POD_NAME" fluxnova otel-collector; then
     -e FLUXNOVA_POSTGRES_DB="${FLUXNOVA_POSTGRES_DB:-fluxnova}" \
     -e SPRING_AI_OLLAMA_BASE_URL="$OLLAMA_CONTAINER_URL" \
     -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+    -e FLUXNOVA_CAPTURE_GENAI_CONTENT="${FLUXNOVA_CAPTURE_GENAI_CONTENT:-false}" \
     -e OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
     -e OTEL_EXPORTER_OTLP_PROTOCOL=grpc \
     -v "${LOCAL_DEV_DIR}/default.yml:/fluxnova/configuration/default.yml:ro" \

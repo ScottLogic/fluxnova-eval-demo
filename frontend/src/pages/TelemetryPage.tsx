@@ -176,6 +176,17 @@ chat {gen_ai.request.model}          type gen_ai.inference.client          (CLIE
 ...`}
         </pre>
             </div>
+
+            <div>
+                <p className="sample-preview-label">Content capture</p>
+                <p className="hint">
+                    Prompt, response and tool argument/result content (<code>gen_ai.input.messages</code>,{' '}
+                    <code>gen_ai.output.messages</code>, <code>gen_ai.tool.call.arguments</code>, …) is <strong>not</strong>{' '}
+                    exported by default, so traces carry metrics and span structure only. The eval workers read the
+                    agent's inputs, tool calls and final answer from Fluxnova process variables instead. Set{' '}
+                    <code>FLUXNOVA_CAPTURE_GENAI_CONTENT=true</code> to export content for local debugging.
+                </p>
+            </div>
         </section>
     )
 }

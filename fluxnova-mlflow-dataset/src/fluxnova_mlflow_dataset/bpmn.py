@@ -42,6 +42,22 @@ class BpmnLookup:
         self._subprocess_id = subprocess_id
         self._root = ElementTree.parse(self._bpmn_path).getroot()
 
+    @classmethod
+    def from_xml(cls, xml: str, subprocess_id: str | None = None) -> BpmnLookup:
+        """Build a lookup from BPMN XML text (e.g. a deployed definition read
+        over the Fluxnova REST API). ``subprocess_id`` defaults to the first
+        ``adHocSubProcess`` in the document."""
+        lookup = cls.__new__(cls)
+        lookup._bpmn_path = Path("<deployed definition>")
+        lookup._root = ElementTree.fromstring(xml)
+        if subprocess_id is None:
+            first = lookup._root.find(".//bpmn:adHocSubProcess", _NS)
+            if first is None or first.get("id") is None:
+                raise BpmnLookupError("No adHocSubProcess in the deployed definition")
+            subprocess_id = first.get("id")
+        lookup._subprocess_id = subprocess_id
+        return lookup
+
     def has_subprocess(self) -> bool:
         """Return whether this file declares an ``adHocSubProcess`` with the
         configured ``subprocess_id`` — a non-raising existence check, useful

@@ -16,6 +16,13 @@ gets written matches what gets read/evaluated.
 from fluxnova_mlflow_dataset.bpmn import BpmnLookup, BpmnLookupError
 from fluxnova_mlflow_dataset.fluxnova_client import ApiError, FluxnovaClient
 from fluxnova_mlflow_dataset.goldens import load_goldens, match_golden
+from fluxnova_mlflow_dataset.process_variables import (
+    AgentRun,
+    agent_final_output,
+    decision_keyword,
+    load_agent_run,
+    scorer_inputs_from_variables,
+)
 from fluxnova_mlflow_dataset.scorers import (
     ALL_DETERMINISTIC_SCORERS,
     DECISION_QUALITY_GUIDELINES,
@@ -68,6 +75,11 @@ from fluxnova_mlflow_dataset.traces import (
 )
 
 __all__ = [
+    "AgentRun",
+    "agent_final_output",
+    "decision_keyword",
+    "load_agent_run",
+    "scorer_inputs_from_variables",
     "ExpectedToolRule",
     "resolve_expected_tools",
     "load_goldens",

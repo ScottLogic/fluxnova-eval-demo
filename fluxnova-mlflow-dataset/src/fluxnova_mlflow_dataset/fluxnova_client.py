@@ -65,6 +65,19 @@ class FluxnovaClient:
         instances.sort(key=lambda item: item.get("startTime") or "", reverse=True)
         return instances[0]["id"]
 
+    def get_process_definition_xml(self, instance_id: str) -> str:
+        """Return the BPMN XML of the definition ``instance_id`` ran.
+
+        Uses the historic process-instance API so it works after the instance
+        ends, then reads the deployed definition's ``bpmn20Xml``.
+        """
+        response = self._session.get(f"{self._base}/history/process-instance/{instance_id}")
+        self._raise_for_status(response, "get process instance")
+        definition_id = response.json()["processDefinitionId"]
+        response = self._session.get(f"{self._base}/process-definition/{definition_id}/xml")
+        self._raise_for_status(response, "get process definition XML")
+        return response.json()["bpmn20Xml"]
+
     @staticmethod
     def _raise_for_status(response: requests.Response, action: str) -> None:
         if not response.ok:

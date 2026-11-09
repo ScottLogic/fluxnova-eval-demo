@@ -35,6 +35,7 @@ Goals of this project are:
     - [Metrics](#metrics)
     - [Traces](#traces)
     - [Content capture (opt-in)](#content-capture-opt-in)
+- [Where eval data lives](#where-eval-data-lives)
 - [First time setup](#first-time-setup)
 - [Running `fluxnova-runner`](#running-fluxnova-runner)
     - [Running the loan approval workflow](#running-the-loan-approval-workflow-fluxnova-runnerconfigloan_approval_process_aiyml)
@@ -203,7 +204,7 @@ They are grouped into reusable bundles:
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
   `Feedback(None)` otherwise). Regression includes them by default; both eval workers
-  use the trace-only bundle.
+  use `DETERMINISTIC_SCORERS`.
 - `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
 
 **Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
@@ -236,7 +237,7 @@ Notes:
   value), so only the **regression** suite runs it — a bare trace doesn't carry
   it, so `W`/`A` cannot.
 - `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
-  context (it isn't on the MLflow trace), so it can run trace-side in `A`.
+  context, so it can run in `A` without it.
 - Local demo judging uses OpenAI `gpt-4.1-mini` for decision quality and `gpt-4o-mini`
   for golden matching/evidence citation; select Ollama with the shared
   provider configuration. The demo worker calls the configured model directly.
@@ -295,9 +296,34 @@ data). Enable it via the Spring Boot property
 `fluxnova.ai.agent.observability.capture-content: true` or the standard
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` environment variable.
 
-The local stack turns it **on** (`local-dev/default.yml`), because both eval workers currently read the agent's final
-output and tool calls from the trace. Moving scorer inputs to process variables so capture can be turned off is item 2
-in [`BLOG_ALIGNMENT.md`](BLOG_ALIGNMENT.md).
+The local stack keeps it **off** too: exported traces carry metrics and span structure only. Nothing in the
+evaluation path needs it, because both eval workers read their scorer inputs from the agent's process variables (see
+[Where eval data lives](#where-eval-data-lives)). For local debugging, set `FLUXNOVA_CAPTURE_GENAI_CONTENT=true` in
+`local-dev/.env` and recreate the `fluxnova` pod (`local-dev/default.yml` reads it into the property above).
+
+## Where eval data lives
+
+| Data | Where it is stored | Who can read it (local stack) |
+|------|--------------------|-------------------------------|
+| Applicant inputs, the agent's conversation (prompts, responses, tool arguments and results), loop count | Fluxnova process variables (`agent:context` variables, `_agentConversationHistory`, `_agentLoopIndex`) in the Fluxnova Postgres database, including history tables kept for the process's `historyTimeToLive` | Fluxnova REST API, Cockpit and Tasklist users (`demo`/`demo` locally), and both eval workers |
+| Trace structure: spans, timings, token counts, tool names and status | MLflow trace store (via the OTel Collector) | Anyone who can reach MLflow (no auth locally) |
+| Prompt/response content on traces | Not exported unless `FLUXNOVA_CAPTURE_GENAI_CONTENT=true` | as above when enabled |
+| Eval results: per-scorer values and rationales, pass/fail | MLflow assessments on the run's trace, one MLflow Evaluation Run per scoring, and (guardrail) `evalPassed`/`evalRationale` process variables | MLflow users; Fluxnova users for the process variables |
+| Guardrail dataset record | MLflow evaluation dataset: process instance id, decision keyword (`APPROVE`/`REJECT`), scorer values and rationales; no applicant inputs or full response | MLflow users |
+| Regression results | MLflow regression runs and reports (golden inputs are synthetic) | MLflow users |
+
+**How the workers score:** `fluxnova_mlflow_dataset.load_agent_run` reads the agent instance's variables and its
+deployed BPMN (for tool display names and the `agent:context` list) over the Fluxnova REST API, and builds the scorer
+`inputs`/`outputs`. The run's MLflow trace is looked up only as the anchor for results: passing it to
+`mlflow.genai.evaluate` attaches the feedback to it without copying the inputs or outputs into MLflow.
+
+**Things to be aware of:**
+
+- LLM judge rationales are free text and can quote parts of the agent's response or applicant data.
+- The judges send the agent's output and inputs to the configured judge provider (OpenAI by default), the same
+  provider the agent itself uses.
+- The local stack has no access control on MLflow and uses default Fluxnova credentials; see the security notes
+  before using it with real data.
 
 ## First time setup
 
@@ -429,8 +455,9 @@ they never disagree on what "good" means:
   `evidence_citation` judge, and the full `ALL_DETERMINISTIC_SCORERS` bundle. Best as a CI gate against behavioural
   regressions. See [`regression/README.md`](regression/README.md).
 
-Both workers currently read their scorer inputs from the run's MLflow trace (exported by the OTel Collector). All three
-write their results to the same PostgreSQL-backed MLflow tracking store (`postgres-local` pod's `mlflow`
+Both workers read their scorer inputs from the agent run's process variables, not from trace content (see
+[Where eval data lives](#where-eval-data-lives)). All three write their results to the same PostgreSQL-backed MLflow
+tracking store (`postgres-local` pod's `mlflow`
 database — see `local-dev/services/postgres-up.sh`).
 
 ### Automatic (online) evaluation: `mlflow-judges`

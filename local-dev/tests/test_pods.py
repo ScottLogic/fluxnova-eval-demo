@@ -128,6 +128,8 @@ def test_bridge_engine_publishes_ports_and_uses_internal_db(run_script):
     assert engine[engine.index("--platform") + 1] == "linux/amd64"
     assert "FLUXNOVA_POSTGRES_HOST=postgres-local" in engine
     assert "FLUXNOVA_POSTGRES_PORT=5432" in engine
+    # GenAI content capture is opt-in: traces carry no prompts/responses by default.
+    assert "FLUXNOVA_CAPTURE_GENAI_CONTENT=false" in engine
 
 
 def test_host_fallback_uses_vm_local_db_port_without_publishing(run_script):

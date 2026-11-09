@@ -34,17 +34,21 @@ the loan decision. The async branch runs even when `skipEvalServiceWorker` is
    is no child, or the lookup fails, it falls back to the parent.
 2. Rolls the **sample rate** dice. If the run isn't sampled, it completes the task
    straight away without scoring.
-3. Waits for the run's trace to reach MLflow (`trace_poll_timeout_s`). The task
-   fires as soon as the agent finishes, which is usually before the OTel Collector
-   has delivered the trace.
-4. Runs `ASYNC_EVAL_SCORERS` through `mlflow.genai.evaluate`. Each scorer's `Feedback`
+3. Reads the run's scorer inputs and final answer from its **process variables**
+   (`fluxnova_mlflow_dataset.load_agent_run`: `agent:context` variables,
+   `_agentConversationHistory`, `_agentLoopIndex`).
+4. Waits for the run's trace to reach MLflow (`trace_poll_timeout_s`). The trace is
+   only the anchor for results. The task fires as soon as the agent finishes,
+   which is usually before the OTel Collector has delivered the trace.
+5. Runs `ASYNC_EVAL_SCORERS` through `mlflow.genai.evaluate`. Each scorer's `Feedback`
    is logged onto that trace as an assessment, grouped under one MLflow
-   **Evaluation Run**.
-5. Completes the task **with no variables**. The parallel token shares the process
+   **Evaluation Run**. The inputs and outputs aren't copied into MLflow.
+6. Completes the task **with no variables**. The parallel token shares the process
    scope, so writing results here could change how the guardrail branch routes.
 
-**Failures:** if the trace isn't available yet, or MLflow returns no eval results,
-the task is failed with 3 retries 10 seconds apart. Any other error fails it with no
+**Failures:** if the process variables can't be read, the run has no final answer
+yet, the trace isn't available yet, or MLflow returns no eval results, the task is
+failed with 3 retries 10 seconds apart. Any other error fails it with no
 retries. Either way the result is an incident on this task only. The loan branch
 carries on, but the process instance stays active until the incident is resolved.
 
@@ -59,9 +63,8 @@ carries on, but the process instance stays active until the incident is resolved
 `matches_golden` is excluded because it needs a golden `expected_output`. That judge
 stays in the `regression` suite.
 
-Scorer inputs currently come from the trace (`scorer_inputs_from_trace(trace)` and
-the final output spans), so gen_ai content capture must stay on for now. Moving
-them to process variables is item 2 in `BLOG_ALIGNMENT.md`.
+Scorer inputs come from process variables, so gen_ai content capture stays off. See
+[Where eval data lives](../README.md#where-eval-data-lives) for what is stored where.
 
 > **Operational note:** the judges use the shared provider (OpenAI by default,
 > Ollama when `LLM_JUDGE_PROVIDER=ollama`). Local startup passes the API key,
