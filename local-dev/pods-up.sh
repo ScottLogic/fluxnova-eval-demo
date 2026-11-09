@@ -72,6 +72,19 @@ else
   done
 fi
 
+# Windows with Podman served from a WSL distro over SSH: the distro isn't running after
+# a reboot, so wake it (its systemd brings up sshd + podman.socket) and wait for the API.
+# Override the distro name with PODMAN_WSL_DISTRO.
+if ! podman info >/dev/null 2>&1 && command -v wsl.exe >/dev/null 2>&1; then
+  distro="${PODMAN_WSL_DISTRO:-Ubuntu}"
+  echo "Podman unavailable; starting WSL distro '${distro}'..."
+  wsl.exe -d "$distro" -- true || true
+  for _ in $(seq 1 15); do
+    podman info >/dev/null 2>&1 && break
+    sleep 2
+  done
+fi
+
 for pod in "${ALL_PODS[@]}"; do
   for sel in "${selected[@]}"; do
     if [ "$sel" = "$pod" ]; then

@@ -196,7 +196,7 @@ Inspect the completed process in Fluxnova Cockpit (`demo` / `demo`).
 ### 3. Verify traces, assessments and metrics
 
 In MLflow, open the experiment named by `EVAL_SERVICE_EXPERIMENT_NAME` (including
-any `-v2` suffix), then **Traces**. After export and listener polling, find the
+any `-v2` suffix), then **Traces**. Once the async Eval task has run, find the
 completed trace with `invoke_agent`, `chat` and `execute_tool` spans. Confirm
 `decision_quality`, `evidence_citation` and deterministic assessments appear.
 
@@ -337,7 +337,8 @@ No fixed ID, pre-existing experiment, or manual database edit is required.
 go to the configured experiment regardless of BPMN process key; both evaluation
 services read that same experiment. Regression evaluation runs share the trace
 experiment by default; `MLFLOW_EXPERIMENT_NAME` can select a separate regression
-experiment. Raw regression traces are tagged `source=regression` for listener exclusion.
+experiment. Raw regression traces are tagged `source=regression`. Regression runs don't reach the async Eval task, so the
+listener never scores them.
 
 PostgreSQL uses the named volume `postgres-local-data` (host bind mounts are
 unsuitable for PGDATA ownership through VM file sharing). Its initialization

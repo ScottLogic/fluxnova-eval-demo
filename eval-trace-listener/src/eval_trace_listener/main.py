@@ -3,7 +3,7 @@
 Usage
 -----
     eval-trace-listener --config config.yaml
-    eval-trace-listener --config config.yaml --tracking-uri http://mlflow-local:5000
+    eval-trace-listener --config config.yaml --fluxnova-url http://fluxnova-local:8080/engine-rest
 
 Static settings come from the YAML ``--config`` file (see ``config.yaml`` /
 ``eval_trace_listener.config``). Every setting can also be overridden by a
@@ -19,11 +19,28 @@ import argparse
 import logging
 import os
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
+
+from fluxnova_mlflow_dataset import FluxnovaClient
 
 from eval_trace_listener.config import ListenerConfig
 from eval_trace_listener.control import SampleRateControl, start_control_server
-from eval_trace_listener.listener import TraceListener
+from eval_trace_listener.worker import AsyncEvalWorker
+
+# (CLI flag dest / env suffix, config attribute, type)
+_OVERRIDES: list[tuple[str, str, Callable[[str], Any]]] = [
+    ("fluxnova_url", "fluxnova_url", lambda v: v.rstrip("/")),
+    ("topic", "topic", str),
+    ("lock_duration_ms", "lock_duration_ms", int),
+    ("tracking_uri", "tracking_uri", lambda v: v.rstrip("/")),
+    ("experiment_name", "experiment_name", str),
+    ("trace_poll_timeout", "trace_poll_timeout_s", float),
+    ("trace_poll_interval", "trace_poll_interval_s", float),
+    ("sample_rate", "sample_rate", float),
+    ("control_host", "control_host", str),
+    ("control_port", "control_port", int),
+]
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -33,44 +50,19 @@ def _env(name: str, default: str | None = None) -> str | None:
 def _build_config(args: argparse.Namespace) -> ListenerConfig:
     """Layer overrides on top of the file/defaults: CLI flag > env var > file > default."""
     config = ListenerConfig.from_file(args.config) if args.config else ListenerConfig()
-
-    tracking_uri = args.tracking_uri or _env("TRACKING_URI")
-    if tracking_uri:
-        config.tracking_uri = tracking_uri.rstrip("/")
-
-    experiment_name = args.experiment_name or _env("EXPERIMENT_NAME")
-    if experiment_name:
-        config.experiment_name = experiment_name
-
-    if args.agent_name:
-        config.agent_names = list(args.agent_name)
-    elif _env("AGENT_NAMES"):
-        config.agent_names = [a.strip() for a in _env("AGENT_NAMES").split(",") if a.strip()]
-
-    poll_interval = args.poll_interval or _env("POLL_INTERVAL_S")
-    if poll_interval:
-        config.poll_interval_s = float(poll_interval)
-
-    sample_rate = args.sample_rate or _env("SAMPLE_RATE")
-    if sample_rate:
-        config.sample_rate = float(sample_rate)
-
-    control_host = args.control_host or _env("CONTROL_HOST")
-    if control_host:
-        config.control_host = control_host
-
-    control_port = args.control_port or _env("CONTROL_PORT")
-    if control_port:
-        config.control_port = int(control_port)
-
+    for dest, attr, convert in _OVERRIDES:
+        raw = getattr(args, dest) or _env(dest.upper())
+        if raw:
+            setattr(config, attr, convert(raw))
     return config
 
 
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tail an MLflow experiment's trace store and score completed agent runs "
-        "with the deterministic (trace-only) scorers. Every flag can also be set via an "
-        "EVAL_LISTENER_<NAME> environment variable (e.g. EVAL_LISTENER_TRACKING_URI)."
+        description="Serve the non-blocking Eval service task (agent-output-eval-async): score "
+        "each agent run with the shared scorers and record the results in MLflow. Every flag can "
+        "also be set via an EVAL_LISTENER_<NAME> environment variable (e.g. "
+        "EVAL_LISTENER_FLUXNOVA_URL)."
     )
     parser.add_argument(
         "--config",
@@ -78,34 +70,27 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         help="Path to the YAML config file (see config.yaml). Optional — built-in defaults "
         "are used if omitted.",
     )
-    parser.add_argument("--tracking-uri", default=None, help="Override MLflow tracking server URL.")
-    parser.add_argument("--experiment-name", default=None, help="Override the experiment to tail.")
+    parser.add_argument("--fluxnova-url", default=None, help="Fluxnova engine REST base URL.")
+    parser.add_argument("--topic", default=None, help="External-task topic to serve.")
+    parser.add_argument("--lock-duration-ms", default=None, help="External-task lock duration.")
+    parser.add_argument("--tracking-uri", default=None, help="MLflow tracking server URL.")
+    parser.add_argument("--experiment-name", default=None, help="MLflow experiment of the traces.")
     parser.add_argument(
-        "--agent-name",
-        action="append",
-        default=None,
-        help="Only score runs of this agent (gen_ai.agent.name). Repeatable. Overrides the "
-        "config file's agent_names.",
+        "--trace-poll-timeout", default=None, help="Max seconds to wait for the run's trace."
     )
-    parser.add_argument("--poll-interval", default=None, help="Override the poll interval (seconds).")
+    parser.add_argument(
+        "--trace-poll-interval", default=None, help="Seconds between trace lookups."
+    )
     parser.add_argument(
         "--sample-rate",
         default=None,
-        help="Fraction of newly-completed traces to score, 0.0-1.0 (default: 1.0, i.e. every "
-        "trace). Can also be changed live while running via PUT http://<host>:<control-port>/config "
-        "— see --control-host/--control-port.",
+        help="Fraction of async Eval tasks to score, 0.0-1.0 (default: 1.0). Unsampled tasks are "
+        "completed without scoring. Can also be changed live via PUT "
+        "http://<host>:<control-port>/config.",
     )
-    parser.add_argument(
-        "--control-host",
-        default=None,
-        help="Host the sample-rate control endpoint binds on (default: 0.0.0.0).",
-    )
-    parser.add_argument(
-        "--control-port",
-        default=None,
-        help="Port the sample-rate control endpoint binds on (default: 8092).",
-    )
-    parser.add_argument("--log-level", default=_env("LOG_LEVEL", "INFO"), help="Logging level (default: INFO).")
+    parser.add_argument("--control-host", default=None, help="Control endpoint bind host.")
+    parser.add_argument("--control-port", default=None, help="Control endpoint port.")
+    parser.add_argument("--log-level", default=_env("LOG_LEVEL", "INFO"), help="Logging level.")
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -116,9 +101,14 @@ def main(argv: Iterable[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     config = _build_config(args)
+    username = os.environ.get("FLUXNOVA_USERNAME")
+    password = os.environ.get("FLUXNOVA_PASSWORD")
     sample_rate = SampleRateControl(config.sample_rate)
     start_control_server(sample_rate, config.control_host, config.control_port)
-    TraceListener(config, sample_rate=sample_rate).run_forever()
+    client = FluxnovaClient(config.fluxnova_url, username=username, password=password)
+    AsyncEvalWorker(config, client=client, sample_rate=sample_rate).run_forever(
+        username=username, password=password
+    )
 
 
 if __name__ == "__main__":

@@ -1,12 +1,11 @@
 """Runtime control surface for the listener's sample rate.
 
-`TraceListener` normally reads its settings once at startup (see `config.py`) —
+`AsyncEvalWorker` normally reads its settings once at startup (see `config.py`) —
 but the whole point of a *sample rate* is to be able to dial it up/down while
 the listener keeps running (e.g. from ui-api's evals.py router, driven by the
-frontend's "Auto-eval (listener)" toggle), without restarting the process and
-losing its in-memory dedup state. `SampleRateControl` is the thread-safe value
+frontend's "Auto-eval (listener)" toggle), without restarting the process. `SampleRateControl` is the thread-safe value
 both the poll loop and this tiny HTTP server share; `start_control_server`
-runs the server on a daemon thread so it never blocks `run_forever`.
+runs the server on a daemon thread so it never blocks the worker.
 
 Deliberately built on the standard library (`http.server`) rather than adding
 a web framework dependency — the surface is two JSON routes on one value.

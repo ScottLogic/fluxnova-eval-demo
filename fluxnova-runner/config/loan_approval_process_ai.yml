@@ -73,8 +73,10 @@ variables:
 
 # Mock external task workers: topic name -> output variables to complete the task
 # with. Covers every camunda:topic in LoanApprovalProcess_AI.bpmn (aside from
-# agent-output-eval, which is eval-service-worker's real job, not mocked) so a run
-# can reach an end event unattended.
+# agent-output-eval (eval-service-worker) and agent-output-eval-async
+# (eval-trace-listener), which are real eval jobs, not mocked) so a run can reach an end event unattended. Without the worker,
+# the async Eval branch stays waiting and the instance stays active, even after the
+# loan branch has reached its end event.
 mock_workers:
   document-intelligence:
     isInvalid: false

@@ -56,8 +56,8 @@ flows which make up the standard use-cases.
 1. Production demo.
     - Deploy and initiate a bpmn via the [fluxnova-runner](fluxnova-runner).
     - Observe the tracing in MLFlow.
-    - The [eval-trace-listener](eval-trace-listener) will automatically run evals against configured traces as they
-      arrive in MLFlow
+    - A non-blocking Eval service task, served by the [eval-trace-listener](eval-trace-listener), scores every run
+      without holding up the process
     - Handle real time guard-rail use-cases with a Service Worker and the [eval-service-worker](eval-service-worker)
       service.
 2. Development Demo
@@ -110,11 +110,12 @@ More detail available in the [README](eval-service-worker/README.md).
 
 ### -| [eval-trace-listener](eval-trace-listener)
 
-An always-on, asynchronous service that polls a configured MLflow experiment for completed runs of configured agents.
-It extracts the scorer inputs and final output directly from each trace, runs deterministic trace-based scorers plus the
-`decision_quality` and `evidence_citation` LLM judges, and records the resulting feedback on the same trace in MLflow.
-It avoids rescoring traces, including after a restart. This is an observational, non-blocking service: it does not
-return workflow variables or alter the flow of the underlying process.
+The external-task worker for the non-blocking Eval service task (`ServiceTask_AsyncEvaluateAgentOutput`, topic
+`agent-output-eval-async`). `LoanApprovalProcess_AI.bpmn` forks after the agent call, and this task sits on its own
+branch, so scoring never holds up the loan decision. For each task it reads the agent run's trace, runs the
+deterministic scorers plus the `decision_quality` and `evidence_citation` LLM judges, and records the feedback on the
+same trace in MLflow. It completes the task without returning workflow variables, so it never alters the flow of the
+process. A live sample rate controls what fraction of runs are scored.
 
 More detail available in the [README](eval-trace-listener/README.md).
 

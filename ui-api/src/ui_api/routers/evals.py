@@ -8,10 +8,11 @@ that same request (see UI_PROPOSAL.md step 10). The BPMN gate lives in
 default (false — auto-eval on) comes from
 `fluxnova-runner/config/loan_approval_process_ai.yml`.
 
-`auto-eval` (this file) is different: the trace listener is always-on and has
-no per-run hook, so its toggle instead drives the listener's live sample rate
-directly (see `ui_api.listener_client` / `eval_trace_listener/control.py`) —
-off sets it to 0.0 ("none"), on sets it to 1.0 ("every trace").
+`auto-eval` (this file) is different: it controls the non-blocking Eval service
+task (`ServiceTask_AsyncEvaluateAgentOutput`), which runs on every run. Its toggle
+drives eval-trace-listener's live sample rate (see `ui_api.listener_client` /
+`eval_trace_listener/control.py`): off sets it to 0.0, so the task completes
+without scoring, and on sets it to 1.0, so every run is scored.
 
 `definitions` (this file) exposes the complete set of scorers used anywhere in the
 project, and where each one runs — read straight off the real scorer objects (see

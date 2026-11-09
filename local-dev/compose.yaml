@@ -139,7 +139,12 @@ services:
     depends_on:
       mlflow-local:
         condition: service_healthy
+      fluxnova-local:
+        condition: service_healthy
     environment:
+      EVAL_LISTENER_FLUXNOVA_URL: ${EVAL_LISTENER_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
+      FLUXNOVA_USERNAME: ${FLUXNOVA_USERNAME:-demo}
+      FLUXNOVA_PASSWORD: ${FLUXNOVA_PASSWORD:-demo}
       EVAL_LISTENER_TRACKING_URI: ${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:5000}
       MLFLOW_DISABLE_TELEMETRY: "true"
       EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}

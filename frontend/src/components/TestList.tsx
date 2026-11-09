@@ -53,7 +53,10 @@ function TestList({ tests, runResult }: TestListProps) {
               </td>
               <td>
                 {result?.outcome === 'running' ? (
-                  <span className="spinner" aria-hidden="true" />
+                  <span className="status-badge status-running test-running-badge">
+                    <span className="spinner spinner-lg" aria-hidden="true" />
+                    running
+                  </span>
                 ) : result ? (
                   <span className={`status-badge status-${result.outcome}`}>{result.outcome}</span>
                 ) : (

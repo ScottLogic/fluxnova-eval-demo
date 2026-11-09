@@ -31,8 +31,8 @@ def all_scorers() -> list[dict[str, Any]]:
     - **deterministic** — a plain code check (no LLM call), as opposed to an
       LLM-judge scorer (``decision_quality``, ``evidence_citation``,
       ``matches_golden``).
-    - **usedInAutoEval** — runs in `eval-trace-listener`'s always-on poll loop
-      (see its ``LISTENER_SCORERS``).
+    - **usedInAutoEval** — runs in the BPMN's non-blocking Eval service task,
+      served by `eval-trace-listener` (see its ``LISTENER_SCORERS``).
     - **usedInEvalServiceWorker** — runs synchronously in the BPMN's eval
       service task (see `eval-service-worker`'s ``scoring.py``:
       ``decision_quality`` plus the plain ``DETERMINISTIC_SCORERS`` — neither

@@ -1,6 +1,5 @@
-# eval-trace-listener: standalone service that tails an MLflow experiment's trace
-# store and scores newly-completed agent runs with the deterministic (trace-only)
-# scorers. See eval-trace-listener/README.md.
+# eval-trace-listener: external-task worker for the non-blocking Eval service task
+# (topic agent-output-eval-async). See eval-trace-listener/README.md.
 #
 # Build from the repo root so the sibling fluxnova-mlflow-dataset package (a local
 # path dependency, not published to PyPI) is in the build context:

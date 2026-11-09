@@ -4,15 +4,18 @@ import textwrap
 from pathlib import Path
 
 from eval_trace_listener.config import ListenerConfig
+from eval_trace_listener.main import _build_config, parse_args
 
 
 def test_defaults() -> None:
     config = ListenerConfig()
+    assert config.fluxnova_url == "http://localhost:8080/engine-rest"
+    assert config.topic == "agent-output-eval-async"
+    assert config.lock_duration_ms == 600_000
     assert config.tracking_uri == "http://localhost:5001"
     assert config.experiment_name == "fluxnova-loanAssessmentEvalProcess"
-    assert config.agent_names == ["AdHocSubProcess_LoanAssessmentAgent"]
-    assert config.poll_interval_s == 10.0
-    assert config.max_traces_per_poll == 200
+    assert config.trace_poll_timeout_s == 90.0
+    assert config.trace_poll_interval_s == 3.0
     assert config.sample_rate == 1.0
     assert config.control_host == "0.0.0.0"
     assert config.control_port == 8092
@@ -21,25 +24,20 @@ def test_defaults() -> None:
 def test_from_mapping_overrides_and_ignores_unknown() -> None:
     config = ListenerConfig.from_mapping(
         {
+            "fluxnova_url": "http://fluxnova-local:8080/engine-rest/",
+            "topic": "other-topic",
             "tracking_uri": "http://mlflow-local:5000/",
-            "experiment_name": "fluxnova-somethingElse",
-            "agent_names": ["A", "B"],
-            "poll_interval_s": 3,
             "sample_rate": 0.5,
-            "control_host": "127.0.0.1",
             "control_port": 9999,
-            "future_setting_we_dont_read_yet": True,
+            "agent_names": ["legacy setting, ignored"],
         }
     )
-    assert config.tracking_uri == "http://mlflow-local:5000"  # trailing slash stripped
-    assert config.experiment_name == "fluxnova-somethingElse"
-    assert config.agent_names == ["A", "B"]
-    assert config.poll_interval_s == 3.0
+    assert config.fluxnova_url == "http://fluxnova-local:8080/engine-rest"
+    assert config.topic == "other-topic"
+    assert config.tracking_uri == "http://mlflow-local:5000"
     assert config.sample_rate == 0.5
-    assert config.control_host == "127.0.0.1"
     assert config.control_port == 9999
-    # unspecified key falls back to default
-    assert config.max_traces_per_poll == 200
+    assert config.experiment_name == "fluxnova-loanAssessmentEvalProcess"
 
 
 def test_from_mapping_none_gives_defaults() -> None:
@@ -51,24 +49,28 @@ def test_from_file(tmp_path: Path) -> None:
     path.write_text(
         textwrap.dedent(
             """
-            tracking_uri: http://host:5000
-            experiment_name: fluxnova-x
-            agent_names: []
-            poll_interval_s: 1
+            topic: t
+            trace_poll_timeout_s: 5
             """
         ),
         encoding="utf-8",
     )
     config = ListenerConfig.from_file(path)
-    assert config.experiment_name == "fluxnova-x"
-    assert config.agent_names == []  # empty list => score every agent
-    assert config.poll_interval_s == 1.0
+    assert config.topic == "t"
+    assert config.trace_poll_timeout_s == 5.0
 
 
-def test_packaged_config_yaml_loads() -> None:
-    """The config.yaml shipped in the package must stay parseable."""
-    packaged = Path(__file__).resolve().parent.parent / "config.yaml"
-    config = ListenerConfig.from_file(packaged)
-    assert config.experiment_name == "fluxnova-loanAssessmentEvalProcess"
-    assert config.sample_rate == 1.0
-    assert config.control_port == 8092
+def test_bundled_config_file_matches_defaults() -> None:
+    bundled = Path(__file__).resolve().parents[1] / "config.yaml"
+    assert ListenerConfig.from_file(bundled) == ListenerConfig()
+
+
+def test_cli_beats_env_beats_file(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text("topic: from-file\nsample_rate: 0.1\nexperiment_name: file-exp\n")
+    monkeypatch.setenv("EVAL_LISTENER_TOPIC", "from-env")
+    monkeypatch.setenv("EVAL_LISTENER_SAMPLE_RATE", "0.2")
+    config = _build_config(parse_args(["--config", str(path), "--sample-rate", "0.3"]))
+    assert config.topic == "from-env"
+    assert config.sample_rate == 0.3
+    assert config.experiment_name == "file-exp"

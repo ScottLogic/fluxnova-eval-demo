@@ -1,21 +1,39 @@
 #!/usr/bin/env bash
+# Starts eval-trace-listener: the external-task worker for the non-blocking Eval
+# service task (topic agent-output-eval-async). It needs the Fluxnova engine (to
+# fetch tasks) and MLflow (to read and score the agent run's trace).
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 POD_NAME="${EVAL_LISTENER_POD_NAME:-eval-listener-local}"
 IMAGE_NAME="${EVAL_LISTENER_IMAGE:-eval-trace-listener:local}"
 CONTROL_PORT="${EVAL_LISTENER_CONTROL_PORT:-8092}"
+if [ "$DEV_NETWORK_MODE" = host ]; then
+  network_args=(--network host)
+  engine_url="http://localhost:${FLUXNOVA_PORT}/engine-rest"
+  tracking_uri="http://localhost:${MLFLOW_PORT}"
+  container_control_port="$CONTROL_PORT"
+else
+  network_args=(--network "$DEV_NETWORK" -p "${CONTROL_PORT}:8092")
+  engine_url="http://${FLUXNOVA_POD_NAME}:8080/engine-rest"
+  tracking_uri="http://${MLFLOW_POD_NAME}:5000"
+  container_control_port=8092
+fi
+require_http "http://localhost:${FLUXNOVA_PORT}/engine-rest/engine" fluxnova
 require_http "http://localhost:${MLFLOW_PORT}/version" mlflow
 if [ "${REBUILD:-}" = 1 ] || ! podman image exists "$IMAGE_NAME"; then
   ensure_image docker.io/library/python:3.11-slim
   podman build --pull=never -f "$REPO_ROOT/eval-trace-listener/Dockerfile" -t "$IMAGE_NAME" "$REPO_ROOT"
 fi
 if ! start_existing_pod "$POD_NAME" eval-trace-listener; then
-  create_pod "$POD_NAME" --network "$DEV_NETWORK" -p "${CONTROL_PORT}:8092"
+  create_pod "$POD_NAME" "${network_args[@]}"
   run_container -d --pod "$POD_NAME" --name eval-trace-listener \
     -e MLFLOW_DISABLE_TELEMETRY=true \
-    -e EVAL_LISTENER_TRACKING_URI="${EVAL_LISTENER_TRACKING_URI:-http://${MLFLOW_POD_NAME}:5000}" \
+    -e EVAL_LISTENER_FLUXNOVA_URL="${EVAL_LISTENER_FLUXNOVA_URL:-$engine_url}" \
+    -e EVAL_LISTENER_TRACKING_URI="${EVAL_LISTENER_TRACKING_URI:-$tracking_uri}" \
     -e EVAL_LISTENER_EXPERIMENT_NAME="${EVAL_LISTENER_EXPERIMENT_NAME:-$EVAL_SERVICE_EXPERIMENT_NAME}" \
-    -e EVAL_LISTENER_CONTROL_PORT=8092 \
+    -e EVAL_LISTENER_CONTROL_PORT="$container_control_port" \
+    -e FLUXNOVA_USERNAME="${FLUXNOVA_USERNAME:-demo}" \
+    -e FLUXNOVA_PASSWORD="${FLUXNOVA_PASSWORD:-demo}" \
     -e LLM_JUDGE_PROVIDER="$LLM_JUDGE_PROVIDER" \
     -e DECISION_QUALITY_MODEL="$DECISION_QUALITY_MODEL" \
     -e OPENAI_API_KEY="$OPENAI_API_KEY" \
@@ -23,4 +41,4 @@ if ! start_existing_pod "$POD_NAME" eval-trace-listener; then
     "$IMAGE_NAME"
   finish_pod_creation
 fi
-echo "Listener started. Logs: podman logs -f eval-trace-listener"
+echo "Async eval worker started. Logs: podman logs -f eval-trace-listener"

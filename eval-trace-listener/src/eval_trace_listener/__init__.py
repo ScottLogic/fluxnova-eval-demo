@@ -1,14 +1,13 @@
-"""eval-trace-listener: a standalone service that tails an MLflow experiment's
-trace store and scores newly-completed agent runs with the shared deterministic
-(trace-only) scorers.
+"""eval-trace-listener: the external-task worker for the non-blocking Eval
+service task (topic ``agent-output-eval-async``).
 
-See :mod:`eval_trace_listener.listener` for the poll loop, :mod:`eval_trace_listener.config`
-for the YAML-file configuration, and the package README for the design rationale
-(why it polls MLflow rather than running its own OTLP receiver).
+See :mod:`eval_trace_listener.worker` for the task handler,
+:mod:`eval_trace_listener.config` for the YAML-file configuration, and the
+package README for the design.
 """
 
 from eval_trace_listener.config import ListenerConfig
-from eval_trace_listener.listener import TraceListener
 from eval_trace_listener.scoring import TraceEvalOutcome, score_trace
+from eval_trace_listener.worker import AsyncEvalWorker
 
-__all__ = ["ListenerConfig", "TraceListener", "TraceEvalOutcome", "score_trace"]
+__all__ = ["AsyncEvalWorker", "ListenerConfig", "TraceEvalOutcome", "score_trace"]

@@ -1,36 +1,39 @@
 # eval-trace-listener configuration (static data for the service).
 #
+# The service is the external-task worker for the non-blocking Eval service task
+# (ServiceTask_AsyncEvaluateAgentOutput in bpmn/LoanApprovalProcess_AI.bpmn).
+#
 # Every key is optional — omitted keys fall back to the built-in defaults in
 # eval_trace_listener/config.py. CLI flags / EVAL_LISTENER_* env vars override
 # anything set here (see main.py), which is how the container deployment points
 # at pod-name-based URLs (local-dev/services/eval-listener-up.sh).
 
-# MLflow tracking server the OTel Collector exports traces into. Must be an
-# HTTP(S) URL (not a postgresql:// path) so the trace store is queryable.
+# Fluxnova engine REST base URL to fetch external tasks from.
+fluxnova_url: http://localhost:8080/engine-rest
+
+# External-task topic of the non-blocking Eval service task.
+topic: agent-output-eval-async
+
+# Task lease. Must comfortably exceed a full scoring run (judge calls can take 90s+).
+lock_duration_ms: 600000
+
+# MLflow tracking server the agent run's trace is read from and scored onto.
+# Must be an HTTP(S) URL (not a postgresql:// path).
 tracking_uri: http://localhost:5001
 
-# The experiment whose traces are tailed — must match where the collector writes
-# (MLFLOW_EXPERIMENT_ID in local-dev/.env). The collector routes every trace to a
-# single experiment, so this matches eval-service-worker's EVAL_SERVICE_EXPERIMENT_NAME.
+# The experiment the collector writes traces into; matches eval-service-worker's
+# EVAL_SERVICE_EXPERIMENT_NAME.
 experiment_name: fluxnova-loanAssessmentEvalProcess
 
-# Only runs whose invoke_agent span gen_ai.agent.name is in this list get scored
-# (the trace-only "which BPMN agents we care about" filter). Leave empty/remove
-# to score every agent in the experiment.
-agent_names:
-  - AdHocSubProcess_LoanAssessmentAgent
+# How long / how often to wait for the run's trace to reach MLflow. The task
+# fires as soon as the agent finishes, usually before the collector delivers it.
+trace_poll_timeout_s: 90
+trace_poll_interval_s: 3
 
-# How often to re-poll for newly-completed runs.
-poll_interval_s: 10
-
-# Upper bound on recent traces pulled per poll (already-scored ones are skipped).
-max_traces_per_poll: 200
-
-# Fraction of newly-completed, in-scope traces to actually score: 1.0 (default)
-# scores every one, 0.0 scores none, 0.1 ~1-in-10, etc. Unlike the other settings
-# here, this can also be changed live while the listener is already running, via
-# the sample-rate control endpoint below (e.g. PUT http://localhost:8092/config
-# with body {"sample_rate": 0.5}) — no restart needed.
+# Fraction of async Eval tasks to score: 1.0 (default) scores every run, 0.0
+# none. Unsampled tasks are completed straight away without scoring. Can be
+# changed live via the control endpoint below (e.g. PUT
+# http://localhost:8092/config with body {"sample_rate": 0.5}) — no restart.
 sample_rate: 1.0
 
 # Host/port the sample-rate control endpoint binds on.

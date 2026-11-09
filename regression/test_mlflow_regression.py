@@ -54,8 +54,8 @@ _TRACE_EXPERIMENT_NAME = os.environ.get(
 )
 _REGRESSION_EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT_NAME", _TRACE_EXPERIMENT_NAME)
 
-# Tag written onto every trace this suite generates — must match
-# eval_trace_listener.listener._REGRESSION_TAG_NAME/_REGRESSION_TAG_VALUE.
+# Tag written onto every trace this suite generates, so regression runs can be
+# told apart from real/demo runs in MLflow.
 _REGRESSION_TAG_NAME = "source"
 _REGRESSION_TAG_VALUE = "regression"
 
@@ -113,16 +113,15 @@ def _scenario_id(golden: dict) -> str | None:
 
 
 def _tag_trace_as_regression(instance_id: str) -> None:
-    """Best-effort: tag this run's MLflow trace so eval-trace-listener skips it.
+    """Best-effort: tag this run's MLflow trace as a regression run.
 
     Regression runs share the exact same ``subprocess_id`` (and therefore the
-    same ``gen_ai.agent.name``) as real/demo runs, so the listener's
-    ``agent_names`` filter alone can't tell them apart — see
-    ``eval_trace_listener.listener``'s ``_is_regression_trace``. Tagging is
+    same ``gen_ai.agent.name``) as real/demo runs, so this tag is the only way
+    to tell them apart in the shared experiment. Tagging is
     genuinely best-effort (the OTel Collector delivers spans asynchronously, and
     this suite otherwise deliberately avoids MLflow calls around the live run —
     see ``_run_agent``'s docstring): a failure here must never fail the test
-    itself, just risk the listener scoring this one run as if it were real.
+    itself, just leave this one run untagged.
     """
     try:
         experiment = mlflow.get_experiment_by_name(_TRACE_EXPERIMENT_NAME)
