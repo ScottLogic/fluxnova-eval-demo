@@ -1,9 +1,11 @@
 """Shared MLflow evaluation-dataset logic for the Fluxnova eval services.
 
 Provides the building blocks the eval services share:
-- read records back (single instance or the whole dataset) and score them;
+- build scorer inputs from a run's Fluxnova process variables
+  (``process_variables.py``, ``FluxnovaClient``, ``BpmnLookup``);
+- find a run's MLflow trace to attach results to, and write dataset records;
 - the shared scorer/judge definitions (``scorers.py``) — the deterministic
-  value-based scorers used by ``eval-service-worker``/``eval-trace-listener``
+  value-based scorers used by ``eval-service-worker``/``eval-async-worker``
   (and the regression suite), the golden/config-driven scorers used by
   ``regression/`` (plus more kept available for reuse), and the
   ``decision_quality`` judge; and
@@ -16,6 +18,13 @@ gets written matches what gets read/evaluated.
 from fluxnova_mlflow_dataset.bpmn import BpmnLookup, BpmnLookupError
 from fluxnova_mlflow_dataset.fluxnova_client import ApiError, FluxnovaClient
 from fluxnova_mlflow_dataset.goldens import load_goldens, match_golden
+from fluxnova_mlflow_dataset.process_variables import (
+    AgentRun,
+    agent_final_output,
+    decision_keyword,
+    load_agent_run,
+    scorer_inputs_from_variables,
+)
 from fluxnova_mlflow_dataset.scorers import (
     ALL_DETERMINISTIC_SCORERS,
     DECISION_QUALITY_GUIDELINES,
@@ -68,6 +77,11 @@ from fluxnova_mlflow_dataset.traces import (
 )
 
 __all__ = [
+    "AgentRun",
+    "agent_final_output",
+    "decision_keyword",
+    "load_agent_run",
+    "scorer_inputs_from_variables",
     "ExpectedToolRule",
     "resolve_expected_tools",
     "load_goldens",

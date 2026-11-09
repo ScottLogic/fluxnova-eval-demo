@@ -12,8 +12,8 @@ Goals of this project are:
   build out an agentic workflow using EDD.
 - Add an OTel collector and gen_ai* metrics and tracing with a suitable dashboard. This will allow a demo of real time
   production monitoring.
-- Add an Eval task to production level process runs which will facilitate checks on responses and break-glass to a human
-  in Production environments.
+- Add Eval tasks to production level process runs: a blocking guardrail which can break-glass to a human, and a
+  non-blocking Eval which scores every run without holding up the process.
 
 ## Contents
 
@@ -24,7 +24,7 @@ Goals of this project are:
   - [cicd](#--cicd)
   - [datasets](#--datasets)
   - [eval-service-worker](#--eval-service-worker)
-  - [eval-trace-listener](#--eval-trace-listener)
+  - [eval-async-worker](#--eval-async-worker)
   - [fluxnova-mlflow-dataset](#--fluxnova-mlflow-dataset)
   - [fluxnova-runner](#--fluxnova-runner)
   - [local-dev](#--local-dev)
@@ -35,9 +35,10 @@ Goals of this project are:
     - [Metrics](#metrics)
     - [Traces](#traces)
     - [Content capture (opt-in)](#content-capture-opt-in)
+- [Where eval data lives](#where-eval-data-lives)
 - [First time setup](#first-time-setup)
 - [Running `fluxnova-runner`](#running-fluxnova-runner)
-    - [Running the eval workflow](#running-the-eval-workflow-fluxnova-runnerconfigloan-assesment-evalyml)
+    - [Running the loan approval workflow](#running-the-loan-approval-workflow-fluxnova-runnerconfigloan_approval_process_aiyml)
 - [Evaluating agent runs](#evaluating-agent-runs)
     - [Automatic (online) evaluation: `mlflow-judges`](#automatic-online-evaluation-mlflow-judges)
 - [Alternative: running the MLflow tracking server on the host](#alternative-running-the-mlflow-tracking-server-on-the-host)
@@ -56,10 +57,10 @@ flows which make up the standard use-cases.
 1. Production demo.
     - Deploy and initiate a bpmn via the [fluxnova-runner](fluxnova-runner).
     - Observe the tracing in MLFlow.
-    - The [eval-trace-listener](eval-trace-listener) will automatically run evals against configured traces as they
-      arrive in MLFlow
-    - Handle real time guard-rail use-cases with a Service Worker and the [eval-service-worker](eval-service-worker)
-      service.
+    - A non-blocking Eval service task, served by the [eval-async-worker](eval-async-worker), scores every run
+      without holding up the process.
+    - A blocking guardrail Eval service task, served by the [eval-service-worker](eval-service-worker), routes runs
+      that fail evaluation to human review.
 2. Development Demo
     - Run a complete regression suite using the [regression tests](regression).
 
@@ -100,29 +101,37 @@ Fluxnova.
 
 ### -| [eval-service-worker](eval-service-worker)
 
-A BPMN external-task worker that synchronously scores a just-completed agentic subprocess run on demand. It reads the
-run's MLflow trace, evaluates the final output with the `decision_quality` LLM judge and deterministic trace-based
-scorers, and stores each scorer's feedback in MLflow. The evaluation passes only when every scorer passes. It returns
-`evalPassed` and `evalRationale` workflow variables, which subsequent BPMN steps can use to continue automatically or
-route the work for human review.
+The external-task worker for the blocking guardrail Eval service task (`ServiceTask_EvaluateAgentOutput`, topic
+`agent-output-eval`). It synchronously scores a just-completed agent run. It builds the scorer inputs from the agent
+run's Fluxnova process variables (`fluxnova_mlflow_dataset.load_agent_run`), evaluates the final output with the
+`decision_quality` LLM judge and the deterministic scorers, and attaches each scorer's feedback to the run's MLflow
+trace. Pass/fail uses the task's `evalMinScore`/`evalRequiredScorers` inputs, and `evalSampleRate`/`forceReviewEveryN`
+decide which runs are scored and which are always reviewed. It returns `evalPassed`, `evalScore`, `evalFailedScorers`,
+`evalRationale`, `evalSampled`, `reviewRequired` and `reviewReason` (plus `runNumber` when every-Nth review is on);
+`reviewRequired` decides whether the run goes to human review.
 
 More detail available in the [README](eval-service-worker/README.md).
 
-### -| [eval-trace-listener](eval-trace-listener)
+### -| [eval-async-worker](eval-async-worker)
 
-An always-on, asynchronous service that polls a configured MLflow experiment for completed runs of configured agents.
-It extracts the scorer inputs and final output directly from each trace, runs deterministic trace-based scorers plus the
-`decision_quality` and `evidence_citation` LLM judges, and records the resulting feedback on the same trace in MLflow.
-It avoids rescoring traces, including after a restart. This is an observational, non-blocking service: it does not
-return workflow variables or alter the flow of the underlying process.
+The external-task worker for the non-blocking Eval service task (`ServiceTask_AsyncEvaluateAgentOutput`, topic
+`agent-output-eval-async`). `LoanApprovalProcess_AI.bpmn` forks after the agent call, and this task sits on its own
+branch, so scoring never holds up the loan decision. For each task it loads the agent run's process variables, runs
+the deterministic scorers plus the `decision_quality` and `evidence_citation` LLM judges, and attaches the feedback to
+the run's MLflow trace. It completes the task without returning workflow variables, so it never alters the flow of the
+process. Its own sample rate (default 1.0, every run; adjustable live at `http://localhost:8092/config`) controls what
+fraction of runs are scored; the UI has no switch for it.
 
-More detail available in the [README](eval-trace-listener/README.md).
+More detail available in the [README](eval-async-worker/README.md).
 
 ### -| [fluxnova-mlflow-dataset](fluxnova-mlflow-dataset)
 
 An installable library providing MLflow-specific functionality for reuse across the evaluation services and regression
 suite. It provides:
 
+- **Agent-run loading** (`load_agent_run`): builds scorer inputs and outputs from an agent instance's process
+  variables (`agent:context` variables, `_agentConversationHistory`, `_agentLoopIndex`) and its deployed BPMN, over
+  the Fluxnova REST API. Both eval workers use this.
 - **Trace reading**: Reads `gen_ai.*` span data (`invoke_agent`, `execute_tool`, `chat`) straight out of MLflow's trace
   store (populated by an OTel Collector exporting directly to MLflow).
 - **Record shaping/read/write**: Builds MLflow-dataset records from agent-history data and reads/writes the
@@ -144,7 +153,7 @@ locally without their real downstream service backends.
 
 The runner can wait for either the complete process or a named BPMN activity, which supports workflows that continue
 into human or asynchronous stages. It is responsible only for deployment and execution; evaluation is performed
-afterwards by the `eval-trace-listener` or `eval-service-worker`.
+afterwards by the `eval-async-worker` or `eval-service-worker`.
 
 More detail available in the [README](fluxnova-runner/README.md).
 
@@ -160,9 +169,11 @@ More detail available in the [README](local-dev/README.md).
 
 ### -| [frontend](frontend) and [ui-api](ui-api)
 
-The React/Vite demo UI is served by nginx and backed by a FastAPI service. It
-starts workflows, displays nested progress and agent configuration, runs the six
-golden regression scenarios with per-scorer results, and controls listener sampling.
+The React/Vite demo UI is served by nginx and backed by a FastAPI service. Its Workflow run page starts
+`LoanApprovalProcess_AI`, with an "Eval service worker" toggle (`skipEvalServiceWorker`) and a "Guardrail settings for
+the next run" panel (minimum score, sample rate, every-Nth review, required scorers). It shows nested progress, the
+agent configuration and decision, and the Guardrail and Human review results. The Regression page runs the six golden
+scenarios with per-scorer results, and the Evals, Telemetry, Loan assessment and Architecture pages explain the setup.
 Both are included in the local stack; see the [UI walkthrough](local-dev/README.md#frontend-and-ui-api).
 
 ### -| [model-benchmarks](model-benchmarks)
@@ -200,41 +211,41 @@ They are grouped into reusable bundles:
   text (no captured arguments).
 - `TOOL_ARGUMENT_SCORERS` — 3 opt-in code scorers that also inspect tool-call *arguments*; only meaningful when content
   capture is on (they self-skip with
-  `Feedback(None)` otherwise). Regression includes them by default; the worker and
-  trace listener use the trace-only bundle.
+  `Feedback(None)` otherwise). Regression includes them by default; both eval workers
+  use `DETERMINISTIC_SCORERS`.
 - `ALL_DETERMINISTIC_SCORERS` = `DETERMINISTIC_SCORERS` + `TOOL_ARGUMENT_SCORERS`.
 
 **Consumers:** **R** = `regression` (live agent) · **W** = `eval-service-worker`
-(online, per-run) · **L** = `eval-trace-listener` (offline, per-trace). See each
+(blocking guardrail, per-run) · **A** = `eval-async-worker` (non-blocking, per-run). See each
 service's README for exactly how it sources the scorer inputs.
 
 | Scorer                                                | Type      | Bundle        | What it checks                                                                    | Consumers |
 |-------------------------------------------------------|-----------|---------------|-----------------------------------------------------------------------------------|-----------|
-| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | R · W · L |
-| `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · L |
-| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | R · W · L |
-| `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output mentions credit, fraud and affordability evidence                         | R · W · L |
-| `risk_checks_precede_affordability`                   | Code      | DETERMINISTIC | Credit and fraud checks precede affordability                                    | R · W · L |
-| `no_duplicate_tool_calls`                            | Code      | DETERMINISTIC | No tool is called successfully more than once                                    | R · W · L |
-| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | R · W · L |
-| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | R · W · L |
-| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | R · W · L |
-| `step_efficiency`                                     | Code      | DETERMINISTIC | At most four total LLM calls including the final answer (+1 for collateral)       | R · W · L |
-| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | R · W · L |
+| `no_tool_errors`                                      | Code      | DETERMINISTIC | No tool call ended in an error/failed status                                      | R · W · A |
+| `final_recommendation_format`                        | Code      | DETERMINISTIC | Final line is exactly APPROVE or REJECT, separate from semantic evidence judging | R · W · A |
+| `tool_correctness`                                    | Code      | DETERMINISTIC | Agent calls all expected tools and no inappropriate ones                          | R · W · A |
+| `cites_key_evidence_terms`                            | Code      | DETERMINISTIC | Output mentions credit, fraud and affordability evidence                         | R · W · A |
+| `risk_checks_precede_affordability`                   | Code      | DETERMINISTIC | Credit and fraud checks precede affordability                                    | R · W · A |
+| `no_duplicate_tool_calls`                            | Code      | DETERMINISTIC | No tool is called successfully more than once                                    | R · W · A |
+| `no_collateral_check_when_no_collateral`              | Code      | DETERMINISTIC | Value Collateral is not called when `hasCollateral=false`                         | R · W · A |
+| `no_bank_statement_for_employed_applicant`            | Code      | DETERMINISTIC | Bank statements are not analysed for EMPLOYED applicants                          | R · W · A |
+| `no_verify_employment_for_self_employed_applicant`    | Code      | DETERMINISTIC | Employment is not verified for non-EMPLOYED applicants                            | R · W · A |
+| `step_efficiency`                                     | Code      | DETERMINISTIC | At most four total LLM calls including the final answer (+1 for collateral)       | R · W · A |
+| `affordability_called_after_income_confirmed`         | Code      | DETERMINISTIC | Affordability is assessed only after income has been confirmed                    | R · W · A |
 | `tool_argument_correctness`                           | Code      | TOOL_ARGUMENT | Each expected tool receives the arguments the BPMN wires up for it                | R         |
 | `collateral_valuation_called_correctly_when_required` | Code      | TOOL_ARGUMENT | Value Collateral **is** called, with the correct `applicationId`, when required   | R         |
 | `requested_amount_passed_to_affordability`            | Code      | TOOL_ARGUMENT | Affordability tool receives the correct `customerId` and `requestedAmount`        | R         |
-| `decision_quality`                                    | LLM judge | —             | Final output is a clear, justified APPROVE/REJECT recommendation                  | R · W · L |
-| `evidence_citation`                                   | LLM judge | —             | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)          | R · L     |
+| `decision_quality`                                    | LLM judge | —             | Final output is a clear, justified APPROVE/REJECT recommendation                  | R · W · A |
+| `evidence_citation`                                   | LLM judge | —             | Output grounds its reasoning in the applicant/tool evidence (graded 0–1)          | R · A     |
 | `matches_golden`                                      | LLM judge | —             | Output reaches the same decision as the matching golden (needs `expected_output`) | R         |
 
 Notes:
 
 - `matches_golden` requires a golden `expected_output` (an `expectations`
   value), so only the **regression** suite runs it — a bare trace doesn't carry
-  it, so `W`/`L` cannot.
+  it, so `W`/`A` cannot.
 - `evidence_citation` treats the Fluxnova-only `agent_goal` as *optional*
-  context (it isn't on the MLflow trace), so it can run trace-side in `L`.
+  context, so it can run in `A` without it.
 - Local demo judging uses OpenAI `gpt-4.1-mini` for decision quality and `gpt-4o-mini`
   for golden matching/evidence citation; select Ollama with the shared
   provider configuration. The demo worker calls the configured model directly.
@@ -293,6 +304,35 @@ data). Enable it via the Spring Boot property
 `fluxnova.ai.agent.observability.capture-content: true` or the standard
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` environment variable.
 
+The local stack keeps it **off** too: exported traces carry metrics and span structure only. Nothing in the
+evaluation path needs it, because both eval workers read their scorer inputs from the agent's process variables (see
+[Where eval data lives](#where-eval-data-lives)). For local debugging, set `FLUXNOVA_CAPTURE_GENAI_CONTENT=true` in
+`local-dev/.env` and recreate the `fluxnova` pod (`local-dev/default.yml` reads it into the property above).
+
+## Where eval data lives
+
+| Data | Where it is stored | Who can read it (local stack) |
+|------|--------------------|-------------------------------|
+| Applicant inputs, the agent's conversation (prompts, responses, tool arguments and results), loop count | Fluxnova process variables (`agent:context` variables, `_agentConversationHistory`, `_agentLoopIndex`) in the Fluxnova Postgres database, including history tables kept for the process's `historyTimeToLive` | Fluxnova REST API, Cockpit and Tasklist users (`demo`/`demo` locally), and both eval workers |
+| Trace structure: spans, timings, token counts, tool names and status | MLflow trace store (via the OTel Collector) | Anyone who can reach MLflow (no auth locally) |
+| Prompt/response content on traces | Not exported unless `FLUXNOVA_CAPTURE_GENAI_CONTENT=true` | as above when enabled |
+| Eval results: per-scorer values and rationales, pass/fail | MLflow assessments on the run's trace, one MLflow Evaluation Run per scoring, and (guardrail) `evalPassed`/`evalScore`/`evalFailedScorers`/`evalRationale`/`evalSampled`/`reviewRequired`/`reviewReason`/`runNumber` process variables | MLflow users; Fluxnova users for the process variables |
+| Guardrail dataset record | MLflow evaluation dataset: process instance id, decision keyword (`APPROVE`/`REJECT`), scorer values and rationales; no applicant inputs or full response | MLflow users |
+| Regression results | MLflow regression runs and reports (golden inputs are synthetic) | MLflow users |
+
+**How the workers score:** `fluxnova_mlflow_dataset.load_agent_run` reads the agent instance's variables and its
+deployed BPMN (for tool display names and the `agent:context` list) over the Fluxnova REST API, and builds the scorer
+`inputs`/`outputs`. The run's MLflow trace is looked up only as the anchor for results: passing it to
+`mlflow.genai.evaluate` attaches the feedback to it without copying the inputs or outputs into MLflow.
+
+**Things to be aware of:**
+
+- LLM judge rationales are free text and can quote parts of the agent's response or applicant data.
+- The judges send the agent's output and inputs to the configured judge provider (OpenAI by default), the same
+  provider the agent itself uses.
+- The local stack has no access control on MLflow and uses default Fluxnova credentials; see the security notes
+  before using it with real data.
+
 ## First time setup
 
 Use **macOS Terminal**, **Windows Git Bash**, or a Linux shell. Commands use forward
@@ -315,7 +355,7 @@ Choose a specific interpreter with `PYTHON=python3.11 ./setup.sh` if needed.
 
 ```bash
 ./local-dev/pods-up.sh postgres mlflow fluxnova
-./local-dev/pods-up.sh eval-service eval-listener observability
+./local-dev/pods-up.sh eval-service eval-async observability
 set -a
 source local-dev/.env
 set +a
@@ -345,77 +385,119 @@ Starting process 'loanAssessmentProcess' …
   Instance ID: 3816567e-9f94-11f1-9ead-94b609a26547
 Waiting for process to complete …
 Process 3816567e-9f94-11f1-9ead-94b609a26547 completed.
-The completed subprocess run's trace is persisted in MLflow; the eval-trace-listener service (if running) will score it automatically.
+The run's trace is persisted in MLflow. Workflows with Eval service tasks are scored by eval-service-worker / eval-async-worker (if running).
 ```
+
+Running `loan-assesment.bpmn` on its own isn't scored automatically: the eval workers are triggered by the Eval service
+tasks in `LoanApprovalProcess_AI.bpmn` (below).
 
 Other flags:
 
 ```bash
-fluxnova-run --skip-deploy fluxnova-runner/config/loan-assesment.yml   # BPMN already deployed
+fluxnova-run --skip-deploy fluxnova-runner/config/loan-assesment.yml   # BPMN already deployed; keeps earlier runs
 fluxnova-run fluxnova-runner/config/loan-assesment.yml                 # no mock workers (needs real service-task workers/backends)
 ```
 
-### Running the eval workflow (`fluxnova-runner/config/loan-assesment-eval.yml`)
+Without `--skip-deploy`, every run first deletes the existing deployment of the same name, with cascade, which removes
+that workflow's earlier runs and their Fluxnova history (see the warning below).
 
-`bpmn/loan-assesment-eval.bpmn` (`loanAssessmentEvalProcess`) invokes the loan-assessment agent as a **Call Activity**
-(`calledElement="loanAssessmentProcess"`) rather than embedding it, then runs a downstream eval/report/decision flow.
-Because the called process lives in a separate file, both BPMNs must be deployed together — the eval config lists the
-extra file under `additional_bpmn_paths`, which the runner posts in the same deployment:
+### Running the loan approval workflow (`fluxnova-runner/config/loan_approval_process_ai.yml`)
+
+`bpmn/LoanApprovalProcess_AI.bpmn` (`LoanApprovalProcess_AI`) is the current end-to-end workflow, and the one the UI's
+Workflow run tab starts. It invokes the loan-assessment agent as a **Call Activity** (`AgentTask_CreditRisk`,
+`calledElement="loanAssessmentProcess"`). Because the called process lives in a separate file, both BPMNs must be
+deployed together, so the config lists the extra file under `additional_bpmn_paths`, and the review form under
+`additional_resources`:
 
 ```yaml
-bpmn_path: bpmn/loan-assesment-eval.bpmn
+bpmn_path: bpmn/LoanApprovalProcess_AI.bpmn
 additional_bpmn_paths:
   - bpmn/loan-assesment.bpmn        # the called loanAssessmentProcess
+additional_resources:
+  - bpmn/forms/risk-assessment-review.form   # Tasklist form for the human review
 ```
 
-The eval process continues on the engine after the agent finishes (eval service task → decision gateway → human review
-user tasks), which mock workers can't complete. To stop an unattended run hanging on those user tasks, set
-`wait_for_activity` so the runner returns as soon as the agent Call Activity completes instead of waiting for the whole
-process:
+When the agent Call Activity ends, the BPMN records `agentDecision` (`APPROVE`, `REJECT` or `UNKNOWN`, from the final
+line of the agent's answer) and `agentAssessment` (the answer's text).
 
-```yaml
-wait_for_activity: CallActivity_LoanAssessmentAgent   # omit to wait for the entire process
-```
+After the agent, `Gateway_ForkAsyncEval` forks the process into two branches that never rejoin:
+
+- **Guardrail branch:** `Gateway_SkipEvalServiceWorker` → `ServiceTask_EvaluateAgentOutput` (topic `agent-output-eval`,
+  **eval-service-worker**) → `Further action required?` routes on the worker's `reviewRequired` → the
+  `Human: Risk Assessment Review` user task (when required) → `Risk Approved?`. A run is sent to review when its
+  evaluation fails (`reviewReason` `FAILED_EVAL`) or it is one of every `forceReviewEveryN` runs (`FORCED_EVERY_N`).
+  `evalSampleRate` limits scoring to a fraction of runs; the rest carry on unscored. Defaults: `evalMinScore` 1.0,
+  `evalRequiredScorers` `decision_quality`, `evalSampleRate` 1.0, `forceReviewEveryN` 0 (off); each input is
+  `${execution.hasVariable('X') ? X : default}`, so a run's start variables override it. The async worker's sample
+  rate is a separate, worker-side setting. Setting the
+  `skipEvalServiceWorker` variable to `true` bypasses the guardrail. All four guardrail settings are task inputs,
+  editable in the Modeler and overridable per run (see `eval-service-worker/README.md`).
+- **Human review:** the task opens the `risk_assessment_review` form in Fluxnova Tasklist. It shows the agent's decision
+  and assessment, the tool evidence and the guardrail result, and the reviewer chooses: **Approve** (keep the agent's
+  decision), **Amend** (approve or decline the loan instead) or **Reject** (the assessment isn't accepted; the loan is
+  declined), with an optional comment. The task records `reviewOutcome` (`APPROVE`/`AMEND`/`REJECT`),
+  `amendedDecision`, `reviewComment` and the resulting `reviewDecision`.
+- **`Risk Approved?`** approves the loan when the decision is `APPROVE`: the reviewer's `reviewDecision` if the run
+  was reviewed, otherwise the agent's `agentDecision`. `REJECT` or `UNKNOWN` declines it.
+- **Async branch:** `ServiceTask_AsyncEvaluateAgentOutput` (topic `agent-output-eval-async`, **eval-async-worker**) →
+  `EndEvent_AsyncEvalRecorded`. It scores and records every run without setting any variables.
+
+The process continues after the agent into tasks mock workers can't complete (user tasks), so the config sets
+`wait_for_activity: AgentTask_CreditRisk` and the runner returns as soon as the agent Call Activity completes. The
+`--wait-for-activity ACTIVITY_ID` CLI flag overrides this for a single run.
 
 In another activated terminal with `.env` exported, keep mock workers running:
 
 ```bash
-fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment-eval.yml
+fluxnova-run-mock-workers fluxnova-runner/config/loan_approval_process_ai.yml
 ```
 
 In the original terminal:
 
 ```bash
-fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml
+fluxnova-run fluxnova-runner/config/loan_approval_process_ai.yml
 ```
 
-The `--wait-for-activity ACTIVITY_ID` CLI flag overrides the config field for a single run. Scoring of the agent run is
-handled asynchronously by the **eval-service-worker** (see `local-dev/README.md`), not by the runner.
-Keep the separate mock workers alive until reporting finishes, then stop them with
-Ctrl+C. The [demo walkthrough](local-dev/README.md#demo-walkthrough) describes the
-expected traces, assessments, human-review tasks and dashboards.
+> **Warning:** unless you pass `--skip-deploy`, `fluxnova-run` first deletes every existing deployment with the
+> config's `deployment_name`, with `cascade=true`. For this config that is `Loan Approvals Process (Eval)`, the same
+> deployment the UI uses, so it removes all earlier runs of the workflow and their Fluxnova history: UI runs, open
+> review tasks, and the history the every-Nth review count (`runNumber`) is based on. MLflow traces and scores are not
+> affected. The UI deploys without deleting. To keep earlier runs, deploy once and then use
+> `fluxnova-run --skip-deploy fluxnova-runner/config/loan_approval_process_ai.yml`.
+
+Both Eval tasks are real jobs, not mocked, so start the `eval-service` and `eval-async` pods first (see
+`local-dev/README.md`). Without them, the run waits at the guardrail and the async task. Keep the separate mock workers
+alive until the run finishes, then stop them with Ctrl+C. The [demo walkthrough](local-dev/README.md#demo-walkthrough)
+describes the expected traces, assessments, human-review tasks and dashboards.
+
+> `bpmn/loan-assesment-eval.bpmn` and `fluxnova-runner/config/loan-assesment-eval.yml` are the older eval workflow. It
+> only has the blocking guardrail task, so the eval-async-worker never scores its runs.
 
 ## Evaluating agent runs
 
-Evaluation happens automatically off the agent traces the OTel Collector exports into MLflow. There are three
-complementary paths, all using the **shared scorers/judges** in
-`fluxnova_mlflow_dataset.scorers` so they never disagree on what "good" means:
+There are three complementary paths, all using the **shared scorers/judges** in `fluxnova_mlflow_dataset.scorers` so
+they never disagree on what "good" means:
 
-- **`eval-trace-listener`** (always-on service) — tails MLflow's trace store and scores each newly-completed run of the
-  configured agents with deterministic checks plus `decision_quality` and `evidence_citation`, logging `Feedback` back onto the trace. Best for
-  passive, continuous scoring of every run as it lands. See [
-  `eval-trace-listener/README.md`](eval-trace-listener/README.md).
-- **`eval-service-worker`** (BPMN external-task worker) — triggered by the eval service task in
-  `loan-assesment-eval.bpmn` once the agent Call Activity finishes, it scores that one run with the deterministic
-  scorers **plus** the `decision_quality` LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway). Best for
-  synchronous, in-process scoring wired into the workflow. See [
-  `eval-service-worker/README.md`](eval-service-worker/README.md).
+- **`eval-async-worker`** (non-blocking BPMN external-task worker) — handles `ServiceTask_AsyncEvaluateAgentOutput` on
+  its own branch of `LoanApprovalProcess_AI.bpmn`. Scores every run (or a live-adjustable sampled fraction) with
+  deterministic checks plus `decision_quality` and `evidence_citation`, logs `Feedback` onto the run's trace, and
+  completes the task without routing the process. Best for continuous production scoring. See
+  [`eval-async-worker/README.md`](eval-async-worker/README.md).
+- **`eval-service-worker`** (blocking BPMN external-task worker) — handles the guardrail task
+  `ServiceTask_EvaluateAgentOutput`. Scores that one run with the deterministic scorers **plus** the `decision_quality`
+  LLM judge (direct OpenAI in the default demo; optionally via an AI Gateway) and returns `evalPassed`/`evalScore`/
+  `evalFailedScorers`/`evalRationale` plus `evalSampled`/`reviewRequired`/`reviewReason`, using the task inputs
+  `evalMinScore`/`evalRequiredScorers` (pass thresholds) and `evalSampleRate`/`forceReviewEveryN` (sampling and
+  forced review). `reviewRequired` routes failed or every-Nth runs to human review. Best for guardrails wired into the workflow. See
+  [`eval-service-worker/README.md`](eval-service-worker/README.md).
 - **`regression/`** (pytest gating suite) — drives the live agent once per parametrized golden scenario
   and asserts its real output satisfies the shared `decision_quality` and `matches_golden` judges, the
   `evidence_citation` judge, and the full `ALL_DETERMINISTIC_SCORERS` bundle. Best as a CI gate against behavioural
   regressions. See [`regression/README.md`](regression/README.md).
 
-All three write their results to the same PostgreSQL-backed MLflow tracking store (`postgres-local` pod's `mlflow`
+Both workers read their scorer inputs from the agent run's process variables, not from trace content (see
+[Where eval data lives](#where-eval-data-lives)). All three write their results to the same PostgreSQL-backed MLflow
+tracking store (`postgres-local` pod's `mlflow`
 database — see `local-dev/services/postgres-up.sh`).
 
 ### Automatic (online) evaluation: `mlflow-judges`
@@ -482,7 +564,7 @@ for the demo and debug the editable Python services on the host.
 ## Local development with Podman (Fluxnova + OTel Collector + MLflow + PostgreSQL)
 
 See [`local-dev/README.md`](local-dev/README.md) for the full details on running PostgreSQL, the Fluxnova engine, the
-OTel Collector, MLflow, and the `eval-service-worker` as Podman pods for local development — including troubleshooting
+OTel Collector, MLflow, and both eval workers as Podman pods for local development — including troubleshooting
 notes and the MLflow AI Gateway judge-endpoint setup.
 
 Use its [platform setup](local-dev/README.md#platform-setup),
@@ -493,7 +575,7 @@ Use its [platform setup](local-dev/README.md#platform-setup),
 ## Config file
 
 Runner deployment, process variables and mock workers are configured in workflow YAML.
-The evaluation worker uses CLI/environment settings, and the trace listener has
+The eval-service-worker uses CLI/environment settings, and the eval-async-worker has
 its own YAML plus CLI/environment overrides; see their package READMEs.
 
 [Example](fluxnova-runner/config/loan-assesment.yml)

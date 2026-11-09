@@ -31,13 +31,16 @@ def all_scorers() -> list[dict[str, Any]]:
     - **deterministic** — a plain code check (no LLM call), as opposed to an
       LLM-judge scorer (``decision_quality``, ``evidence_citation``,
       ``matches_golden``).
-    - **usedInAutoEval** — runs in `eval-trace-listener`'s always-on poll loop
-      (see its ``LISTENER_SCORERS``).
+    - **usedInAutoEval** — runs in the BPMN's non-blocking async Eval service
+      task, served by `eval-async-worker` (see its ``ASYNC_EVAL_SCORERS``). The
+      field keeps its original name; the UI labels it "Async eval".
     - **usedInEvalServiceWorker** — runs synchronously in the BPMN's eval
       service task (see `eval-service-worker`'s ``scoring.py``:
-      ``decision_quality`` plus the plain ``DETERMINISTIC_SCORERS`` — neither
-      ``evidence_citation``/``matches_golden`` nor the tool-argument scorers,
-      which need data the worker's trace-only inputs don't carry).
+      ``decision_quality`` plus the plain ``DETERMINISTIC_SCORERS``). Its
+      inputs come from the run's process variables, which do carry tool-call
+      arguments, so the tool-argument scorers could be added; they are left out
+      to keep the blocking step's scorer set small. ``matches_golden`` needs a
+      golden reference a production run doesn't have.
     - **usedInRegression** — `regression/test_mlflow_regression.py` is the one
       place that exercises every scorer that exists (each per-golden test runs
       ``decision_quality``/``matches_golden``/``evidence_citation`` plus every
@@ -45,7 +48,7 @@ def all_scorers() -> list[dict[str, Any]]:
       hardcoded ``True`` in the response) so a future reader sees *why*, and
       so this stays correct if that ever changes.
     """
-    from eval_trace_listener.scoring import LISTENER_SCORERS
+    from eval_async_worker.scoring import ASYNC_EVAL_SCORERS
     from fluxnova_mlflow_dataset.scorers import (
         ALL_DETERMINISTIC_SCORERS,
         DETERMINISTIC_SCORERS,
@@ -58,7 +61,7 @@ def all_scorers() -> list[dict[str, Any]]:
     universe = [decision_quality, evidence_citation, matches_golden, *ALL_DETERMINISTIC_SCORERS]
 
     deterministic_names = {scorer.name for scorer in ALL_DETERMINISTIC_SCORERS}
-    auto_eval_names = {scorer.name for scorer in LISTENER_SCORERS}
+    auto_eval_names = {scorer.name for scorer in ASYNC_EVAL_SCORERS}
     # eval-service-worker builds its own decision_quality_judge(...) instance rather
     # than importing the shared `decision_quality` object, but it's the same scorer
     # by name (see eval_service_worker/scoring.py) — checking the name avoids

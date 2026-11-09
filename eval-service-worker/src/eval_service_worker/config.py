@@ -4,8 +4,9 @@ Deliberately **not** read from the runner's workflow YAML config
 (``fluxnova-runner/config/loan-assesment.yml``) — this worker is meant to be a slim,
 independently deployable service (its own Podman pod/container), and depending
 on another service's config file for its own connection settings would
-recreate coupling between deployment and scoring. Scorer inputs come from MLflow;
-the worker uses Fluxnova history separately to resolve Call Activity child instances.
+recreate coupling between deployment and scoring. Scorer inputs come from the run's
+Fluxnova process variables; MLflow is used for the trace anchor, assessments and the
+dataset record.
 
 Instead, all settings are simple hardcoded defaults below, overridable via CLI
 flags or environment variables (see ``main.py``) — there's only ever one
@@ -30,13 +31,14 @@ DEFAULT_EXPERIMENT_NAME = "fluxnova-loanAssessmentEvalProcess"
 # DEFAULT_EXPERIMENT_NAME above, not derived from this. Matches the <process id>
 # in bpmn/loan-assesment-eval.bpmn (kept distinct from loan-assesment.bpmn's
 # "loanAssessmentProcess" so the two BPMNs deploy as separate definitions).
+# The current workflow (LoanApprovalProcess_AI.bpmn) uses this same experiment.
 DEFAULT_PROCESS_KEY = "loanAssessmentEvalProcess"
 
 # External-task topic this worker subscribes to.
 DEFAULT_TOPIC = "agent-output-eval"
 
 # MLflow judge model URI — calls OpenAI directly (needs OPENAI_API_KEY in this
-# process's environment), using the same calibrated model as regression/listener.
+# process's environment), using the same calibrated model as regression/eval-async-worker.
 # Was gateway-routed (gateway:/fluxnova-judge-oai), but that endpoint only existed
 # if created by hand on the MLflow server, so a fresh database 404'd every judge
 # call; the earlier Ollama-backed gateway:/fluxnova-judge needed a host-run Ollama

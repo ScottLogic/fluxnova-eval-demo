@@ -92,6 +92,7 @@ services:
       FLUXNOVA_POSTGRES_DB: ${FLUXNOVA_POSTGRES_DB:-fluxnova}
       SPRING_AI_OLLAMA_BASE_URL: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      FLUXNOVA_CAPTURE_GENAI_CONTENT: ${FLUXNOVA_CAPTURE_GENAI_CONTENT:-false}
     volumes:
       - ./default.yml:/fluxnova/configuration/default.yml:ro
     # The published image does not define HEALTHCHECK. Gate dependent workers on
@@ -129,31 +130,36 @@ services:
       DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}
       OLLAMA_API_BASE: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
 
-  eval-trace-listener-local:
+  eval-async-worker-local:
     profiles: [eval]
     build:
       context: ..
-      dockerfile: eval-trace-listener/Dockerfile
-    image: ${EVAL_LISTENER_IMAGE:-eval-trace-listener:local}
-    container_name: eval-trace-listener
+      dockerfile: eval-async-worker/Dockerfile
+    image: ${EVAL_ASYNC_IMAGE:-eval-async-worker:local}
+    container_name: eval-async-worker
     depends_on:
       mlflow-local:
         condition: service_healthy
+      fluxnova-local:
+        condition: service_healthy
     environment:
-      EVAL_LISTENER_TRACKING_URI: ${EVAL_LISTENER_TRACKING_URI:-http://mlflow-local:5000}
+      EVAL_ASYNC_FLUXNOVA_URL: ${EVAL_ASYNC_FLUXNOVA_URL:-http://fluxnova-local:8080/engine-rest}
+      FLUXNOVA_USERNAME: ${FLUXNOVA_USERNAME:-demo}
+      FLUXNOVA_PASSWORD: ${FLUXNOVA_PASSWORD:-demo}
+      EVAL_ASYNC_TRACKING_URI: ${EVAL_ASYNC_TRACKING_URI:-http://mlflow-local:5000}
       MLFLOW_DISABLE_TELEMETRY: "true"
-      EVAL_LISTENER_EXPERIMENT_NAME: ${EVAL_LISTENER_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
-      EVAL_LISTENER_CONTROL_PORT: "8092"
+      EVAL_ASYNC_EXPERIMENT_NAME: ${EVAL_ASYNC_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
+      EVAL_ASYNC_CONTROL_PORT: "8092"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LLM_JUDGE_PROVIDER: ${LLM_JUDGE_PROVIDER:-openai}
       DECISION_QUALITY_MODEL: ${DECISION_QUALITY_MODEL:-}
       OLLAMA_API_BASE: ${OLLAMA_CONTAINER_URL:-http://host.containers.internal:11434}
 
     ports:
-      - "${EVAL_LISTENER_CONTROL_PORT:-8092}:8092"
+      - "${EVAL_ASYNC_CONTROL_PORT:-8092}:8092"
     networks:
       default:
-        aliases: [eval-listener-local]
+        aliases: [eval-async-local]
 
   frontend-local:
     build:
@@ -193,7 +199,6 @@ services:
       MLFLOW_TRACKING_URI: ${UI_API_TRACKING_URI:-http://mlflow-local:5000}
       MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}}
       EVAL_SERVICE_EXPERIMENT_NAME: ${EVAL_SERVICE_EXPERIMENT_NAME:-fluxnova-loanAssessmentEvalProcess}
-      UI_API_EVAL_LISTENER_URL: ${UI_API_EVAL_LISTENER_URL:-http://eval-listener-local:8092}
       FLUXNOVA_USERNAME: ${FLUXNOVA_USERNAME:-demo}
       FLUXNOVA_PASSWORD: ${FLUXNOVA_PASSWORD:-demo}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

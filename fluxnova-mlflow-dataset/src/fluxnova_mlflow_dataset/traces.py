@@ -417,7 +417,7 @@ def scorer_inputs_from_trace(trace: Any) -> dict[str, Any]:
     This is the trace-consumer side of the scorer/trace decoupling: the
     deterministic scorers in :mod:`fluxnova_mlflow_dataset.scorers` know nothing
     about tracing and just read plain values from this dict; callers that *do*
-    have an MLflow ``Trace`` (the eval-service-worker and eval-trace-listener)
+    have an MLflow ``Trace`` (the eval-service-worker and eval-async-worker)
     use this to extract those values, then pass them via
     ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
     "outputs": ...}], scorers=[...])``.

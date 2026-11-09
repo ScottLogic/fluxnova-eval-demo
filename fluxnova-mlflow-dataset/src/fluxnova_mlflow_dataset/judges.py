@@ -13,19 +13,19 @@ to be the *running MLflow server's* HTTP(S) address (e.g.
 gateway routes judge calls through that server process. This is different
 from an offline evaluation's default tracking URI (a direct PostgreSQL connection
 used for offline evaluation), even though, in local dev, both ultimately point at the
-same underlying `postgres-local` pod's "mlflow" database (`mlflow-up.sh` points the
+same underlying `postgres-local` pod's "mlflow" database (`local-dev/services/mlflow-up.sh` points the
 server container at it too).
 
 Usage (see also local-dev/README.md):
 
     # Register + start automatic sampling for all judges in automatic_judges()
-    mlflow-judges start --experiment fluxnova-loanAssessmentProcess --sample-rate 0.1
+    mlflow-judges --experiment fluxnova-loanAssessmentProcess start --sample-rate 0.1
 
     # Stop automatic sampling (judges stay registered; can be re-started anytime)
-    mlflow-judges stop --experiment fluxnova-loanAssessmentProcess
+    mlflow-judges --experiment fluxnova-loanAssessmentProcess stop
 
     # Show current registration/sampling state
-    mlflow-judges status --experiment fluxnova-loanAssessmentProcess
+    mlflow-judges --experiment fluxnova-loanAssessmentProcess status
 """
 
 from __future__ import annotations

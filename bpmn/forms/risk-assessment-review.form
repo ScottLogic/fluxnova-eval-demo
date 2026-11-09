@@ -1,0 +1,187 @@
+{
+  "id": "risk_assessment_review",
+  "type": "default",
+  "schemaVersion": 12,
+  "executionPlatform": "Camunda Platform",
+  "executionPlatformVersion": "7.21.0",
+  "exporter": {
+    "name": "fluxnova-eval-demo",
+    "version": "1.0.0"
+  },
+  "components": [
+    {
+      "id": "Text_Intro",
+      "type": "text",
+      "text": "## Risk assessment review\n\nThe guardrail sent this run for review. Check why below, review the agent's assessment, the evidence it gathered and the guardrail result, then decide how the application should proceed."
+    },
+    {
+      "id": "Field_ReviewReason",
+      "key": "reviewReason",
+      "type": "textfield",
+      "label": "Why this run is being reviewed",
+      "description": "FAILED_EVAL: the guardrail evaluation failed. FORCED_EVERY_N: every Nth run is reviewed whatever its score. Both can apply.",
+      "disabled": true
+    },
+    {
+      "id": "Field_RunNumber",
+      "key": "runNumber",
+      "type": "number",
+      "label": "Run number",
+      "description": "Set when every-Nth review is on.",
+      "disabled": true
+    },
+    {
+      "id": "Text_Agent",
+      "type": "text",
+      "text": "### Agent's decision"
+    },
+    {
+      "id": "Field_AgentDecision",
+      "key": "agentDecision",
+      "type": "textfield",
+      "label": "Agent's decision",
+      "description": "Taken from the final line of the agent's answer. UNKNOWN means the agent gave no clear APPROVE or REJECT.",
+      "disabled": true
+    },
+    {
+      "id": "Field_AgentAssessment",
+      "key": "agentAssessment",
+      "type": "textarea",
+      "label": "Agent's assessment",
+      "disabled": true
+    },
+    {
+      "id": "Text_Guardrail",
+      "type": "text",
+      "text": "### Guardrail result"
+    },
+    {
+      "id": "Field_EvalScore",
+      "key": "evalScore",
+      "type": "number",
+      "label": "Score (fraction of applicable scorers that passed)",
+      "disabled": true
+    },
+    {
+      "id": "Field_EvalFailedScorers",
+      "key": "evalFailedScorers",
+      "type": "textfield",
+      "label": "Failed scorers",
+      "disabled": true
+    },
+    {
+      "id": "Field_EvalRationale",
+      "key": "evalRationale",
+      "type": "textarea",
+      "label": "Why the guardrail failed",
+      "disabled": true
+    },
+    {
+      "id": "Text_Evidence",
+      "type": "text",
+      "text": "### Evidence from the agent's tool calls\n\nFields are empty when the agent didn't call that tool (for example bank statements for an employed applicant)."
+    },
+    {
+      "id": "Field_CreditScore",
+      "key": "creditScore",
+      "type": "number",
+      "label": "Credit score",
+      "disabled": true
+    },
+    {
+      "id": "Field_CreditRiskBand",
+      "key": "creditRiskBand",
+      "type": "textfield",
+      "label": "Credit risk band",
+      "disabled": true
+    },
+    {
+      "id": "Field_FraudRiskScore",
+      "key": "fraudRiskScore",
+      "type": "number",
+      "label": "Fraud risk score",
+      "disabled": true
+    },
+    {
+      "id": "Field_EmploymentVerified",
+      "key": "employmentVerified",
+      "type": "checkbox",
+      "label": "Employment verified",
+      "disabled": true
+    },
+    {
+      "id": "Field_AnnualIncome",
+      "key": "annualIncome",
+      "type": "number",
+      "label": "Annual income",
+      "disabled": true
+    },
+    {
+      "id": "Field_BankStatementScore",
+      "key": "bankStatementScore",
+      "type": "number",
+      "label": "Bank statement score",
+      "disabled": true
+    },
+    {
+      "id": "Field_DebtToIncomeRatio",
+      "key": "debtToIncomeRatio",
+      "type": "number",
+      "label": "Debt-to-income ratio",
+      "disabled": true
+    },
+    {
+      "id": "Field_AffordabilityPassed",
+      "key": "affordabilityPassed",
+      "type": "checkbox",
+      "label": "Affordability passed",
+      "disabled": true
+    },
+    {
+      "id": "Field_CollateralValue",
+      "key": "collateralValue",
+      "type": "number",
+      "label": "Collateral value",
+      "disabled": true
+    },
+    {
+      "id": "Text_Decision",
+      "type": "text",
+      "text": "### Your decision"
+    },
+    {
+      "id": "Field_ReviewChoice",
+      "key": "reviewChoice",
+      "type": "radio",
+      "label": "Decision",
+      "validate": {
+        "required": true
+      },
+      "values": [
+        {
+          "label": "Approve: keep the agent's decision",
+          "value": "APPROVE"
+        },
+        {
+          "label": "Amend: approve the loan",
+          "value": "AMEND_APPROVE"
+        },
+        {
+          "label": "Amend: decline the loan",
+          "value": "AMEND_REJECT"
+        },
+        {
+          "label": "Reject the assessment: decline the loan",
+          "value": "REJECT"
+        }
+      ]
+    },
+    {
+      "id": "Field_ReviewComment",
+      "key": "reviewComment",
+      "type": "textarea",
+      "label": "Comment",
+      "description": "Explain your decision. Please always add one when you amend or reject the agent's decision; it is kept in the process history."
+    }
+  ]
+}

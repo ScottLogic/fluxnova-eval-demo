@@ -12,7 +12,7 @@
 # pods alone rather than erroring on a name clash (see their "already exists" branch).
 #
 # Usage (from this directory):
-#   ./pods-up.sh                    # start postgres, mlflow, fluxnova, frontend, eval-service, eval-listener, observability (in order)
+#   ./pods-up.sh                    # start postgres, mlflow, fluxnova, frontend, eval-service, eval-async, observability (in order)
 #   ./pods-up.sh mlflow             # start only mlflow
 #   ./pods-up.sh postgres fluxnova  # start only postgres and fluxnova (still in order)
 set -euo pipefail
@@ -21,7 +21,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # Per-service scripts live in the services/ subfolder.
 SERVICES_DIR="services"
 # Canonical start order — also the order pods are started in when no args are given.
-ALL_PODS=(postgres mlflow fluxnova frontend eval-service eval-listener observability)
+ALL_PODS=(postgres mlflow fluxnova frontend eval-service eval-async observability)
 
 usage() {
   cat <<EOF
@@ -29,7 +29,7 @@ Usage: ./pods-up.sh [pod ...]
 
 Starts one or more of the local-dev pods via their respective services/*-up.sh
 scripts, always in dependency order (postgres, then mlflow, then fluxnova, then
-frontend, then eval-service, then eval-listener, then observability) regardless of
+frontend, then eval-service, then eval-async, then observability) regardless of
 the order given on the command line. Idempotent — already-running pods are left
 untouched.
 
@@ -41,7 +41,7 @@ Pods:
   fluxnova      Fluxnova engine + OTel Collector (services/fluxnova-up.sh)
   frontend      Frontend UI (services/frontend-up.sh)
   eval-service  Eval-service worker (services/eval-service-up.sh)
-  eval-listener Eval trace listener (services/eval-listener-up.sh)
+  eval-async Non-blocking eval worker (services/eval-async-up.sh)
   observability Prometheus + Grafana (services/observability-up.sh)
 
 Examples:
@@ -62,13 +62,26 @@ else
   selected=("$@")
   for pod in "${selected[@]}"; do
     case "$pod" in
-      postgres|mlflow|fluxnova|frontend|eval-service|eval-listener|observability) ;;
+      postgres|mlflow|fluxnova|frontend|eval-service|eval-async|observability) ;;
       *)
         echo "Unknown pod: '$pod' (expected one of: ${ALL_PODS[*]})" >&2
         usage >&2
         exit 1
         ;;
     esac
+  done
+fi
+
+# Windows with Podman served from a WSL distro over SSH: the distro isn't running after
+# a reboot, so wake it (its systemd brings up sshd + podman.socket) and wait for the API.
+# Override the distro name with PODMAN_WSL_DISTRO.
+if ! podman info >/dev/null 2>&1 && command -v wsl.exe >/dev/null 2>&1; then
+  distro="${PODMAN_WSL_DISTRO:-Ubuntu}"
+  echo "Podman unavailable; starting WSL distro '${distro}'..."
+  wsl.exe -d "$distro" -- true || true
+  for _ in $(seq 1 15); do
+    podman info >/dev/null 2>&1 && break
+    sleep 2
   done
 fi
 

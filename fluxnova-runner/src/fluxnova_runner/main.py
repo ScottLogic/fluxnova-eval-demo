@@ -2,11 +2,13 @@
 
 Reads a YAML config file, deploys the specified BPMN to Fluxnova, optionally
 starts mock external-task workers, starts a process instance, and polls
-until it completes. Reporting/evaluation is *not* this service's job — the
-``eval-trace-listener`` service tails MLflow's trace store and scores each
-completed run automatically (or use ``eval-service-worker`` for synchronous
-per-run scoring). The run's trace is already persisted in MLflow by the time
-this service returns.
+until it completes. Reporting/evaluation is *not* this service's job — runs of
+a workflow with Eval service tasks (e.g. ``LoanApprovalProcess_AI.bpmn``) are
+scored by ``eval-service-worker`` (blocking guardrail) and ``eval-async-worker``
+(non-blocking). The run's trace is persisted in MLflow by the OTel Collector.
+
+Deploy first deletes existing deployments of the same name with cascade
+(instances and history included) unless ``--skip-deploy`` is given.
 
 Usage
 -----
@@ -95,12 +97,12 @@ def deploy(config: RunnerConfig, client: Client, skip: bool) -> None:
                 f"deployment(s) before redeploy: {', '.join(deleted)}"
             )
     print(f"Deploying {config.bpmn_path} …")
-    for extra in config.additional_bpmn_paths:
+    for extra in config.deployment_paths:
         print(f"  + additional resource {extra}")
     deployment = client.deploy(
         config.bpmn_path,
         deployment_name=config.deployment_name,
-        additional_paths=config.additional_bpmn_paths,
+        additional_paths=config.deployment_paths,
     )
     print(f"  Deployed '{deployment.get('name')}' (id={deployment.get('id')})")
 
@@ -153,8 +155,8 @@ def main(argv: Iterable[str] | None = None) -> None:
         client.wait_for_completion(instance_id, timeout=args.timeout)
         print(f"Process {instance_id} completed.")
     print(
-        "The completed subprocess run's trace is persisted in MLflow; the "
-        "eval-trace-listener service (if running) will score it automatically."
+        "The run's trace is persisted in MLflow. Workflows with Eval service tasks "
+        "are scored by eval-service-worker / eval-async-worker (if running)."
     )
 
 

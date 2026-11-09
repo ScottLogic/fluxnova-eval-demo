@@ -2,7 +2,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 from fluxnova_mlflow_dataset.scorers import step_efficiency
-from fluxnova_runner.agent_tool_calls import iterations_from_variables
+from fluxnova_mlflow_dataset.process_variables import iterations_from_variables
 
 
 def test_final_answer_is_counted_and_one_extra_unnecessary_round_fails():

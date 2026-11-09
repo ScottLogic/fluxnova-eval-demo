@@ -49,7 +49,7 @@ def dataset_name_for(process_key: str, name_override: str | None = None, experim
 
 def default_tracking_uri(repo_root: Path) -> str:
     """The default MLflow tracking store: PostgreSQL, matching the local-dev
-    ``postgres-local`` pod (see ``local-dev/postgres-up.sh``) — replaces the previous
+    ``postgres-local`` pod (see ``local-dev/services/postgres-up.sh``) — replaces the previous
     SQLite-file default.
 
     Connection details are read from environment variables (``POSTGRES_HOST``,

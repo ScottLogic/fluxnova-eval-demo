@@ -1,10 +1,10 @@
 # ui-api: FastAPI backend for the demo UI (frontend/). See ui-api/README.md.
 #
-# Also bundles fluxnova-mlflow-dataset, fluxnova-runner, eval-trace-listener,
+# Also bundles fluxnova-mlflow-dataset, fluxnova-runner, eval-async-worker,
 # eval-service-worker, regression/, bpmn/ and datasets/ so the regression.py router
 # can shell out to `pytest regression/` (see ui_api/regression_runner.py), the
 # workflow.py router can deploy/start BPMN runs (see ui_api/workflow_runner.py), and
-# the evals.py router can read the listener's/worker's real scorer definitions (see
+# the evals.py router can read both eval workers' real scorer definitions (see
 # ui_api/eval_definitions.py) from inside this container.
 #
 # fluxnova-mlflow-dataset and fluxnova-runner are installed *editable* (`-e`, same as
@@ -13,7 +13,7 @@
 # repo-relative files (fluxnova-runner/config/*.yml, datasets/, bpmn/) by walking up
 # from their own `__file__`, which only lands back at a real repo root if the
 # package's files stay at the path they were copied to (/app/...) instead of being
-# relocated into site-packages/ by a non-editable install. eval-trace-listener and
+# relocated into site-packages/ by a non-editable install. eval-async-worker and
 # eval-service-worker have no such repo-relative assumptions, so a normal install is
 # fine for those two.
 #
@@ -26,7 +26,7 @@ WORKDIR /app
 
 COPY fluxnova-mlflow-dataset /app/fluxnova-mlflow-dataset
 COPY fluxnova-runner /app/fluxnova-runner
-COPY eval-trace-listener /app/eval-trace-listener
+COPY eval-async-worker /app/eval-async-worker
 COPY eval-service-worker /app/eval-service-worker
 COPY regression /app/regression
 COPY bpmn /app/bpmn
@@ -36,7 +36,7 @@ COPY ui-api /app/ui-api
 RUN pip install --no-cache-dir \
     -e "/app/fluxnova-mlflow-dataset[dev]" \
     -e "/app/fluxnova-runner[dev]" \
-    /app/eval-trace-listener \
+    /app/eval-async-worker \
     /app/eval-service-worker \
     -r /app/regression/requirements.txt \
     /app/ui-api

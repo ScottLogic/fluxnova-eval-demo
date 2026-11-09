@@ -7,16 +7,18 @@ function OverviewText() {
         <>
             <p className="sample-preview-label">Overview</p>
             <div>
-                <p>This project comprises of two main flows. These flows can be run via the console however,
-                    this UI provides as user friendly layer for running and viewing these flows.
+                <p>This project comprises two main flows. They can be run from the console, but this UI provides
+                    a user-friendly layer for running and viewing them.
                 </p>
                 <ol>
                     <li>Production use case demo.</li>
                     <ul>
                         <li>Deploy and initiate a bpmn.</li>
                         <li>Observe the agentic ai tracing and metrics</li>
-                        <li>Automatically run evals against configured traces as they appear.</li>
-                        <li>Handle real time guard-rail use-cases with a Service Task and handler.
+                        <li>Automatically score every run with a non-blocking Eval Service Task that never holds up the
+                            process.</li>
+                        <li>Run a blocking guardrail Eval Service Task that sends failed (and, if configured, every
+                            Nth) runs to a human reviewer in Fluxnova Tasklist.
                         </li>
                     </ul>
                     <li>Development Demo</li>
@@ -62,8 +64,9 @@ function LandingText() {
                         href="https://opentelemetry.io/blog/2026/genai-observability/">gen_ai*</a></code>
                     metrics and tracing coupled with <a href="https://mlflow.org/">MLFlow</a>.
                 </li>
-                <li>Demonstration of real time production level guard-rail evaluation using FLuxnova.
-                    This is demonstrated through the use of an Eval Service Task built into the Fluxnova process
+                <li>Demonstration of real time production level guard-rail evaluation using Fluxnova.
+                    This is demonstrated through the use of a blocking Eval Service Task built into the Fluxnova
+                    process, which sends failed (and, if configured, every Nth) runs to human review.
                 </li>
             </ul>
         </>

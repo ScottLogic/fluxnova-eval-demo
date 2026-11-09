@@ -42,14 +42,14 @@ export const TABS: TabDefinition[] = [
     id: 'workflow',
     label: 'Workflow run',
     description:
-      'Trigger a run of the loan approval BPMN with editable input, and toggle evals independently for that run.',
+      'Trigger a run of the loan approval BPMN with editable input, optionally skip the guardrail or override its settings for that run, and follow the guardrail and human-review outcome.',
     Component: WorkflowPage,
   },
   {
     id: 'evals',
     label: 'Evals',
     description:
-      'See which evals are configured for the auto-eval (trace listener) and eval service worker paths.',
+      'See which scorers run in the non-blocking async eval, the blocking eval service worker guardrail and the regression suite, and how the guardrail pass thresholds work.',
     Component: EvalsPage,
   },
   {

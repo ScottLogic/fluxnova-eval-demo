@@ -21,6 +21,7 @@ const CustomNode = (props: CustomNodeProps) => {
             <Handle type="target" id="bottom" position={Position.Bottom} />
             <Handle type="target" id="left" position={Position.Left} />
             <Handle type="source" id="right" position={Position.Right} />
+            <Handle type="source" id="sbottom" position={Position.Bottom} />
         </>
     );
 };

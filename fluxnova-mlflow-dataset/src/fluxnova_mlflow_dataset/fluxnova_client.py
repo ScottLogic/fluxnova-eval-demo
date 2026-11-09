@@ -1,8 +1,7 @@
-"""Minimal read-only Fluxnova REST API client used by the ``collect`` step.
-
-Collection never deploys or starts processes (that's ``fluxnova_runner``'s
-job) — it only needs to read back a completed instance's final variables,
-which MLflow's trace store doesn't carry (only span/tool-call data does).
+"""Minimal read-only Fluxnova REST client used by the eval workers and
+``load_agent_run``: process variables, Call Activity child lookup, deployed
+BPMN XML and run numbering. It never deploys or starts processes (that's
+``fluxnova_runner``'s job).
 """
 
 from __future__ import annotations
@@ -64,6 +63,41 @@ class FluxnovaClient:
             return None
         instances.sort(key=lambda item: item.get("startTime") or "", reverse=True)
         return instances[0]["id"]
+
+    def get_process_definition_xml(self, instance_id: str) -> str:
+        """Return the BPMN XML of the definition ``instance_id`` ran.
+
+        Uses the historic process-instance API so it works after the instance
+        ends, then reads the deployed definition's ``bpmn20Xml``.
+        """
+        response = self._session.get(f"{self._base}/history/process-instance/{instance_id}")
+        self._raise_for_status(response, "get process instance")
+        definition_id = response.json()["processDefinitionId"]
+        response = self._session.get(f"{self._base}/process-definition/{definition_id}/xml")
+        self._raise_for_status(response, "get process definition XML")
+        return response.json()["bpmn20Xml"]
+
+    def get_run_number(self, instance_id: str) -> int:
+        """Return this instance's position among all runs of its process
+        definition key, counting from 1 by start time.
+
+        Read from the engine's history, so it survives worker restarts. It
+        counts every version of the process, and resets only if that history
+        is removed (e.g. by ``historyTimeToLive`` clean-up).
+        """
+        response = self._session.get(f"{self._base}/history/process-instance/{instance_id}")
+        self._raise_for_status(response, "get process instance")
+        instance = response.json()
+        response = self._session.get(
+            f"{self._base}/history/process-instance/count",
+            params={
+                "processDefinitionKey": instance["processDefinitionKey"],
+                # Inclusive: counts every run started at or before this one.
+                "startedBefore": instance["startTime"],
+            },
+        )
+        self._raise_for_status(response, "count process instances")
+        return int(response.json()["count"])
 
     @staticmethod
     def _raise_for_status(response: requests.Response, action: str) -> None:

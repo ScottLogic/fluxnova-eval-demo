@@ -1,6 +1,6 @@
 """Shared test fakes: lightweight stand-ins for MLflow span/trace objects.
 
-The deterministic scorers and the listener only touch a small slice of MLflow's
+The deterministic scorers and the async Eval worker only touch a small slice of MLflow's
 span/trace API (`span.get_attribute`, `trace.data.spans`, `trace.info.*`), so a
 few tiny fakes are enough to exercise them without a live MLflow.
 """

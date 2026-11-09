@@ -4,10 +4,10 @@ interface FieldInfo {
 }
 
 // Labels/descriptions for the known process variables in
-// fluxnova-runner/config/loan_approval_process_ai.yml's `variables`. aiRiskScore
-// and approvalDecision aren't applicant-facing data — they're starting values
-// for BPMN gateway conditions (Gateway_4 "Risk Approved?" / Gateway_5 "Manual
-// Review Required?"), described as such rather than guessed at.
+// fluxnova-runner/config/loan_approval_process_ai.yml's `variables`.
+// approvalDecision isn't applicant data: it's the starting value for Gateway_5
+// "Manual Review Required?" (MANUAL_REVIEW routes to Loan Officer Review).
+// aiRiskScore is legacy and no longer used by the BPMN.
 const FIELD_INFO: Record<string, FieldInfo> = {
   applicationId: {
     label: 'Application ID',
@@ -43,15 +43,15 @@ const FIELD_INFO: Record<string, FieldInfo> = {
   },
   aiRiskScore: {
     label: 'AI Risk Score',
-    description: "Starting value for the automated risk gate (\"Risk Approved?\"); normally left at its default.",
+    description: "Legacy variable, no longer used. \"Risk Approved?\" follows the reviewer's decision, or the agent's if there was no review.",
   },
   approvalDecision: {
     label: 'Approval Decision',
-    description: 'Starting value for the manual-review gate; normally left at its default.',
+    description: 'Set to MANUAL_REVIEW to route to Human: Loan Officer Review (that task has no form in this demo); leave blank to skip it.',
   },
   skipEvalServiceWorker: {
     label: 'Skip Eval Service Worker',
-    description: 'When enabled, bypasses the synchronous eval-service-worker scoring step for this run.',
+    description: 'When enabled, skips the blocking guardrail (and so any human review) for this run; the agent\'s decision goes straight to "Risk Approved?".',
   },
 }
 

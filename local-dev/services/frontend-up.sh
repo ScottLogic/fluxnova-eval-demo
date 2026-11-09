@@ -14,14 +14,12 @@ if [ "$DEV_NETWORK_MODE" = host ]; then
   api_listen="$UI_API_PORT"
   engine_url="http://localhost:${FLUXNOVA_PORT}/engine-rest"
   tracking_url="http://localhost:${MLFLOW_PORT}"
-  listener_url="http://localhost:${EVAL_LISTENER_CONTROL_PORT:-8092}"
 else
   network_args=(--network "$DEV_NETWORK" -p "${FRONTEND_PORT}:80" -p "${UI_API_PORT}:8090")
   frontend_listen=80
   api_listen=8090
   engine_url="http://${FLUXNOVA_POD_NAME}:8080/engine-rest"
   tracking_url="http://${MLFLOW_POD_NAME}:5000"
-  listener_url="http://${EVAL_LISTENER_POD_NAME:-eval-listener-local}:8092"
 fi
 if ! start_existing_pod "$POD_NAME" ui-api frontend; then
   if [ "${REBUILD:-}" = 1 ] || ! podman image exists "$FRONTEND_IMAGE_NAME"; then
@@ -41,7 +39,6 @@ if ! start_existing_pod "$POD_NAME" ui-api frontend; then
     -e MLFLOW_TRACKING_URI="${UI_API_TRACKING_URI:-$tracking_url}" \
     -e MLFLOW_EXPERIMENT_NAME="${MLFLOW_EXPERIMENT_NAME:-$EVAL_SERVICE_EXPERIMENT_NAME}" \
     -e EVAL_SERVICE_EXPERIMENT_NAME="$EVAL_SERVICE_EXPERIMENT_NAME" \
-    -e UI_API_EVAL_LISTENER_URL="${UI_API_EVAL_LISTENER_URL:-$listener_url}" \
     -e FLUXNOVA_USERNAME="${FLUXNOVA_USERNAME:-demo}" \
     -e FLUXNOVA_PASSWORD="${FLUXNOVA_PASSWORD:-demo}" \
     -e OPENAI_API_KEY="$OPENAI_API_KEY" \

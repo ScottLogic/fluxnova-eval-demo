@@ -6,8 +6,10 @@ import pandas as pd
 import pytest
 from _fakes import make_trace
 
-from eval_trace_listener import scoring
-from eval_trace_listener.scoring import ScoringError, score_trace
+from eval_async_worker import scoring
+from eval_async_worker.scoring import ScoringError, score_trace
+
+_INPUTS = {"input_variables": {"applicantType": "EMPLOYED"}, "tool_calls": [], "iterations": 3}
 
 
 class _FakeScorer:
@@ -39,7 +41,7 @@ def test_score_trace_all_pass(monkeypatch) -> None:
             "no_tool_errors/rationale": "ok",
         },
     )
-    outcome = score_trace(make_trace("tr-1"), scorers)
+    outcome = score_trace(make_trace("tr-1"), _INPUTS, "APPROVE", scorers)
     assert outcome.trace_id == "tr-1"
     assert outcome.passed is True
     assert set(outcome.scorer_results) == {"required_tools_called", "no_tool_errors"}
@@ -56,7 +58,7 @@ def test_score_trace_one_fail(monkeypatch) -> None:
             "no_tool_errors/rationale": "tool failed",
         },
     )
-    outcome = score_trace(make_trace("tr-2"), scorers)
+    outcome = score_trace(make_trace("tr-2"), _INPUTS, "APPROVE", scorers)
     assert outcome.passed is False
     assert "no_tool_errors=False" in outcome.summary()
 
@@ -67,7 +69,7 @@ def test_score_trace_handles_stringified_bool(monkeypatch) -> None:
         monkeypatch,
         {"required_tools_called/value": "true", "required_tools_called/rationale": "ok"},
     )
-    outcome = score_trace(make_trace("tr-3"), scorers)
+    outcome = score_trace(make_trace("tr-3"), _INPUTS, "APPROVE", scorers)
     assert outcome.passed is True
 
 
@@ -75,7 +77,7 @@ def test_score_trace_passes_when_scorer_column_absent(monkeypatch) -> None:
     # A scorer that returns None (not applicable — e.g.
     # no_verify_employment_for_self_employed_applicant for an EMPLOYED applicant)
     # leaves no `/value` column in a single-row eval. Extraction must not KeyError
-    # (which previously crashed the poll loop) and the missing verdict must pass.
+    # (which previously crashed the worker) and the missing verdict must pass.
     scorers = [
         _FakeScorer("required_tools_called"),
         _FakeScorer("no_verify_employment_for_self_employed_applicant"),
@@ -84,7 +86,7 @@ def test_score_trace_passes_when_scorer_column_absent(monkeypatch) -> None:
         monkeypatch,
         {"required_tools_called/value": True, "required_tools_called/rationale": "ok"},
     )
-    outcome = score_trace(make_trace("tr-na"), scorers)
+    outcome = score_trace(make_trace("tr-na"), _INPUTS, "APPROVE", scorers)
     assert outcome.passed is True
     assert (
         outcome.scorer_results["no_verify_employment_for_self_employed_applicant"]["value"]
@@ -99,12 +101,12 @@ def test_score_trace_passes_trace_to_evaluate(monkeypatch) -> None:
         {"required_tools_called/value": True, "required_tools_called/rationale": "ok"},
     )
     trace = make_trace("tr-4")
-    score_trace(trace, scorers)
+    score_trace(trace, _INPUTS, "APPROVE", scorers)
     (data, used_scorers), = captured
     [row] = data
     assert row["trace"] is trace
-    assert row["inputs"] == {"input_variables": {}, "tool_calls": [], "iterations": None}
-    assert "outputs" in row
+    assert row["inputs"] is _INPUTS
+    assert row["outputs"] == "APPROVE"
     assert used_scorers is scorers
 
 
@@ -116,29 +118,29 @@ def test_score_trace_raises_scoring_error_when_no_eval_results(monkeypatch) -> N
 
     monkeypatch.setattr(scoring.mlflow.genai, "evaluate", fake_evaluate)
     with pytest.raises(ScoringError):
-        score_trace(make_trace("tr-missing"), [_FakeScorer("required_tools_called")])
+        score_trace(make_trace("tr-missing"), _INPUTS, "APPROVE", [_FakeScorer("required_tools_called")])
 
 
-def test_listener_scorers_bundle_includes_llm_judges() -> None:
-    # The default bundle score_trace/TraceListener use must be the deterministic
+def test_async_eval_scorers_bundle_includes_llm_judges() -> None:
+    # The default bundle score_trace/AsyncEvalWorker use must be the deterministic
     # checks plus the two trace-derivable LLM judges — and must NOT include
     # matches_golden (which needs a golden expected_output a bare trace lacks).
-    names = {s.name for s in scoring.LISTENER_SCORERS}
+    names = {s.name for s in scoring.ASYNC_EVAL_SCORERS}
     assert {"decision_quality", "evidence_citation"} <= names
     assert "tool_correctness" in names
     assert "matches_golden" not in names
 
 
-def test_score_trace_defaults_to_listener_scorers(monkeypatch) -> None:
-    # Called with no explicit scorers, score_trace runs the full LISTENER_SCORERS bundle.
+def test_score_trace_defaults_to_async_eval_scorers(monkeypatch) -> None:
+    # Called with no explicit scorers, score_trace runs the full ASYNC_EVAL_SCORERS bundle.
     captured = _patch_evaluate(
         monkeypatch,
-        {s.name + "/value": True for s in scoring.LISTENER_SCORERS}
-        | {s.name + "/rationale": "ok" for s in scoring.LISTENER_SCORERS},
+        {s.name + "/value": True for s in scoring.ASYNC_EVAL_SCORERS}
+        | {s.name + "/rationale": "ok" for s in scoring.ASYNC_EVAL_SCORERS},
     )
-    score_trace(make_trace("tr-default"))
+    score_trace(make_trace("tr-default"), _INPUTS, "APPROVE")
     (_data, used_scorers), = captured
-    assert used_scorers is scoring.LISTENER_SCORERS
+    assert used_scorers is scoring.ASYNC_EVAL_SCORERS
 
 
 def test_score_trace_raises_scoring_error_on_empty_eval_results(monkeypatch) -> None:
@@ -147,4 +149,4 @@ def test_score_trace_raises_scoring_error_on_empty_eval_results(monkeypatch) -> 
 
     monkeypatch.setattr(scoring.mlflow.genai, "evaluate", fake_evaluate)
     with pytest.raises(ScoringError):
-        score_trace(make_trace("tr-empty"), [_FakeScorer("required_tools_called")])
+        score_trace(make_trace("tr-empty"), _INPUTS, "APPROVE", [_FakeScorer("required_tools_called")])

@@ -27,6 +27,10 @@
           <agent:variable name="debtToIncomeRatio" />
           <agent:variable name="affordabilityPassed" />
         </agent:context>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="agentDecision">${_agentConversationHistory.matches('(?s).*"role"\\s*:\\s*"ASSISTANT"\\s*,\\s*"content"\\s*:\\s*"((?:[^"\\\\]|\\\\.)+)".*') and _agentConversationHistory.replaceAll('(?s).*"role"\\s*:\\s*"ASSISTANT"\\s*,\\s*"content"\\s*:\\s*"((?:[^"\\\\]|\\\\.)+)".*', '$1').matches('(?s).*(?:^|\\\\n|[^A-Za-z])(APPROVE|REJECT)[^A-Za-z]*') ? _agentConversationHistory.replaceAll('(?s).*"role"\\s*:\\s*"ASSISTANT"\\s*,\\s*"content"\\s*:\\s*"((?:[^"\\\\]|\\\\.)+)".*', '$1').replaceAll('(?s).*(?:^|\\\\n|[^A-Za-z])(APPROVE|REJECT)[^A-Za-z]*', '$1') : 'UNKNOWN'}</camunda:outputParameter>
+          <camunda:outputParameter name="agentAssessment">${_agentConversationHistory.matches('(?s).*"role"\\s*:\\s*"ASSISTANT"\\s*,\\s*"content"\\s*:\\s*"((?:[^"\\\\]|\\\\.)+)".*') ? _agentConversationHistory.replaceAll('(?s).*"role"\\s*:\\s*"ASSISTANT"\\s*,\\s*"content"\\s*:\\s*"((?:[^"\\\\]|\\\\.)+)".*', '$1').replace('\\n', '&#10;').replace('\\"', '"') : ''}</camunda:outputParameter>
+        </camunda:inputOutput>
       </extensionElements>
       <incoming>Flow_Start_To_Validate</incoming>
       <outgoing>Flow_0s3blcw</outgoing>

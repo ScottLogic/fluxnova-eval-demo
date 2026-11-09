@@ -1,10 +1,13 @@
 """Scores one just-completed agentic subprocess run against a set of scorers —
 the nondeterministic ``decision_quality`` LLM judge plus deterministic checks
-(required tool calls, no tool errors, a definitive decision keyword). It reads
-the run's MLflow trace and extracts the plain values the scorers need (via
-``fluxnova_mlflow_dataset.scorer_inputs_from_trace`` — the scorers themselves
-know nothing about tracing); no BPMN parsing or process-variable reads for scoring.
-See this package's README for the worker's separate child-instance lookup.
+(required tool calls, no tool errors, final ``APPROVE``/``REJECT`` line format, ...).
+
+Scorer inputs come from the agent run's **process variables**
+(``fluxnova_mlflow_dataset.load_agent_run``: conversation history, loop count and
+``agent:context`` variables), never from trace content, so gen_ai content capture
+can stay off. The run's MLflow trace is still looked up, but only as the anchor
+that scorer feedback is attached to: passing it to ``mlflow.genai.evaluate``
+attaches the assessments to it without copying the inputs/outputs into MLflow.
 
 Uses ``mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ...,
 "outputs": ...}], scorers=[...])`` (rather than a bare ``mlflow.log_feedback``
@@ -28,13 +31,16 @@ from typing import Any
 import mlflow
 from fluxnova_mlflow_dataset import (
     DETERMINISTIC_SCORERS,
+    FluxnovaClient,
     MlflowTraceReader,
+    decision_keyword,
     decision_quality_judge,
     experiment_name_for,
-    scorer_inputs_from_trace,
-    stringify_output,
+    load_agent_run,
     write_to_mlflow_dataset,
 )
+
+from eval_service_worker.guardrail import GuardrailThresholds, apply_guardrail
 
 # The Guidelines judge reports a categorical "yes"/"no" adherence value (not a
 # numeric score) — confirmed by inspecting a real logged `decision_quality`
@@ -82,6 +88,10 @@ class EvalOutcome:
     eval_passed: bool
     eval_rationale: str
     final_output: str
+    # Fraction of applicable scorers that passed (compared with evalMinScore).
+    eval_score: float
+    # Applicable scorers that failed, whether or not the run still passed.
+    failed_scorers: tuple[str, ...]
     # One entry per scorer that ran (including decision_quality), each
     # {"value": ..., "rationale": ...} — every one of these checks (the
     # decision_quality judge and the deterministic scorers) must pass for
@@ -92,29 +102,39 @@ class EvalOutcome:
 def score_process_instance(
     process_instance_id: str,
     *,
+    client: FluxnovaClient,
     tracking_uri: str,
     process_key: str,
     experiment_name: str | None,
     judge_model: str,
     trace_poll_timeout: float = 30.0,
     trace_poll_interval: float = 3.0,
+    thresholds: GuardrailThresholds | None = None,
 ) -> EvalOutcome:
-    """Fetch a completed subprocess run's trace from MLflow, run the
-    ``decision_quality`` judge plus the deterministic scorers against it, and
-    record the results.
+    """Read a completed subprocess run's process variables from Fluxnova, run
+    the ``decision_quality`` judge plus the deterministic scorers against them,
+    and record the results on the run's MLflow trace.
 
     Logs every scorer's ``Feedback`` back onto the trace as an assessment and
     registers one MLflow Evaluation Run grouping them, merges a lightweight
     record into the MLflow evaluation dataset, then returns the pass/fail
-    outcome for the caller (the BPMN worker) to act on — gating requires *every*
-    scorer to pass: both the nondeterministic ``decision_quality`` judge and all
-    of the deterministic trace-only scorers.
+    outcome for the caller (the BPMN worker) to act on. Pass/fail is decided by
+    the BPMN thresholds (``guardrail.apply_guardrail``); scorers read
+    process-variable inputs.
 
     ``trace_poll_timeout``/``trace_poll_interval`` control how long to retry
     looking up the trace before giving up — the OTel Collector delivers spans
     to MLflow asynchronously, so this BPMN service task (which runs immediately
     after the subprocess ends) can otherwise beat the trace's arrival.
     """
+    run = load_agent_run(client, process_instance_id)
+    final_output = run.outputs
+    if not final_output:
+        raise NoFinalOutputError(
+            f"No final output found for process instance {process_instance_id!r} — "
+            "has the agentic subprocess actually completed?"
+        )
+
     mlflow.set_tracking_uri(tracking_uri)
     experiment = mlflow.set_experiment(experiment_name_for(process_key, experiment_name))
 
@@ -122,20 +142,9 @@ def score_process_instance(
     trace = reader.wait_for_trace(
         process_instance_id, timeout=trace_poll_timeout, poll_interval=trace_poll_interval
     )
-    final_output = reader.get_final_output(process_instance_id)
-    if not final_output:
-        raise NoFinalOutputError(
-            f"No final output found for process instance {process_instance_id!r} — "
-            "has the agentic subprocess actually completed and been exported to "
-            "MLflow yet?"
-        )
 
     scorers = [decision_quality_judge(judge_model), *DETERMINISTIC_SCORERS]
-    row = {
-        "trace": trace,
-        "inputs": scorer_inputs_from_trace(trace),
-        "outputs": final_output,
-    }
+    row = {"trace": trace, "inputs": run.inputs, "outputs": final_output}
     result = mlflow.genai.evaluate(data=[row], scorers=scorers)
     row = result.tables["eval_results"].iloc[0]
 
@@ -144,22 +153,29 @@ def score_process_instance(
         for s in scorers
     }
 
-    failed = {
-        name: res
-        for name, res in scorer_results.items()
-        if not _scorer_passed(name, res["value"])
-    }
-    eval_passed = not failed
+    thresholds = thresholds or GuardrailThresholds()
+    guardrail = apply_guardrail(scorer_results, thresholds, _scorer_passed)
+    eval_passed = guardrail.passed
+    failures = "; ".join(
+        f"{name}: {scorer_results[name]['rationale'] or 'failed'}" for name in guardrail.failed
+    )
 
-    if eval_passed:
+    if eval_passed and not guardrail.failed:
         decision_quality = scorer_results[_DECISION_QUALITY_NAME]
         rationale = (
             decision_quality["rationale"]
             or "All deterministic and non-deterministic evaluation checks passed."
         )
+    elif eval_passed:
+        rationale = (
+            f"Passed with score {guardrail.score:.2f} (minimum {thresholds.min_score:.2f}). "
+            f"Tolerated failures: {failures}"
+        )
+    elif guardrail.required_failed:
+        rationale = f"Required scorer(s) failed: {', '.join(guardrail.required_failed)}. {failures}"
     else:
-        rationale = "; ".join(
-            f"{name}: {res['rationale'] or 'failed'}" for name, res in failed.items()
+        rationale = (
+            f"Score {guardrail.score:.2f} is below the minimum {thresholds.min_score:.2f}. {failures}"
         )
 
     _log_dataset_record(
@@ -178,6 +194,8 @@ def score_process_instance(
         eval_rationale=rationale,
         final_output=final_output,
         scorer_results=scorer_results,
+        eval_score=guardrail.score,
+        failed_scorers=guardrail.failed,
     )
 
 
@@ -191,12 +209,11 @@ def _log_dataset_record(
     judge_model: str,
     scorer_results: dict[str, dict[str, Any]],
 ) -> None:
-    """Merge a lightweight evaluation-dataset record for this run.
+    """Merge a lightweight, content-free evaluation-dataset record for this run.
 
-    Unlike ``fluxnova_mlflow_dataset.store.build_mlflow_record`` (used by the
-    offline collector), this worker has no BPMN/Fluxnova REST access to enrich
-    the record with ``agent_goal``/``input_variables``/``tool_calls`` — only
-    the trace-derived output and every scorer's verdict are recorded.
+    Only the decision keyword (``APPROVE``/``REJECT``) and every scorer's verdict
+    and rationale are recorded — never the agent's full response or the
+    applicant inputs, which stay in Fluxnova's process variables.
     """
     tags = {
         "processInstanceId": process_instance_id,
@@ -210,7 +227,7 @@ def _log_dataset_record(
 
     record = {
         "inputs": {"process_instance_id": process_instance_id},
-        "outputs": stringify_output(final_output),
+        "outputs": decision_keyword(final_output),
         "expectations": {},
         "tags": tags,
     }

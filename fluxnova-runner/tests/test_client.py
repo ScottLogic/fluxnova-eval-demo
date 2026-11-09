@@ -85,7 +85,7 @@ class TestRunnerConfig:
         assert cfg.wait_for_activity == "CallActivity_LoanAssessmentAgent"
 
     def test_ignores_eval_only_extra_fields(self, tmp_path: Path):
-        """Fields owned by the listener/eval tools (subprocess_id, available_tools,
+        """Fields owned by the eval tools (subprocess_id, available_tools,
         expected_tools, dataset_path, mlflow_dataset) should be silently ignored so
         the same YAML config can be reused by the runner without modification."""
         extra = textwrap.dedent("""\

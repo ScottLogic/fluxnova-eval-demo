@@ -35,8 +35,7 @@ from fluxnova_mlflow_dataset import (
 from fluxnova_mlflow_dataset.experiments import require_remote_artifacts
 from fluxnova_mlflow_dataset.goldens import load_goldens
 from fluxnova_mlflow_dataset.scorers import DECISION_QUALITY_RUBRIC_VERSION
-from fluxnova_runner.agent_output import agent_final_output
-from fluxnova_runner.agent_tool_calls import scorer_inputs_from_variables
+from fluxnova_mlflow_dataset.process_variables import agent_final_output, scorer_inputs_from_variables
 from fluxnova_runner.client import Client
 from fluxnova_runner.config import RunnerConfig
 from fluxnova_runner.mock_workers import start_workers
@@ -54,8 +53,8 @@ _TRACE_EXPERIMENT_NAME = os.environ.get(
 )
 _REGRESSION_EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT_NAME", _TRACE_EXPERIMENT_NAME)
 
-# Tag written onto every trace this suite generates — must match
-# eval_trace_listener.listener._REGRESSION_TAG_NAME/_REGRESSION_TAG_VALUE.
+# Tag written onto every trace this suite generates, so regression runs can be
+# told apart from real/demo runs in MLflow.
 _REGRESSION_TAG_NAME = "source"
 _REGRESSION_TAG_VALUE = "regression"
 
@@ -113,16 +112,15 @@ def _scenario_id(golden: dict) -> str | None:
 
 
 def _tag_trace_as_regression(instance_id: str) -> None:
-    """Best-effort: tag this run's MLflow trace so eval-trace-listener skips it.
+    """Best-effort: tag this run's MLflow trace as a regression run.
 
     Regression runs share the exact same ``subprocess_id`` (and therefore the
-    same ``gen_ai.agent.name``) as real/demo runs, so the listener's
-    ``agent_names`` filter alone can't tell them apart — see
-    ``eval_trace_listener.listener``'s ``_is_regression_trace``. Tagging is
+    same ``gen_ai.agent.name``) as real/demo runs, so this tag is the only way
+    to tell them apart in the shared experiment. Tagging is
     genuinely best-effort (the OTel Collector delivers spans asynchronously, and
     this suite otherwise deliberately avoids MLflow calls around the live run —
     see ``_run_agent``'s docstring): a failure here must never fail the test
-    itself, just risk the listener scoring this one run as if it were real.
+    itself, just leave this one run untagged.
     """
     try:
         experiment = mlflow.get_experiment_by_name(_TRACE_EXPERIMENT_NAME)
@@ -249,7 +247,7 @@ def tool_names(cfg: RunnerConfig) -> dict[str, str | None]:
     The agent's tool-call history (``_agentConversationHistory``) records each
     call's BPMN element id (``ServiceTask_...``), but the scorers key on the
     human-readable display name — see
-    ``fluxnova_runner.agent_tool_calls.tool_calls_from_variables``.
+    ``fluxnova_mlflow_dataset.process_variables.tool_calls_from_variables``.
     """
     return BpmnLookup(cfg.bpmn_path, cfg.subprocess_id).tool_names()
 
@@ -275,7 +273,7 @@ def test_agent_passes_golden(
       ``REGRESSION_EVIDENCE_CITATION_THRESHOLD``.
     - ``ALL_DETERMINISTIC_SCORERS`` — code checks on the run's tool calls,
       ordering, arguments and iteration count, graded from the process
-      variables (see ``fluxnova_runner.agent_tool_calls``) — no MLflow trace needed.
+      variables (see ``fluxnova_mlflow_dataset.process_variables``) — no MLflow trace needed.
 
     Every scorer's result is recorded in the JSON report's per-test
     ``metadata.scorers`` (read by ``ui_api.regression_runner``), and the

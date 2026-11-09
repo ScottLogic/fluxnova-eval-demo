@@ -92,10 +92,30 @@ export interface AgentConfig {
   systemPrompt: string
 }
 
+// The blocking guardrail Eval task's pass thresholds, as authored on the BPMN
+// (camunda:inputParameters evalMinScore / evalRequiredScorers).
+export interface GuardrailConfig {
+  taskId: string
+  taskName: string
+  // null when the BPMN's evalMinScore isn't a number (the worker raises an incident).
+  minScore: number | null
+  requiredScorers: string[]
+  // Fraction of runs the guardrail scores (1 = every run), and "send every Nth
+  // run to human review" (0 = off). null when the BPMN value isn't a number.
+  sampleRate: number | null
+  forceReviewEveryN: number | null
+  // false when the task sets neither input, so the worker's defaults apply.
+  configuredInBpmn: boolean
+  // true when the task's inputs take a same-named process variable if the run
+  // was started with one, so the UI can set per-run thresholds.
+  overridable: boolean
+}
+
 export interface WorkflowConfig {
   processKey: string
   variables: WorkflowVariables
   agentConfig: AgentConfig | null
+  guardrail: GuardrailConfig | null
 }
 
 export interface WorkflowRunStarted {
@@ -128,18 +148,6 @@ export function startWorkflowRun(variableOverrides: WorkflowVariables): Promise<
 
 export function fetchWorkflowRun(instanceId: string): Promise<WorkflowRunStatus> {
   return get(`/api/workflow/runs/${instanceId}`)
-}
-
-export interface AutoEvalConfig {
-  enabled: boolean
-}
-
-export function fetchAutoEvalConfig(): Promise<AutoEvalConfig> {
-  return get('/api/evals/auto-eval')
-}
-
-export function updateAutoEvalConfig(enabled: boolean): Promise<AutoEvalConfig> {
-  return post('/api/evals/auto-eval', { enabled })
 }
 
 export interface EvalScorer {

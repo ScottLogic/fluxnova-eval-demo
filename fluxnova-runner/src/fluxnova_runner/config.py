@@ -26,16 +26,24 @@ class RunnerConfig:
     variables: dict[str, Any] = field(default_factory=dict)
     mock_workers: dict[str, dict[str, Any]] = field(default_factory=dict)
     additional_bpmn_paths: list[Path] = field(default_factory=list)
+    # Other deployable files for the same deployment, e.g. Fluxnova forms
+    # (``.form``) referenced by a user task's ``camunda:formRef``.
+    additional_resources: list[Path] = field(default_factory=list)
     wait_for_activity: str | None = None
+
+    @property
+    def deployment_paths(self) -> list[Path]:
+        """Every extra file deployed alongside ``bpmn_path``."""
+        return [*self.additional_bpmn_paths, *self.additional_resources]
 
     @classmethod
     def from_file(cls, path: Path) -> RunnerConfig:
         """Load a workflow YAML config file.
 
         ``bpmn_path`` is resolved relative to the repo root if not absolute.
-        Extra keys (e.g. ``available_tools``, ``mlflow_dataset`` — used by the
-        eval services) are simply ignored, so the same YAML file used
-        for evaluation config can be reused here unchanged.
+        Extra keys (e.g. ``available_tools``, ``mlflow_dataset``) are simply
+        ignored; they are reference/legacy only and not read by any current
+        service.
         """
         root_dir = Path(__file__).resolve().parent.parent.parent.parent
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -48,6 +56,7 @@ class RunnerConfig:
             return resolved if resolved.is_absolute() else root_dir / resolved
 
         additional_bpmn_paths = [_resolve(p) for p in (raw.get("additional_bpmn_paths") or [])]
+        additional_resources = [_resolve(p) for p in (raw.get("additional_resources") or [])]
         return cls(
             fluxnova_url=os.environ.get("FLUXNOVA_URL", raw["fluxnova_url"]).rstrip("/"),
             bpmn_path=bpmn_path,
@@ -57,5 +66,6 @@ class RunnerConfig:
             variables=raw.get("variables") or {},
             mock_workers=raw.get("mock_workers") or {},
             additional_bpmn_paths=additional_bpmn_paths,
+            additional_resources=additional_resources,
             wait_for_activity=raw.get("wait_for_activity"),
         )

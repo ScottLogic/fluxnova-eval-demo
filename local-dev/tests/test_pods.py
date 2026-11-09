@@ -104,7 +104,7 @@ def test_frontend_bridge_wires_api_dependencies_and_shared_namespace(run_script)
     api = next(c for c in commands if c[:1] == ["run"] and "ui-api" in c)
     assert "FLUXNOVA_URL=http://fluxnova-local:8080/engine-rest" in api
     assert "MLFLOW_TRACKING_URI=http://mlflow-local:5000" in api
-    assert "UI_API_EVAL_LISTENER_URL=http://eval-listener-local:8092" in api
+    assert not any("UI_API_EVAL_ASYNC_URL" in arg for arg in api)
     assert "EVAL_SERVICE_EXPERIMENT_NAME=fluxnova-loanAssessmentEvalProcess" in api
     assert "DECISION_QUALITY_MODEL=openai:/gpt-4.1-mini" in api
 
@@ -117,7 +117,6 @@ def test_frontend_host_fallback_keeps_vm_local_dependency_ports(run_script):
     api = next(c for c in commands if c[:1] == ["run"] and "ui-api" in c)
     assert "FLUXNOVA_URL=http://localhost:18080/engine-rest" in api
     assert "MLFLOW_TRACKING_URI=http://localhost:15000" in api
-    assert "UI_API_EVAL_LISTENER_URL=http://localhost:8092" in api
 
 
 def test_bridge_engine_publishes_ports_and_uses_internal_db(run_script):
@@ -129,6 +128,8 @@ def test_bridge_engine_publishes_ports_and_uses_internal_db(run_script):
     assert engine[engine.index("--platform") + 1] == "linux/amd64"
     assert "FLUXNOVA_POSTGRES_HOST=postgres-local" in engine
     assert "FLUXNOVA_POSTGRES_PORT=5432" in engine
+    # GenAI content capture is opt-in: traces carry no prompts/responses by default.
+    assert "FLUXNOVA_CAPTURE_GENAI_CONTENT=false" in engine
 
 
 def test_host_fallback_uses_vm_local_db_port_without_publishing(run_script):
@@ -142,8 +143,8 @@ def test_host_fallback_uses_vm_local_db_port_without_publishing(run_script):
     assert "FLUXNOVA_POSTGRES_PORT=15432" in engine
 
 
-def test_listener_receives_judge_credentials_and_container_ollama_url(run_script):
-    result, commands = run_script("eval-listener")
+def test_async_worker_receives_judge_credentials_and_container_ollama_url(run_script):
+    result, commands = run_script("eval-async")
     assert result.returncode == 0, result.stderr
     run = next(c for c in commands if c[:1] == ["run"])
     assert "OPENAI_API_KEY=test-key" in run
@@ -153,7 +154,7 @@ def test_listener_receives_judge_credentials_and_container_ollama_url(run_script
 
 @pytest.mark.parametrize("service, container, compose_service", [
     ("eval-service", "eval-service-worker", "eval-service-worker-local"),
-    ("eval-listener", "eval-trace-listener", "eval-trace-listener-local"),
+    ("eval-async", "eval-async-worker", "eval-async-worker-local"),
     ("frontend", "ui-api", "ui-api-local"),
 ])
 def test_evaluation_clients_disable_diagnostic_telemetry(run_script, service, container, compose_service):
@@ -226,7 +227,7 @@ def test_mlflow_default_is_5001_on_host_and_5000_in_container(run_script):
         "fluxnova",
         "observability",
         "eval-service",
-        "eval-listener",
+        "eval-async",
     ],
 )
 def test_failed_pull_creates_no_pod_or_container(run_script, service):
@@ -340,12 +341,12 @@ def test_exit_between_http_and_bootstrap_file_is_reported_once(run_script):
 
 @pytest.mark.parametrize("service, extra", [
     ("mlflow", {"EXISTING_POD": "1"}),
-    ("eval-listener", {}),
+    ("eval-async", {}),
 ])
 def test_fixture_ignores_exported_developer_settings(run_script, monkeypatch, service, extra):
     for name, value in {
         "EVAL_SERVICE_EXPERIMENT_NAME": "fluxnova-loanAssessmentEvalProcess-v2",
-        "EVAL_LISTENER_TRACKING_URI": "http://developer.invalid:9999",
+        "EVAL_ASYNC_TRACKING_URI": "http://developer.invalid:9999",
         "MLFLOW_POD_NAME": "developer-mlflow",
         "MLFLOW_RUNTIME_VOLUME": "developer-runtime",
         "OLLAMA_CONTAINER_URL": "http://developer.invalid:11434",
@@ -360,12 +361,12 @@ def test_fixture_ignores_exported_developer_settings(run_script, monkeypatch, se
         assert ["pod", "start", "mlflow-local"] in commands
     else:
         run = next(command for command in commands if command[0] == "run")
-        assert "EVAL_LISTENER_TRACKING_URI=http://mlflow-local:5000" in run
+        assert "EVAL_ASYNC_TRACKING_URI=http://mlflow-local:5000" in run
         assert "OLLAMA_API_BASE=http://host.containers.internal:11434" in run
 
 
-def test_explicit_semantic_judge_override_reaches_listener(run_script):
-    result, commands = run_script("eval-listener", extra={"DECISION_QUALITY_MODEL": "openai:/candidate"})
+def test_explicit_semantic_judge_override_reaches_async_worker(run_script):
+    result, commands = run_script("eval-async", extra={"DECISION_QUALITY_MODEL": "openai:/candidate"})
     assert result.returncode == 0, result.stderr
     run = next(command for command in commands if command[0] == "run")
     assert "DECISION_QUALITY_MODEL=openai:/candidate" in run

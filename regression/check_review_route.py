@@ -16,6 +16,8 @@ from pathlib import Path
 import requests
 
 REVIEW_TASK = "UserTask_ReviewFailedEval"
+# Workflows whose guardrail task (ServiceTask_EvaluateAgentOutput) this helper may complete.
+SUPPORTED_PROCESSES = {"LoanApprovalProcess_AI", "loanAssessmentEvalProcess"}
 VALIDATION_WORKER = "local-route-validation"
 EVAL_WORKER = "eval-service-worker"
 
@@ -65,7 +67,7 @@ def check_review_route(session, base_url: str, parent_id: str, *,
     task = pending[0]
     if (task.get("processInstanceId") != parent_id or task.get("topicName") != "agent-output-eval"
             or task.get("activityId") != "ServiceTask_EvaluateAgentOutput"
-            or task.get("processDefinitionKey") != "loanAssessmentEvalProcess"):
+            or task.get("processDefinitionKey") not in SUPPORTED_PROCESSES):
         raise RuntimeError("Refusing to change an unrelated process/task")
     owner = task.get("workerId")
     if owner not in {None, EVAL_WORKER, VALIDATION_WORKER}:
@@ -77,8 +79,12 @@ def check_review_route(session, base_url: str, parent_id: str, *,
         call("POST", path + "/unlock")
     call("POST", path + "/lock", json={"workerId": VALIDATION_WORKER, "lockDuration": 60000})
     call("POST", path + "/complete", json={"workerId": VALIDATION_WORKER, "variables": {
+        # The same routing variables the real worker sets for a failed evaluation.
         "evalPassed": {"value": False, "type": "Boolean"},
         "evalRationale": {"value": "Controlled validation of human-review routing", "type": "String"},
+        "evalSampled": {"value": True, "type": "Boolean"},
+        "reviewRequired": {"value": True, "type": "Boolean"},
+        "reviewReason": {"value": "FAILED_EVAL", "type": "String"},
     }})
     while True:
         if any(item["taskDefinitionKey"] == REVIEW_TASK for item in user_tasks()):
@@ -94,7 +100,7 @@ def main() -> None:
 
     load_dotenv(Path(__file__).parents[1] / "local-dev/.env")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("process_instance_id", help="Parent loanAssessmentEvalProcess instance ID")
+    parser.add_argument("process_instance_id", help="Parent LoanApprovalProcess_AI (or older loanAssessmentEvalProcess) instance ID")
     parser.add_argument("--fluxnova-url", default=os.environ.get("FLUXNOVA_URL", "http://localhost:8080/engine-rest"))
     args = parser.parse_args()
     with requests.Session() as session:

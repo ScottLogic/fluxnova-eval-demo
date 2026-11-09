@@ -60,7 +60,7 @@ echo "=== Installing editable packages ==="
   -e "fluxnova-mlflow-dataset[dev]" \
   -e "fluxnova-runner[dev]" \
   -e "eval-service-worker[dev]" \
-  -e "eval-trace-listener[dev]" \
+  -e "eval-async-worker[dev]" \
   -e "ui-api[dev]"
 
 echo "=== Installing regression suite's extra dependencies ==="

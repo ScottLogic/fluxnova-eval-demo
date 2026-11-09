@@ -1,14 +1,16 @@
-"""Tests for ``score_process_instance`` (mocks MLflow + trace-reader boundaries)."""
+"""Tests for ``score_process_instance`` (mocks the Fluxnova, MLflow and trace-reader boundaries)."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
+from fluxnova_mlflow_dataset import AgentRun
 
 from eval_service_worker import scoring
+from eval_service_worker.guardrail import GuardrailThresholds
 
 
 @dataclass
@@ -28,9 +30,6 @@ class _FakeTraceReader:
     def __init__(self, tracking_uri: str, experiment_id: str) -> None:
         self.tracking_uri = tracking_uri
         self.experiment_id = experiment_id
-
-    def get_final_output(self, process_instance_id: str) -> str | None:
-        return _OUTPUTS.get(process_instance_id)
 
     def get_trace(self, process_instance_id: str):
         return f"trace-for-{process_instance_id}"
@@ -94,7 +93,11 @@ def _stub_common(
         lambda name: (calls.setdefault("experiment_name", name), _FakeExperiment())[1],
     )
     monkeypatch.setattr(scoring, "MlflowTraceReader", _FakeTraceReader)
-    monkeypatch.setattr(scoring, "scorer_inputs_from_trace", lambda trace: {"trace_ref": trace})
+    monkeypatch.setattr(
+        scoring,
+        "load_agent_run",
+        lambda client, pid: AgentRun(pid, {"run_ref": pid}, _OUTPUTS.get(pid)),
+    )
     monkeypatch.setattr(
         scoring, "decision_quality_judge", lambda model: _FakeScorer(name="decision_quality")
     )
@@ -143,6 +146,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-1",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -157,12 +161,12 @@ class TestScoreProcessInstance:
         assert outcome.scorer_results["no_tool_errors"]["value"] is True
         assert outcome.scorer_results["final_recommendation_format"]["value"] is True
 
-        # Scores against the real trace object, not a synthesized one, and passes
-        # the extracted plain values as inputs plus the final output.
+        # Feedback attaches to the real trace, but the scorer inputs/outputs come
+        # from the run's process variables, not from trace content.
         assert calls["evaluate_data"] == [
             {
                 "trace": "trace-for-proc-1",
-                "inputs": {"trace_ref": "trace-for-proc-1"},
+                "inputs": {"run_ref": "proc-1"},
                 "outputs": "Strong credit history.\nAPPROVE",
             }
         ]
@@ -186,6 +190,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-2",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -209,6 +214,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-det",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -226,6 +232,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-all",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -249,6 +256,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-na",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -275,6 +283,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-nan",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -289,6 +298,7 @@ class TestScoreProcessInstance:
 
         outcome = scoring.score_process_instance(
             "proc-3",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
@@ -297,28 +307,24 @@ class TestScoreProcessInstance:
 
         assert outcome.eval_passed is True
 
-    def test_dict_final_output_is_stringified_in_dataset_record(self, monkeypatch):
-        # When the agent's last message is captured as structured JSON, the trace
-        # yields a dict/list rather than a string. The dataset record's `outputs`
-        # must be normalised to a JSON string, otherwise MLflow's server-side
-        # schema inference raises "'str' object does not support item assignment".
-        _OUTPUTS["proc-dict"] = {"recommendation": "APPROVE", "reasons": ["credit", "income"]}
+    def test_dataset_record_holds_decision_keyword_not_full_output(self, monkeypatch):
+        # Eval records stay content-free: the agent's full response and the
+        # applicant inputs remain in Fluxnova's process variables.
+        _OUTPUTS["proc-dict"] = "Applicant Jane Smith earns 55000.\nAPPROVE"
         calls = _stub_common(monkeypatch, "yes", "ok")
 
         scoring.score_process_instance(
             "proc-dict",
+            client=MagicMock(),
             tracking_uri="http://localhost:5000",
             process_key="loanAssessmentEvalProcess",
             experiment_name=None,
             judge_model="gateway:/fluxnova-judge",
         )
 
-        outputs = calls["dataset_kwargs"]["record"]["outputs"]
-        assert isinstance(outputs, str)
-        assert json.loads(outputs) == {
-            "recommendation": "APPROVE",
-            "reasons": ["credit", "income"],
-        }
+        record = calls["dataset_kwargs"]["record"]
+        assert record["outputs"] == "APPROVE"
+        assert record["inputs"] == {"process_instance_id": "proc-dict"}
 
     def test_raises_no_final_output_error_when_run_has_no_output_yet(self, monkeypatch):
         _OUTPUTS["proc-4"] = None
@@ -327,8 +333,51 @@ class TestScoreProcessInstance:
         with pytest.raises(scoring.NoFinalOutputError, match="proc-4"):
             scoring.score_process_instance(
                 "proc-4",
+                client=MagicMock(),
                 tracking_uri="http://localhost:5000",
                 process_key="loanAssessmentEvalProcess",
                 experiment_name=None,
                 judge_model="gateway:/fluxnova-judge",
             )
+
+
+class TestThresholds:
+    def _score(self, monkeypatch, thresholds):
+        _OUTPUTS["proc-thr"] = "APPROVE"
+        _stub_common(
+            monkeypatch,
+            "yes",
+            "Well reasoned.",
+            deterministic_overrides={
+                "no_tool_errors/value": False,
+                "no_tool_errors/rationale": "Fraud screening errored.",
+            },
+        )
+        return scoring.score_process_instance(
+            "proc-thr",
+            client=MagicMock(),
+            tracking_uri="http://localhost:5000",
+            process_key="loanAssessmentEvalProcess",
+            experiment_name=None,
+            judge_model="gateway:/fluxnova-judge",
+            thresholds=thresholds,
+        )
+
+    def test_default_threshold_fails_on_any_scorer(self, monkeypatch):
+        outcome = self._score(monkeypatch, None)
+        assert outcome.eval_passed is False
+        assert outcome.eval_score == 0.75
+        assert outcome.failed_scorers == ("no_tool_errors",)
+        assert "below the minimum 1.00" in outcome.eval_rationale
+
+    def test_lower_threshold_passes_and_names_tolerated_failure(self, monkeypatch):
+        outcome = self._score(monkeypatch, GuardrailThresholds(min_score=0.75))
+        assert outcome.eval_passed is True
+        assert "Tolerated failures" in outcome.eval_rationale
+        assert "Fraud screening errored." in outcome.eval_rationale
+
+    def test_required_scorer_overrides_score(self, monkeypatch):
+        thresholds = GuardrailThresholds(min_score=0.5, required_scorers=("no_tool_errors",))
+        outcome = self._score(monkeypatch, thresholds)
+        assert outcome.eval_passed is False
+        assert outcome.eval_rationale.startswith("Required scorer(s) failed: no_tool_errors")
