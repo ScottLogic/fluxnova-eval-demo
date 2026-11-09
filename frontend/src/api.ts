@@ -100,6 +100,10 @@ export interface GuardrailConfig {
   // null when the BPMN's evalMinScore isn't a number (the worker raises an incident).
   minScore: number | null
   requiredScorers: string[]
+  // Fraction of runs the guardrail scores (1 = every run), and "send every Nth
+  // run to human review" (0 = off). null when the BPMN value isn't a number.
+  sampleRate: number | null
+  forceReviewEveryN: number | null
   // false when the task sets neither input, so the worker's defaults apply.
   configuredInBpmn: boolean
   // true when the task's inputs take a same-named process variable if the run

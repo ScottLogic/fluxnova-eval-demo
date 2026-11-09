@@ -132,6 +132,7 @@ _BPMN_NS = {
 }
 _CAMUNDA_TOPIC = "{http://camunda.org/schema/1.0/bpmn}topic"
 _DEFAULT_MIN_SCORE = 1.0
+_GUARDRAIL_INPUTS = ("evalMinScore", "evalRequiredScorers", "evalSampleRate", "forceReviewEveryN")
 # An input like ${execution.hasVariable('evalMinScore') ? evalMinScore : 1.0}
 # takes the run's process variable when set, else the trailing default.
 _OVERRIDABLE_INPUT = re.compile(r"^\$\{\s*execution\.hasVariable\(\s*['\"](\w+)['\"]\s*\)\s*\?.*:\s*(.+?)\s*\}$", re.S)
@@ -181,16 +182,36 @@ def _guardrail_config(cfg: RunnerConfig) -> dict[str, Any] | None:
     except ValueError:
         min_score = None  # invalid in the BPMN; the worker will raise an incident
     required = [n.strip() for n in required_text.split(",") if n.strip()]
+    rate_text, rate_overridable = _input_default(params.get("evalSampleRate", ""), "evalSampleRate")
+    every_text, every_overridable = _input_default(params.get("forceReviewEveryN", ""), "forceReviewEveryN")
+    sample_rate = _number_or_none(rate_text, 1.0)
+    every_n = _number_or_none(every_text, 0)
     return {
         "taskId": task.get("id"),
         "taskName": task.get("name") or task.get("id"),
         "minScore": min_score,
         "requiredScorers": required,
-        "configuredInBpmn": "evalMinScore" in params or "evalRequiredScorers" in params,
-        # Whether a run can override each threshold by starting with a process
+        # Fraction of runs the guardrail scores, and "review every Nth run"
+        # (0 = off). None when the BPMN value isn't a number.
+        "sampleRate": sample_rate,
+        "forceReviewEveryN": int(every_n) if every_n is not None else None,
+        "configuredInBpmn": any(name in params for name in _GUARDRAIL_INPUTS),
+        # Whether a run can override each setting by starting with a process
         # variable of the same name (the task input reads it if present).
-        "overridable": min_overridable and required_overridable,
+        "overridable": min_overridable
+        and required_overridable
+        and (rate_overridable or "evalSampleRate" not in params)
+        and (every_overridable or "forceReviewEveryN" not in params),
     }
+
+
+def _number_or_none(text: str, default: float) -> float | None:
+    if not text:
+        return default
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 def get_config() -> dict[str, Any]:
@@ -227,7 +248,7 @@ def start_run(variable_overrides: dict[str, Any] | None = None) -> str:
     client.deploy(
         cfg.bpmn_path,
         deployment_name=cfg.deployment_name,
-        additional_paths=cfg.additional_bpmn_paths,
+        additional_paths=cfg.deployment_paths,
     )
 
     _ensure_mock_workers(cfg)

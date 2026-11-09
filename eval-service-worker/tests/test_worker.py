@@ -196,6 +196,94 @@ class TestGuardrailThresholds:
         assert task.failure.call_args.kwargs["max_retries"] == 0
 
 
+class TestReviewRouting:
+    def _outcome(self, passed: bool) -> MagicMock:
+        return MagicMock(eval_passed=passed, eval_rationale="r", eval_score=1.0, failed_scorers=())
+
+    def _run(self, monkeypatch, *, passed=True, variables=None, roll=0.0, run_number=None):
+        score = MagicMock(return_value=self._outcome(passed))
+        monkeypatch.setattr(worker, "score_process_instance", score)
+        client = _client()
+        client.get_run_number.return_value = run_number
+        task = _task(process_instance_id="parent-1", variables=variables)
+        worker.make_handler(EvalServiceConfig(), client, rng=lambda: roll)(task)
+        completed = task.complete.call_args.kwargs.get("global_variables", {}) if task.complete.called else None
+        values = {k: v["value"] for k, v in (completed or {}).items()}
+        return score, client, task, values
+
+    def test_failed_eval_requires_review(self, monkeypatch):
+        _, client, _, values = self._run(monkeypatch, passed=False)
+        assert values["reviewRequired"] is True
+        assert values["reviewReason"] == "FAILED_EVAL"
+        assert values["evalSampled"] is True
+        client.get_run_number.assert_not_called()  # every-Nth is off by default
+
+    def test_passed_eval_needs_no_review(self, monkeypatch):
+        _, _, _, values = self._run(monkeypatch, passed=True)
+        assert values["reviewRequired"] is False
+        assert values["reviewReason"] == ""
+
+    def test_unsampled_run_is_completed_without_scoring(self, monkeypatch):
+        score, _, task, values = self._run(
+            monkeypatch, variables={"evalSampleRate": 0.25}, roll=0.5
+        )
+        score.assert_not_called()
+        assert values == {"evalSampled": False, "reviewRequired": False, "reviewReason": ""}
+
+    def test_sampled_run_is_scored(self, monkeypatch):
+        score, _, _, values = self._run(monkeypatch, variables={"evalSampleRate": 0.25}, roll=0.1)
+        score.assert_called_once()
+        assert values["evalSampled"] is True
+
+    def test_every_nth_run_is_forced_to_review_even_when_passing(self, monkeypatch):
+        _, client, _, values = self._run(
+            monkeypatch, passed=True, variables={"forceReviewEveryN": 5}, run_number=10
+        )
+        client.get_run_number.assert_called_once_with("parent-1")
+        assert values["reviewRequired"] is True
+        assert values["reviewReason"] == "FORCED_EVERY_N"
+        assert values["runNumber"] == 10
+
+    def test_forced_run_is_scored_even_when_outside_the_sample(self, monkeypatch):
+        score, _, _, values = self._run(
+            monkeypatch,
+            passed=False,
+            variables={"forceReviewEveryN": 3, "evalSampleRate": 0.0},
+            roll=0.99,
+            run_number=9,
+        )
+        score.assert_called_once()
+        assert values["reviewReason"] == "FAILED_EVAL,FORCED_EVERY_N"
+
+    def test_other_runs_are_not_forced(self, monkeypatch):
+        _, _, _, values = self._run(
+            monkeypatch, passed=True, variables={"forceReviewEveryN": 5}, run_number=11
+        )
+        assert values["reviewRequired"] is False
+        assert values["runNumber"] == 11
+
+    def test_run_number_lookup_failure_is_retried(self, monkeypatch):
+        from fluxnova_mlflow_dataset import ApiError
+
+        score = MagicMock()
+        monkeypatch.setattr(worker, "score_process_instance", score)
+        client = _client()
+        client.get_run_number.side_effect = ApiError("HTTP 503")
+        task = _task(variables={"forceReviewEveryN": 2})
+        worker.make_handler(EvalServiceConfig(), client)(task)
+        score.assert_not_called()
+        assert task.failure.call_args.kwargs["max_retries"] == worker._MAX_RETRIES
+
+    @pytest.mark.parametrize(
+        "variables",
+        [{"evalSampleRate": 2}, {"forceReviewEveryN": -1}, {"forceReviewEveryN": 2.5}, {"forceReviewEveryN": "x"}],
+    )
+    def test_invalid_review_policy_raises_incident(self, monkeypatch, variables):
+        score, _, task, _ = self._run(monkeypatch, variables=variables)
+        score.assert_not_called()
+        assert task.failure.call_args.kwargs["max_retries"] == 0
+
+
 def test_idle_long_poll_is_not_the_ten_minute_task_lease(monkeypatch):
     factory = MagicMock()
     monkeypatch.setattr(worker, "ExternalTaskWorker", factory)

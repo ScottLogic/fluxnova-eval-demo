@@ -395,19 +395,36 @@ fluxnova-run fluxnova-runner/config/loan-assesment.yml                 # no mock
 `bpmn/LoanApprovalProcess_AI.bpmn` (`LoanApprovalProcess_AI`) is the current end-to-end workflow, and the one the UI's
 Workflow run tab starts. It invokes the loan-assessment agent as a **Call Activity** (`AgentTask_CreditRisk`,
 `calledElement="loanAssessmentProcess"`). Because the called process lives in a separate file, both BPMNs must be
-deployed together, so the config lists the extra file under `additional_bpmn_paths`:
+deployed together, so the config lists the extra file under `additional_bpmn_paths`, and the review form under
+`additional_resources`:
 
 ```yaml
 bpmn_path: bpmn/LoanApprovalProcess_AI.bpmn
 additional_bpmn_paths:
   - bpmn/loan-assesment.bpmn        # the called loanAssessmentProcess
+additional_resources:
+  - bpmn/forms/risk-assessment-review.form   # Tasklist form for the human review
 ```
+
+When the agent Call Activity ends, the BPMN records `agentDecision` (`APPROVE`, `REJECT` or `UNKNOWN`, from the final
+line of the agent's answer) and `agentAssessment` (the answer's text).
 
 After the agent, `Gateway_ForkAsyncEval` forks the process into two branches that never rejoin:
 
 - **Guardrail branch:** `Gateway_SkipEvalServiceWorker` → `ServiceTask_EvaluateAgentOutput` (topic `agent-output-eval`,
-  **eval-service-worker**) → a failed eval goes to the `Human: Risk Assessment Review` user task → the rest of the loan
-  process. Setting the `skipEvalServiceWorker` variable to `true` bypasses the guardrail.
+  **eval-service-worker**) → `Further action required?` routes on the worker's `reviewRequired` → the
+  `Human: Risk Assessment Review` user task (when required) → `Risk Approved?`. A run is sent to review when its
+  evaluation fails (`reviewReason` `FAILED_EVAL`) or it is one of every `forceReviewEveryN` runs (`FORCED_EVERY_N`).
+  `evalSampleRate` limits scoring to a fraction of runs; the rest carry on unscored. Setting the
+  `skipEvalServiceWorker` variable to `true` bypasses the guardrail. All four guardrail settings are task inputs,
+  editable in the Modeler and overridable per run (see `eval-service-worker/README.md`).
+- **Human review:** the task opens the `risk_assessment_review` form in Fluxnova Tasklist. It shows the agent's decision
+  and assessment, the tool evidence and the guardrail result, and the reviewer chooses: **Approve** (keep the agent's
+  decision), **Amend** (approve or decline the loan instead) or **Reject** (the assessment isn't accepted; the loan is
+  declined), with an optional comment. The task records `reviewOutcome` (`APPROVE`/`AMEND`/`REJECT`),
+  `amendedDecision`, `reviewComment` and the resulting `reviewDecision`.
+- **`Risk Approved?`** approves the loan when the decision is `APPROVE`: the reviewer's `reviewDecision` if the run
+  was reviewed, otherwise the agent's `agentDecision`. `REJECT` or `UNKNOWN` declines it.
 - **Async branch:** `ServiceTask_AsyncEvaluateAgentOutput` (topic `agent-output-eval-async`, **eval-async-worker**) →
   `EndEvent_AsyncEvalRecorded`. It scores and records every run without setting any variables.
 

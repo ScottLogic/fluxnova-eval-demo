@@ -62,6 +62,7 @@
       <bpmn:sequenceFlow id="SequenceFlow_13" sourceRef="Gateway_3" targetRef="EndEvent_4" />
     </bpmn:subProcess>
     <bpmn:exclusiveGateway id="Gateway_4" name="Risk Approved?" default="SequenceFlow_18">
+      <bpmn:documentation>Yes when the decision is APPROVE: the reviewer's reviewDecision if the run went through Human: Risk Assessment Review, otherwise the agent's agentDecision. Anything else (REJECT or UNKNOWN) declines the loan.</bpmn:documentation>
       <bpmn:incoming>Flow_0cxmwrr</bpmn:incoming>
       <bpmn:incoming>Flow_0l6ly0q</bpmn:incoming>
       <bpmn:incoming>Flow_SkipEval_Skip</bpmn:incoming>
@@ -116,7 +117,7 @@
       <bpmn:conditionExpression>${isFraudulent eq true}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="SequenceFlow_17" name="Yes" sourceRef="Gateway_4" targetRef="ServiceTask_DynamicPricing">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${aiRiskScore &lt;= 1}</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${(execution.getVariable('reviewDecision') != null ? reviewDecision : agentDecision) == 'APPROVE'}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="SequenceFlow_18" name="No" sourceRef="Gateway_4" targetRef="EndEvent_Loan_Rejected" />
     <bpmn:sequenceFlow id="SequenceFlow_19" sourceRef="ServiceTask_DynamicPricing" targetRef="Gateway_5" />
@@ -142,7 +143,7 @@
     </bpmn:endEvent>
     <bpmn:sequenceFlow id="Flow_1vkf6s8" sourceRef="SubProcess_ComplianceReview" targetRef="Event_Loan_Rejected_By_Compliance" />
     <bpmn:callActivity id="AgentTask_CreditRisk" name="AI Credit Risk Agent" calledElement="loanAssessmentProcess">
-      <bpmn:documentation>Agentic ad-hoc subprocess call</bpmn:documentation>
+      <bpmn:documentation>Agentic ad-hoc subprocess call. agentDecision (APPROVE, REJECT or UNKNOWN) and agentAssessment (the agent's final answer) are set by output mappings on the ad-hoc subprocess in loan-assesment.bpmn and copied here by out variables="all".</bpmn:documentation>
       <bpmn:extensionElements>
         <camunda:in variables="all" />
         <camunda:out variables="all" />
@@ -157,17 +158,20 @@
       <bpmn:outgoing>Flow_SkipEval_Run</bpmn:outgoing>
       <bpmn:outgoing>Flow_SkipEval_Skip</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="Gateway_13tt7bu" name="Further action required?">
+    <bpmn:exclusiveGateway id="Gateway_13tt7bu" name="Further action required?" default="Flow_144jgp8">
+      <bpmn:documentation>Routes on reviewRequired from the guardrail: true when the evaluation failed (reviewReason FAILED_EVAL) or this run is one of every forceReviewEveryN (FORCED_EVERY_N). Anything other than reviewRequired == false goes to human review.</bpmn:documentation>
       <bpmn:incoming>Flow_1ag9u0i</bpmn:incoming>
       <bpmn:outgoing>Flow_0cxmwrr</bpmn:outgoing>
       <bpmn:outgoing>Flow_144jgp8</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:serviceTask id="ServiceTask_EvaluateAgentOutput" name="Evaluate Agent Output" camunda:type="external" camunda:topic="agent-output-eval">
-      <bpmn:documentation>Blocking guardrail: eval-service-worker scores the AI Credit Risk Agent's output and returns evalPassed, evalRationale, evalScore (fraction of applicable scorers that passed) and evalFailedScorers. Thresholds are the input parameters below, editable here without changing the worker: evalMinScore (0-1; 1.0 means every applicable scorer must pass) and evalRequiredScorers (comma-separated scorer names that must pass whatever the score). Each uses a process variable of the same name when the run was started with one (e.g. from the UI's Workflow run page), otherwise the default at the end of the expression.</bpmn:documentation>
+      <bpmn:documentation>Blocking guardrail: eval-service-worker scores the AI Credit Risk Agent's output and returns evalPassed, evalRationale, evalScore (fraction of applicable scorers that passed) and evalFailedScorers. Thresholds are the input parameters below, editable here without changing the worker: evalMinScore (0-1; 1.0 means every applicable scorer must pass) and evalRequiredScorers (comma-separated scorer names that must pass whatever the score). Sampling and review: evalSampleRate (0-1, default 1.0) is the fraction of runs scored; an unsampled run is completed without scoring and carries on. forceReviewEveryN (default 0, off) sends every Nth run of this process to human review whatever its score (such runs are always scored). The worker also returns evalSampled, runNumber (when every-Nth is on), reviewRequired and reviewReason (FAILED_EVAL and/or FORCED_EVERY_N), and the next gateway routes on reviewRequired. Each input uses a process variable of the same name when the run was started with one (e.g. from the UI's Workflow run page), otherwise the default at the end of the expression.</bpmn:documentation>
       <bpmn:extensionElements>
         <camunda:inputOutput>
           <camunda:inputParameter name="evalMinScore">${execution.hasVariable('evalMinScore') ? evalMinScore : 1.0}</camunda:inputParameter>
           <camunda:inputParameter name="evalRequiredScorers">${execution.hasVariable('evalRequiredScorers') ? evalRequiredScorers : 'decision_quality'}</camunda:inputParameter>
+          <camunda:inputParameter name="evalSampleRate">${execution.hasVariable('evalSampleRate') ? evalSampleRate : 1.0}</camunda:inputParameter>
+          <camunda:inputParameter name="forceReviewEveryN">${execution.hasVariable('forceReviewEveryN') ? forceReviewEveryN : 0}</camunda:inputParameter>
         </camunda:inputOutput>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_SkipEval_Run</bpmn:incoming>
@@ -197,10 +201,19 @@
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_1ag9u0i" sourceRef="ServiceTask_EvaluateAgentOutput" targetRef="Gateway_13tt7bu" />
     <bpmn:sequenceFlow id="Flow_0cxmwrr" name="no" sourceRef="Gateway_13tt7bu" targetRef="Gateway_4">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${evalPassed == true}</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${execution.getVariable('reviewRequired') == false}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
-    <bpmn:userTask id="UserTask_ReviewFailedEval" name="Human: Risk Assessment Review">
-      <bpmn:documentation>The automated evaluation did not pass. A loan officer must manually review the agent's assessment (see evalRationale) before the application is allowed to progress.</bpmn:documentation>
+    <bpmn:userTask id="UserTask_ReviewFailedEval" name="Human: Risk Assessment Review" camunda:formRef="risk_assessment_review" camunda:formRefBinding="latest">
+      <bpmn:documentation>The guardrail sent this run for review (see reviewReason: FAILED_EVAL and/or FORCED_EVERY_N). A reviewer reads the agent's assessment, the tool evidence and the guardrail result (evalRationale), then chooses reviewChoice: APPROVE (keep the agent's decision), AMEND_APPROVE / AMEND_REJECT (replace it), or REJECT (the assessment isn't accepted; the loan is declined), with an optional reviewComment. The outputs record reviewOutcome (APPROVE, AMEND or REJECT), amendedDecision and the resulting reviewDecision, which the "Risk Approved?" gateway uses instead of agentDecision. Form: bpmn/forms/risk-assessment-review.form.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:outputParameter name="reviewChoice">${reviewChoice}</camunda:outputParameter>
+          <camunda:outputParameter name="reviewOutcome">${reviewChoice == 'AMEND_APPROVE' or reviewChoice == 'AMEND_REJECT' ? 'AMEND' : reviewChoice}</camunda:outputParameter>
+          <camunda:outputParameter name="amendedDecision">${reviewChoice == 'AMEND_APPROVE' ? 'APPROVE' : (reviewChoice == 'AMEND_REJECT' ? 'REJECT' : null)}</camunda:outputParameter>
+          <camunda:outputParameter name="reviewDecision">${reviewChoice == 'APPROVE' ? agentDecision : (reviewChoice == 'AMEND_APPROVE' ? 'APPROVE' : 'REJECT')}</camunda:outputParameter>
+          <camunda:outputParameter name="reviewComment">${execution.getVariable('reviewComment')}</camunda:outputParameter>
+        </camunda:inputOutput>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_144jgp8</bpmn:incoming>
       <bpmn:outgoing>Flow_0l6ly0q</bpmn:outgoing>
     </bpmn:userTask>
@@ -227,46 +240,27 @@
           <dc:Bounds x="744" y="299" width="82" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_2_di" bpmnElement="EndEvent_Loan_Rejected">
-        <dc:Bounds x="1122" y="682" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="1104.5" y="728" width="71" height="14" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_AsyncEvalRecorded_di" bpmnElement="EndEvent_AsyncEvalRecorded">
-        <dc:Bounds x="722" y="622" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="705" y="665" width="70" height="27" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="92" y="330" width="36" height="36" />
+        <dc:Bounds x="52" y="332" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="70" y="366" width="81" height="40" />
+          <dc:Bounds x="30" y="368" width="81" height="40" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="ServiceTask_DocumentIntelligence_di" bpmnElement="ServiceTask_DocumentIntelligence" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
-        <dc:Bounds x="160" y="310" width="120" height="80" />
+        <dc:Bounds x="120" y="310" width="120" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_1q0ttb5_di" bpmnElement="Activity_1q0ttb5" bioc:stroke="#0d4372" bioc:fill="#bbdefb" color:background-color="#bbdefb" color:border-color="#0d4372">
-        <dc:Bounds x="170" y="460" width="100" height="80" />
+        <dc:Bounds x="130" y="445" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Gateway_1_di" bpmnElement="Gateway_1" isMarkerVisible="true">
-        <dc:Bounds x="335" y="323" width="50" height="50" />
+        <dc:Bounds x="285" y="323" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="333" y="286" width="54" height="27" />
+          <dc:Bounds x="283" y="286" width="54" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Gateway_ForkAsyncEval_di" bpmnElement="Gateway_ForkAsyncEval">
-        <dc:Bounds x="555" y="495" width="50" height="50" />
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_041p3wl_di" bpmnElement="AgentTask_CreditRisk" bioc:stroke="#6b3c00" bioc:fill="#ffe0b2" color:background-color="#ffe0b2" color:border-color="#6b3c00">
-        <dc:Bounds x="400" y="480" width="100" height="80" />
-        <bpmndi:BPMNLabel />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="ServiceTask_AsyncEvaluateAgentOutput_di" bpmnElement="ServiceTask_AsyncEvaluateAgentOutput">
-        <dc:Bounds x="460" y="600" width="100" height="80" />
+        <dc:Bounds x="380" y="480" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="SubProcess_ComplianceReview_di" bpmnElement="SubProcess_ComplianceReview" isExpanded="true">
@@ -361,6 +355,12 @@
           <dc:Bounds x="2363" y="503" width="75" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_2_di" bpmnElement="EndEvent_Loan_Rejected">
+        <dc:Bounds x="1122" y="682" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1104.5" y="728" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Event_1jvtnvk_di" bpmnElement="Event_Loan_Rejected_By_Compliance">
         <dc:Bounds x="1682" y="182" width="36" height="36" />
         <bpmndi:BPMNLabel>
@@ -383,13 +383,26 @@
         <dc:Bounds x="780" y="480" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_ForkAsyncEval_di" bpmnElement="Gateway_ForkAsyncEval">
+        <dc:Bounds x="555" y="495" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ServiceTask_AsyncEvaluateAgentOutput_di" bpmnElement="ServiceTask_AsyncEvaluateAgentOutput">
+        <dc:Bounds x="460" y="600" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_AsyncEvalRecorded_di" bpmnElement="EndEvent_AsyncEvalRecorded">
+        <dc:Bounds x="722" y="622" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="705" y="665" width="70" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_14wtxy4_di" bpmnElement="UserTask_ReviewFailedEval">
         <dc:Bounds x="930" y="370" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Association_1qib9ly_di" bpmnElement="Association_1qib9ly">
-        <di:waypoint x="276" y="313" />
-        <di:waypoint x="345" y="268" />
+        <di:waypoint x="239" y="318" />
+        <di:waypoint x="340" y="264" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNShape id="TextAnnotation_1y46zec_di" bpmnElement="TextAnnotation_1y46zec">
         <dc:Bounds x="630" y="213" width="130" height="47" />
@@ -400,15 +413,15 @@
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="SequenceFlow_2_di" bpmnElement="SequenceFlow_2">
-        <di:waypoint x="280" y="348" />
-        <di:waypoint x="335" y="348" />
+        <di:waypoint x="240" y="348" />
+        <di:waypoint x="285" y="348" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_4_di" bpmnElement="SequenceFlow_4">
-        <di:waypoint x="360" y="373" />
-        <di:waypoint x="360" y="700" />
+        <di:waypoint x="310" y="373" />
+        <di:waypoint x="310" y="700" />
         <di:waypoint x="1122" y="700" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="314" y="660" width="32" height="14" />
+          <dc:Bounds x="264" y="660" width="32" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_5_di" bpmnElement="SequenceFlow_5">
@@ -492,17 +505,15 @@
         <di:waypoint x="2382" y="485" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="SequenceFlow_3_di" bpmnElement="SequenceFlow_3">
-        <di:waypoint x="384" y="347" />
+        <di:waypoint x="334" y="347" />
         <di:waypoint x="580" y="347" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="409" y="334" width="24" height="14" />
+          <dc:Bounds x="368" y="334" width="24" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1y6wy99_di" bpmnElement="Flow_1y6wy99">
-        <di:waypoint x="128" y="348" />
-        <di:waypoint x="144" y="348" />
-        <di:waypoint x="144" y="350" />
-        <di:waypoint x="160" y="350" />
+        <di:waypoint x="88" y="350" />
+        <di:waypoint x="120" y="350" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1vkf6s8_di" bpmnElement="Flow_1vkf6s8">
         <di:waypoint x="1550" y="200" />
@@ -511,11 +522,11 @@
       <bpmndi:BPMNEdge id="Flow_1gum3id_di" bpmnElement="Flow_1gum3id">
         <di:waypoint x="785" y="373" />
         <di:waypoint x="785" y="420" />
-        <di:waypoint x="450" y="420" />
-        <di:waypoint x="450" y="480" />
+        <di:waypoint x="430" y="420" />
+        <di:waypoint x="430" y="480" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_043ab0n_di" bpmnElement="Flow_043ab0n">
-        <di:waypoint x="500" y="520" />
+        <di:waypoint x="480" y="520" />
         <di:waypoint x="555" y="520" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_Fork_ToGuardrail_di" bpmnElement="Flow_Fork_ToGuardrail">
@@ -572,13 +583,13 @@
           <dc:Bounds x="1062" y="392" width="46" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0s9x5o6_di" bpmnElement="Flow_0s9x5o6">
+        <di:waypoint x="180" y="390" />
+        <di:waypoint x="180" y="445" />
+      </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Association_14d4mn6_di" bpmnElement="Association_14d4mn6">
         <di:waypoint x="654" y="303" />
         <di:waypoint x="669" y="260" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_0s9x5o6_di" bpmnElement="Flow_0s9x5o6">
-        <di:waypoint x="220" y="390" />
-        <di:waypoint x="220" y="460" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

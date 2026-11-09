@@ -179,3 +179,11 @@
   padding: 0.2rem 0.6rem;
   font-size: 0.8rem;
 }
+
+.agent-decision-text {
+  white-space: pre-line;
+}
+
+.review-result .btn {
+  justify-self: start;
+}

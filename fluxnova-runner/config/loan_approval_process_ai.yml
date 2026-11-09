@@ -13,6 +13,11 @@ bpmn_path: bpmn/LoanApprovalProcess_AI.bpmn
 additional_bpmn_paths:
   - bpmn/loan-assesment.bpmn
 
+# Other files deployed with the BPMN: the Fluxnova form that the
+# "Human: Risk Assessment Review" user task opens in Tasklist (camunda:formRef).
+additional_resources:
+  - bpmn/forms/risk-assessment-review.form
+
 # Process definition key (the `id` attribute on <process> in the BPMN)
 process_key: LoanApprovalProcess_AI
 subprocess_id: AdHocSubProcess_LoanAssessmentAgent
@@ -63,8 +68,6 @@ variables:
   hasCollateral: false
   collateralDescription: ""
   loanPurpose: Home improvement
-  # Gateway_4's ("Risk Approved?") condition (${aiRiskScore <= 1}) needs a starting value.
-  aiRiskScore: 0
   # Gateway_5's ("Manual Review Required?") condition.
   approvalDecision: ""
   # Bypasses ServiceTask_EvaluateAgentOutput (Gateway_SkipEvalServiceWorker) when

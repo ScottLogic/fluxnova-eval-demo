@@ -50,9 +50,9 @@ class Client:
             bpmn_path: Path to the primary .bpmn file, relative to the client
                 root directory.
             deployment_name: Human-readable name shown in Fluxnova Cockpit.
-            additional_paths: Extra .bpmn files (e.g. a called subprocess
-                definition) to include in the *same* deployment, so cross-file
-                references like a Call Activity's ``calledElement`` resolve.
+            additional_paths: Extra files (a called subprocess's .bpmn, or a
+                .form a user task references) to include in the *same*
+                deployment, so cross-file references resolve.
 
         Returns:
             The deployment response dict from Fluxnova.

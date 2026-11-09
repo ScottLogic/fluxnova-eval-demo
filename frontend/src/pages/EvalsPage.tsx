@@ -66,6 +66,15 @@ function EvalsPage() {
                 <p>
                     The worker writes back <code>evalPassed</code>, <code>evalScore</code>,{' '}
                     <code>evalFailedScorers</code> and <code>evalRationale</code>. A failed run goes to human review.
+                </p>
+                <p>
+                    Two more inputs decide which runs are scored and reviewed. <code>evalSampleRate</code> (0–1,
+                    default 1) scores only that fraction of runs; the rest carry on without scoring or review.{' '}
+                    <code>forceReviewEveryN</code> (default 0, off) sends every Nth run to human review whatever its
+                    score, so reviewers keep seeing runs the guardrail would pass. Each run records{' '}
+                    <code>reviewReason</code>: <code>FAILED_EVAL</code>, <code>FORCED_EVERY_N</code>, or both.
+                </p>
+                <p>
                     Invalid thresholds (a score outside 0–1, or an unknown scorer name) stop the task with an
                     incident before any judge is called. The Workflow run tab shows the BPMN defaults and lets you
                     override them for a single run; each run records the thresholds it used as process variables.

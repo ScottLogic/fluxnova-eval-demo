@@ -15,10 +15,10 @@ interface WorkflowFormProps {
 //   handleSubmit, which always overrides this value on submit) — editing it
 //   here too would be redundant and misleading, since this form's own copy is
 //   never actually sent.
-// - aiRiskScore / approvalDecision are just starting values for BPMN gateway
-//   conditions (Gateway_4 "Risk Approved?" / Gateway_5 "Manual Review
-//   Required?"), not data about the applicant — they get set for real
-//   partway through the run, not by the person triggering it.
+// - approvalDecision is just a starting value for a BPMN gateway condition
+//   (Gateway_5 "Manual Review Required?"), not data about the applicant.
+//   aiRiskScore is no longer used ("Risk Approved?" now follows the agent's or
+//   reviewer's decision) but stays hidden in case an older config sets it.
 // - evalMinScore / evalRequiredScorers are set by the guardrail threshold
 //   controls in the Evals section (GuardrailSettings.tsx).
 const HIDDEN_FIELDS = new Set([

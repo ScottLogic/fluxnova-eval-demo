@@ -32,6 +32,8 @@ the eval services), so the same file works unchanged for both:
 | `bpmn_path`       | Yes      | Path to the `.bpmn` file — resolved relative to the repo root if not absolute |
 | `process_key`     | Yes      | The `id` attribute on `<process>` in the BPMN                                 |
 | `deployment_name` | Yes      | Human-readable deployment name shown in Cockpit                               |
+| `additional_bpmn_paths` | No | Extra `.bpmn` files deployed alongside, e.g. a Call Activity's called process |
+| `additional_resources`  | No | Other deployable files in the same deployment, e.g. a `.form` referenced by a user task's `camunda:formRef` |
 | `variables`       | No       | Initial process variables (plain `key: value` pairs)                          |
 | `mock_workers`    | No       | `{topic: {output variables}}` — see "Mock workers" below                      |
 

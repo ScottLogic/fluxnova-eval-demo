@@ -7,9 +7,10 @@ interface GuardrailSettingsProps {
   guardrail: GuardrailConfig | null
 }
 
-// Lets the user set the guardrail's pass thresholds for the next run. The
-// values are sent as the evalMinScore / evalRequiredScorers process variables,
-// which the BPMN task's inputs use in place of their defaults.
+// Lets the user set the guardrail's settings for the next run. The values are
+// sent as the evalMinScore / evalRequiredScorers / evalSampleRate /
+// forceReviewEveryN process variables, which the BPMN task's inputs use in
+// place of their defaults.
 function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
   const {
     skipEvalServiceWorker,
@@ -17,6 +18,10 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
     setMinScore,
     requiredScorers,
     setRequiredScorers,
+    sampleRate,
+    setSampleRate,
+    forceReviewEveryN,
+    setForceReviewEveryN,
   } = useEvalSettings()
   const [scorerNames, setScorerNames] = useState<string[]>([])
   const [scorersError, setScorersError] = useState<string | null>(null)
@@ -39,7 +44,10 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
 
   const effectiveMin = minScore ?? guardrail.minScore ?? 1
   const effectiveRequired = requiredScorers ?? guardrail.requiredScorers
-  const customised = minScore !== null || requiredScorers !== null
+  const effectiveRate = sampleRate ?? guardrail.sampleRate ?? 1
+  const effectiveEveryN = forceReviewEveryN ?? guardrail.forceReviewEveryN ?? 0
+  const customised =
+    minScore !== null || requiredScorers !== null || sampleRate !== null || forceReviewEveryN !== null
 
   function toggleRequired(name: string, checked: boolean) {
     const next = new Set(effectiveRequired)
@@ -58,7 +66,7 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
 
   return (
     <fieldset className="guardrail-settings" disabled={skipEvalServiceWorker}>
-      <legend className="sample-preview-label">Guardrail thresholds for the next run</legend>
+      <legend className="sample-preview-label">Guardrail settings for the next run</legend>
       {skipEvalServiceWorker && (
         <p className="hint">The guardrail is off for the next run, so these don't apply.</p>
       )}
@@ -73,6 +81,36 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
           step={0.05}
           value={effectiveMin}
           onChange={(event) => setMinScore(Number(event.target.value))}
+        />
+      </label>
+      <label className="field guardrail-min-score">
+        <span>
+          Sample rate: score {formatPercent(effectiveRate)} of runs
+          {effectiveRate < 1 && ' (the rest carry on without scoring or review)'}
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={effectiveRate}
+          onChange={(event) => setSampleRate(Number(event.target.value))}
+        />
+      </label>
+      <label className="field guardrail-every-n">
+        <span>
+          Review every Nth run whatever its score:{' '}
+          {effectiveEveryN > 0 ? `every ${ordinal(effectiveEveryN)} run` : 'off'}
+        </span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={effectiveEveryN}
+          onChange={(event) => {
+            const value = Math.max(0, Math.floor(Number(event.target.value) || 0))
+            setForceReviewEveryN(value)
+          }}
         />
       </label>
       <div className="field">
@@ -92,8 +130,10 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
         </div>
       </div>
       <p className="hint">
-        BPMN default: {guardrail.minScore === null ? 'invalid' : formatPercent(guardrail.minScore)},
-        required {guardrail.requiredScorers.length > 0 ? guardrail.requiredScorers.join(', ') : 'none'}.
+        BPMN defaults: minimum {guardrail.minScore === null ? 'invalid' : formatPercent(guardrail.minScore)},
+        required {guardrail.requiredScorers.length > 0 ? guardrail.requiredScorers.join(', ') : 'none'},
+        sample rate {guardrail.sampleRate === null ? 'invalid' : formatPercent(guardrail.sampleRate)}, every-Nth
+        review {guardrail.forceReviewEveryN ? `every ${ordinal(guardrail.forceReviewEveryN)} run` : 'off'}.
         {customised && (
           <>
             {' '}
@@ -103,6 +143,8 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
               onClick={() => {
                 setMinScore(null)
                 setRequiredScorers(null)
+                setSampleRate(null)
+                setForceReviewEveryN(null)
               }}
             >
               Reset to BPMN defaults
@@ -112,6 +154,13 @@ function GuardrailSettings({ guardrail }: GuardrailSettingsProps) {
       </p>
     </fieldset>
   )
+}
+
+function ordinal(n: number): string {
+  const tens = n % 100
+  const suffix =
+    tens >= 11 && tens <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th'
+  return `${n}${suffix}`
 }
 
 export default GuardrailSettings

@@ -26,7 +26,15 @@ class RunnerConfig:
     variables: dict[str, Any] = field(default_factory=dict)
     mock_workers: dict[str, dict[str, Any]] = field(default_factory=dict)
     additional_bpmn_paths: list[Path] = field(default_factory=list)
+    # Other deployable files for the same deployment, e.g. Fluxnova forms
+    # (``.form``) referenced by a user task's ``camunda:formRef``.
+    additional_resources: list[Path] = field(default_factory=list)
     wait_for_activity: str | None = None
+
+    @property
+    def deployment_paths(self) -> list[Path]:
+        """Every extra file deployed alongside ``bpmn_path``."""
+        return [*self.additional_bpmn_paths, *self.additional_resources]
 
     @classmethod
     def from_file(cls, path: Path) -> RunnerConfig:
@@ -48,6 +56,7 @@ class RunnerConfig:
             return resolved if resolved.is_absolute() else root_dir / resolved
 
         additional_bpmn_paths = [_resolve(p) for p in (raw.get("additional_bpmn_paths") or [])]
+        additional_resources = [_resolve(p) for p in (raw.get("additional_resources") or [])]
         return cls(
             fluxnova_url=os.environ.get("FLUXNOVA_URL", raw["fluxnova_url"]).rstrip("/"),
             bpmn_path=bpmn_path,
@@ -57,5 +66,6 @@ class RunnerConfig:
             variables=raw.get("variables") or {},
             mock_workers=raw.get("mock_workers") or {},
             additional_bpmn_paths=additional_bpmn_paths,
+            additional_resources=additional_resources,
             wait_for_activity=raw.get("wait_for_activity"),
         )

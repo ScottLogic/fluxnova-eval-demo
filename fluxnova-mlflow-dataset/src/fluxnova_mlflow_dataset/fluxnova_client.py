@@ -78,6 +78,28 @@ class FluxnovaClient:
         self._raise_for_status(response, "get process definition XML")
         return response.json()["bpmn20Xml"]
 
+    def get_run_number(self, instance_id: str) -> int:
+        """Return this instance's position among all runs of its process
+        definition key, counting from 1 by start time.
+
+        Read from the engine's history, so it survives worker restarts. It
+        counts every version of the process, and resets only if that history
+        is removed (e.g. by ``historyTimeToLive`` clean-up).
+        """
+        response = self._session.get(f"{self._base}/history/process-instance/{instance_id}")
+        self._raise_for_status(response, "get process instance")
+        instance = response.json()
+        response = self._session.get(
+            f"{self._base}/history/process-instance/count",
+            params={
+                "processDefinitionKey": instance["processDefinitionKey"],
+                # Inclusive: counts every run started at or before this one.
+                "startedBefore": instance["startTime"],
+            },
+        )
+        self._raise_for_status(response, "count process instances")
+        return int(response.json()["count"])
+
     @staticmethod
     def _raise_for_status(response: requests.Response, action: str) -> None:
         if not response.ok:

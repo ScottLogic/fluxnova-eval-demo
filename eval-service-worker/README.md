@@ -41,7 +41,8 @@ lightweight MLflow evaluation-dataset record. The record is content-free: proces
 `evalRationale` (String) output variables that route the flow:
 
 - `LoanApprovalProcess_AI.bpmn` (current workflow): `Gateway_13tt7bu` ("Further action required?") sends a pass to the
-  `Risk Approved?` gateway and the rest of the loan process, and a fail to `UserTask_ReviewFailedEval`. The task is
+  `Risk Approved?` gateway and the rest of the loan process, and a fail to `UserTask_ReviewFailedEval`, where a
+  reviewer approves, amends or rejects the agent's decision in Tasklist (see the root README). The task is
   skipped entirely when the `skipEvalServiceWorker` variable is `true`.
 - `loan-assesment-eval.bpmn` (older eval workflow): `ExclusiveGateway_EvalPassed` sends a pass to
   `ServiceTask_GenerateReport` → `Gateway_AssessmentDecision` with a human `UserTask_ApprovalReview`, and a fail to
@@ -96,13 +97,36 @@ The task completes with these process variables:
 
 | Variable            | Type    | Value                                                                         |
 |---------------------|---------|-------------------------------------------------------------------------------|
-| `evalPassed`        | Boolean | Whether the thresholds were met; the gateway routes on this                   |
+| `evalPassed`        | Boolean | Whether the thresholds were met                                               |
 | `evalScore`         | Double  | Fraction of applicable scorers that passed                                    |
 | `evalFailedScorers` | String  | Comma-separated applicable scorers that failed, even if the run still passed |
 | `evalRationale`     | String  | Why it passed or failed, including the failed scorers' rationales            |
+| `evalSampled`       | Boolean | Whether this run was scored (see [Sampling and every-Nth review](#sampling-and-every-nth-review)) |
+| `reviewRequired`    | Boolean | Whether the run goes to human review; `LoanApprovalProcess_AI.bpmn` routes on this |
+| `reviewReason`      | String  | `FAILED_EVAL` and/or `FORCED_EVERY_N` (comma-separated); empty when no review |
+| `runNumber`         | Integer | The run's position among this process's runs; only set when every-Nth review is on |
 
-Invalid thresholds (a non-numeric or out-of-range `evalMinScore`, or an unknown name in `evalRequiredScorers`) fail
-the task straight away with an incident naming the problem, before any judge call.
+An unsampled run gets only `evalSampled=false`, `reviewRequired=false` and an empty `reviewReason`: it isn't scored,
+so `evalPassed`/`evalScore` aren't set.
+
+Invalid settings (a non-numeric or out-of-range `evalMinScore` or `evalSampleRate`, a negative or fractional
+`forceReviewEveryN`, or an unknown name in `evalRequiredScorers`) fail the task straight away with an incident naming
+the problem, before any judge call.
+
+### Sampling and every-Nth review
+
+Two more inputs on the same task decide which runs are scored and which go to a human:
+
+| Input               | Meaning                                                                                                  | Default |
+|---------------------|----------------------------------------------------------------------------------------------------------|---------|
+| `evalSampleRate`    | Fraction (0–1) of runs the guardrail scores. An unsampled run is completed straight away, without scoring or review, and the loan carries on. | `1.0` (every run) |
+| `forceReviewEveryN` | Send every Nth run of the process to human review whatever its score. Such runs are always scored, so the reviewer sees the result. | `0` (off) |
+
+`reviewRequired` is true when a scored run fails (`FAILED_EVAL`) or the run is one of every N (`FORCED_EVERY_N`); both
+reasons are recorded when both apply. The run number is the run's position among all runs of the process, counted
+from the engine's history (`FluxnovaClient.get_run_number`), so the count survives worker restarts. It counts every
+version of the process, and restarts only if that history is removed (e.g. once runs pass the process's
+`historyTimeToLive`). The async eval (eval-async-worker) is separate: it has its own sample rate and never routes runs.
 
 ## Config
 

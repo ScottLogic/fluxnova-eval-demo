@@ -30,11 +30,24 @@ function AgentDecision({ variables }: AgentDecisionProps) {
   if (!message) {
     return null
   }
+  // agentDecision is recorded by the BPMN when the agent Call Activity ends
+  // (APPROVE, REJECT or UNKNOWN), and drives "Risk Approved?" unless a reviewer
+  // overrides it.
+  const decision = typeof variables?.agentDecision === 'string' ? variables.agentDecision : null
 
   return (
     <div>
       <p className="sample-preview-label">Agent decision</p>
-      <p>{message}</p>
+      {decision && (
+        <p>
+          <span
+            className={`status-badge ${decision === 'APPROVE' ? 'status-pass' : decision === 'REJECT' ? 'status-fail' : 'status-warn'}`}
+          >
+            {decision}
+          </span>
+        </p>
+      )}
+      <p className="agent-decision-text">{message}</p>
     </div>
   )
 }

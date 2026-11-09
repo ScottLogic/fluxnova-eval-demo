@@ -34,6 +34,11 @@ function GuardrailThresholds({ guardrail }: GuardrailThresholdsProps) {
         )}
         {minScore !== null && '.'} Scorers that don't apply to a run are left out. A failed run goes to
         the <em>Human: Risk Assessment Review</em> task.
+        {guardrail.sampleRate !== null && guardrail.sampleRate < 1 &&
+          ` Only ${formatPercent(guardrail.sampleRate)} of runs are scored; the rest carry on without review.`}
+        {guardrail.forceReviewEveryN
+          ? ` One run in every ${guardrail.forceReviewEveryN} also goes to review whatever its score.`
+          : ''}
       </p>
       <p className="hint">
         {guardrail.overridable && 'Adjust the thresholds for the next run below. '}

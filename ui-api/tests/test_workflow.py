@@ -160,6 +160,8 @@ def test_get_config_returns_guardrail_thresholds_from_bpmn(
         "taskName": "Evaluate",
         "minScore": 0.8,
         "requiredScorers": ["decision_quality", "no_tool_errors"],
+        "sampleRate": 1.0,
+        "forceReviewEveryN": 0,
         "configuredInBpmn": True,
         "overridable": False,
     }
@@ -175,11 +177,15 @@ def test_get_config_reads_defaults_from_overridable_threshold_expressions(
           <extensionElements><camunda:inputOutput>
             <camunda:inputParameter name="evalMinScore">${execution.hasVariable('evalMinScore') ? evalMinScore : 0.9}</camunda:inputParameter>
             <camunda:inputParameter name="evalRequiredScorers">${execution.hasVariable('evalRequiredScorers') ? evalRequiredScorers : 'decision_quality'}</camunda:inputParameter>
+            <camunda:inputParameter name="evalSampleRate">${execution.hasVariable('evalSampleRate') ? evalSampleRate : 0.5}</camunda:inputParameter>
+            <camunda:inputParameter name="forceReviewEveryN">${execution.hasVariable('forceReviewEveryN') ? forceReviewEveryN : 10}</camunda:inputParameter>
           </camunda:inputOutput></extensionElements>
         </serviceTask>""",
     )
 
     guardrail = test_client.get("/api/workflow/config").json()["guardrail"]
+    assert guardrail["sampleRate"] == 0.5
+    assert guardrail["forceReviewEveryN"] == 10
     assert guardrail["minScore"] == 0.9
     assert guardrail["requiredScorers"] == ["decision_quality"]
     assert guardrail["overridable"] is True

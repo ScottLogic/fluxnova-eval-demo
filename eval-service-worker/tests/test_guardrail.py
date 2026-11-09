@@ -83,3 +83,40 @@ def test_missing_or_blank_thresholds_use_defaults() -> None:
 def test_invalid_thresholds_are_rejected(variables) -> None:
     with pytest.raises(GuardrailConfigError):
         GuardrailThresholds.from_task_variables(variables.get, KNOWN)
+
+
+# --- Review policy: sampling and every-Nth review ----------------------------
+
+from eval_service_worker.guardrail import ReviewPolicy, review_reasons  # noqa: E402
+
+
+def test_review_policy_defaults_score_every_run_and_force_none() -> None:
+    policy = ReviewPolicy.from_task_variables({}.get)
+    assert policy == ReviewPolicy(sample_rate=1.0, force_review_every_n=0)
+    assert policy.is_forced(10) is False
+    assert policy.is_sampled(False, 0.999) is True
+
+
+def test_review_policy_accepts_strings_and_whole_floats() -> None:
+    policy = ReviewPolicy.from_task_variables({"evalSampleRate": "0.5", "forceReviewEveryN": 4.0}.get)
+    assert policy == ReviewPolicy(sample_rate=0.5, force_review_every_n=4)
+
+
+def test_every_nth_run_is_forced() -> None:
+    policy = ReviewPolicy(force_review_every_n=3)
+    assert [n for n in range(1, 10) if policy.is_forced(n)] == [3, 6, 9]
+    assert policy.is_forced(None) is False
+
+
+def test_sampling_uses_the_roll_unless_forced() -> None:
+    policy = ReviewPolicy(sample_rate=0.2)
+    assert policy.is_sampled(False, 0.1) is True
+    assert policy.is_sampled(False, 0.5) is False
+    assert policy.is_sampled(True, 0.99) is True
+
+
+def test_review_reasons() -> None:
+    assert review_reasons(sampled=True, passed=True, forced=False) == ()
+    assert review_reasons(sampled=True, passed=False, forced=False) == ("FAILED_EVAL",)
+    assert review_reasons(sampled=False, passed=None, forced=True) == ("FORCED_EVERY_N",)
+    assert review_reasons(sampled=True, passed=False, forced=True) == ("FAILED_EVAL", "FORCED_EVERY_N")

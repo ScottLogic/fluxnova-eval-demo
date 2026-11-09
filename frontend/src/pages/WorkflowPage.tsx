@@ -6,6 +6,7 @@ import EvalToggles from '../components/EvalToggles'
 import GuardrailResult from '../components/GuardrailResult'
 import GuardrailSettings from '../components/GuardrailSettings'
 import GuardrailThresholds from '../components/GuardrailThresholds'
+import ReviewResult from '../components/ReviewResult'
 import WorkflowCurrentStage from '../components/WorkflowCurrentStage'
 import WorkflowForm from '../components/WorkflowForm'
 import WorkflowProcessDiagram from '../components/WorkflowProcessDiagram'
@@ -20,7 +21,8 @@ import { useWorkflowStore } from '../store/workflowStore'
 const FLUXNOVA_UI_URL = 'http://localhost:8080/fluxnova-welcome/index.html'
 
 function WorkflowPage() {
-  const { skipEvalServiceWorker, minScore, requiredScorers } = useEvalSettings()
+  const { skipEvalServiceWorker, minScore, requiredScorers, sampleRate, forceReviewEveryN } =
+    useEvalSettings()
   const defaults = useWorkflowStore((state) => state.defaults)
   const agentConfig = useWorkflowStore((state) => state.agentConfig)
   const guardrail = useWorkflowStore((state) => state.guardrail)
@@ -43,6 +45,8 @@ function WorkflowPage() {
         ? {
             evalMinScore: minScore ?? guardrail.minScore ?? 1,
             evalRequiredScorers: (requiredScorers ?? guardrail.requiredScorers).join(','),
+            evalSampleRate: sampleRate ?? guardrail.sampleRate ?? 1,
+            forceReviewEveryN: forceReviewEveryN ?? guardrail.forceReviewEveryN ?? 0,
           }
         : {}
     startRun({ ...values, ...thresholds, skipEvalServiceWorker })
@@ -104,6 +108,7 @@ function WorkflowPage() {
               skipped={run.variables?.skipEvalServiceWorker === true}
             />
           )}
+          {run && <ReviewResult variables={run.variables} active={run.status === 'active'} />}
           {run && (
             <details className="workflow-details">
               <summary>Show run details</summary>

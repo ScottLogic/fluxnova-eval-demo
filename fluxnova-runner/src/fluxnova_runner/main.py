@@ -94,12 +94,12 @@ def deploy(config: RunnerConfig, client: Client, skip: bool) -> None:
                 f"deployment(s) before redeploy: {', '.join(deleted)}"
             )
     print(f"Deploying {config.bpmn_path} …")
-    for extra in config.additional_bpmn_paths:
+    for extra in config.deployment_paths:
         print(f"  + additional resource {extra}")
     deployment = client.deploy(
         config.bpmn_path,
         deployment_name=config.deployment_name,
-        additional_paths=config.additional_bpmn_paths,
+        additional_paths=config.deployment_paths,
     )
     print(f"  Deployed '{deployment.get('name')}' (id={deployment.get('id')})")
 

@@ -8,6 +8,10 @@ export interface EvalSettings {
   setMinScore: (value: number | null) => void
   requiredScorers: string[] | null
   setRequiredScorers: (value: string[] | null) => void
+  sampleRate: number | null
+  setSampleRate: (value: number | null) => void
+  forceReviewEveryN: number | null
+  setForceReviewEveryN: (value: number | null) => void
 }
 
 export const EvalSettingsContext = createContext<EvalSettings | null>(null)

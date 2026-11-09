@@ -12,6 +12,20 @@ interface GuardrailResultProps {
 // and evalRationale.
 function GuardrailResult({ variables, guardrail, skipped }: GuardrailResultProps) {
   const passed = variables?.evalPassed
+  if (variables?.evalSampled === false) {
+    return (
+      <div>
+        <p className="sample-preview-label">Guardrail</p>
+        <p>
+          <span className="status-badge status-warn">not sampled</span>
+        </p>
+        <p className="hint">
+          This run wasn't in the guardrail's sample (evalSampleRate), so it wasn't scored and carried on without
+          review. The async eval still scores every run.
+        </p>
+      </div>
+    )
+  }
   if (typeof passed !== 'boolean') {
     if (!skipped) {
       return null
@@ -43,7 +57,7 @@ function GuardrailResult({ variables, guardrail, skipped }: GuardrailResultProps
       <p className="sample-preview-label">Guardrail</p>
       <p>
         <span className={`status-badge ${passed ? 'status-pass' : 'status-fail'}`}>
-          {passed ? 'passed' : 'sent to human review'}
+          {passed ? 'passed' : 'failed: sent to human review'}
         </span>
       </p>
       <dl className="result-grid">
