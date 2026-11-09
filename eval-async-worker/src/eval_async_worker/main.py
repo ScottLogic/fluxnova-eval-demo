@@ -1,16 +1,16 @@
-"""CLI entry point for the eval-trace-listener.
+"""CLI entry point for the eval-async-worker.
 
 Usage
 -----
-    eval-trace-listener --config config.yaml
-    eval-trace-listener --config config.yaml --fluxnova-url http://fluxnova-local:8080/engine-rest
+    eval-async-worker --config config.yaml
+    eval-async-worker --config config.yaml --fluxnova-url http://fluxnova-local:8080/engine-rest
 
 Static settings come from the YAML ``--config`` file (see ``config.yaml`` /
-``eval_trace_listener.config``). Every setting can also be overridden by a
-``EVAL_LISTENER_<NAME>`` environment variable or a CLI flag — flags win over
+``eval_async_worker.config``). Every setting can also be overridden by a
+``EVAL_ASYNC_<NAME>`` environment variable or a CLI flag — flags win over
 env vars, which win over the file, which wins over the built-in defaults — so
 container deployments can point at pod-name-based URLs without editing the file
-(see local-dev/services/eval-listener-up.sh).
+(see local-dev/services/eval-async-up.sh).
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ from typing import Any
 
 from fluxnova_mlflow_dataset import FluxnovaClient
 
-from eval_trace_listener.config import ListenerConfig
-from eval_trace_listener.control import SampleRateControl, start_control_server
-from eval_trace_listener.worker import AsyncEvalWorker
+from eval_async_worker.config import AsyncWorkerConfig
+from eval_async_worker.control import SampleRateControl, start_control_server
+from eval_async_worker.worker import AsyncEvalWorker
 
 # (CLI flag dest / env suffix, config attribute, type)
 _OVERRIDES: list[tuple[str, str, Callable[[str], Any]]] = [
@@ -44,12 +44,12 @@ _OVERRIDES: list[tuple[str, str, Callable[[str], Any]]] = [
 
 
 def _env(name: str, default: str | None = None) -> str | None:
-    return os.environ.get(f"EVAL_LISTENER_{name}", default)
+    return os.environ.get(f"EVAL_ASYNC_{name}", default)
 
 
-def _build_config(args: argparse.Namespace) -> ListenerConfig:
+def _build_config(args: argparse.Namespace) -> AsyncWorkerConfig:
     """Layer overrides on top of the file/defaults: CLI flag > env var > file > default."""
-    config = ListenerConfig.from_file(args.config) if args.config else ListenerConfig()
+    config = AsyncWorkerConfig.from_file(args.config) if args.config else AsyncWorkerConfig()
     for dest, attr, convert in _OVERRIDES:
         raw = getattr(args, dest) or _env(dest.upper())
         if raw:
@@ -61,8 +61,8 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Serve the non-blocking Eval service task (agent-output-eval-async): score "
         "each agent run with the shared scorers and record the results in MLflow. Every flag can "
-        "also be set via an EVAL_LISTENER_<NAME> environment variable (e.g. "
-        "EVAL_LISTENER_FLUXNOVA_URL)."
+        "also be set via an EVAL_ASYNC_<NAME> environment variable (e.g. "
+        "EVAL_ASYNC_FLUXNOVA_URL)."
     )
     parser.add_argument(
         "--config",

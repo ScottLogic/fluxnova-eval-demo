@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eval-trace-listener"
+name = "eval-async-worker"
 version = "0.1.0"
-description = "Standalone service: the external-task worker for the non-blocking Eval service task (agent-output-eval-async). Scores each agent run with the shared scorers and records the results in MLflow without routing the process. See eval-trace-listener/README.md."
+description = "Standalone service: the external-task worker for the non-blocking Eval service task (agent-output-eval-async). Scores each agent run with the shared scorers and records the results in MLflow without routing the process. See eval-async-worker/README.md."
 requires-python = ">=3.11"
 dependencies = [
     "mlflow[genai]==3.16.0",
@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-eval-trace-listener = "eval_trace_listener.main:main"
+eval-async-worker = "eval_async_worker.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -37,7 +37,7 @@ select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["eval_trace_listener"]
+known-first-party = ["eval_async_worker"]
 
 [tool.ruff.format]
 quote-style = "double"

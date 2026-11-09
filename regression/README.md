@@ -51,11 +51,12 @@ Fluxnova REST history/process variables, independently of trace export:
 - `inputs.tool_calls` / `inputs.iterations` — the agent's tool-call history (name, status, arguments) and loop
   iteration count, parsed from the same `_agentConversationHistory` (now enriched with `toolCalls`/`toolResult` per
   turn) plus the `_agentLoopIndex` process variable (`fluxnova_runner.agent_tool_calls`) — the process-variable
-  equivalent of what `eval-service-worker`/`eval-trace-listener` read off the OTel trace's `execute_tool` spans.
+  equivalent of what `eval-service-worker`/`eval-async-worker` read off the OTel trace's `execute_tool` spans.
 - `expectations.expected_output` — the golden's reference answer (consumed by `matches_golden`).
 
-The suite also best-effort tags each raw trace `source=regression` so the listener
-can skip it. Raw traces follow `EVAL_SERVICE_EXPERIMENT_NAME`. Evaluation runs share
+The suite also best-effort tags each raw trace `source=regression` so regression runs
+can be told apart in MLflow. They run `loan-assesment.bpmn` directly, so they never
+reach the Eval service tasks and aren't scored by either eval worker. Raw traces follow `EVAL_SERVICE_EXPERIMENT_NAME`. Evaluation runs share
 that experiment by default; `MLFLOW_EXPERIMENT_NAME` can select a separate regression
 experiment (including a fresh `-v2` name when preserving legacy artifact locations).
 

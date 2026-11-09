@@ -3,7 +3,7 @@
 Provides the building blocks the eval services share:
 - read records back (single instance or the whole dataset) and score them;
 - the shared scorer/judge definitions (``scorers.py``) — the deterministic
-  value-based scorers used by ``eval-service-worker``/``eval-trace-listener``
+  value-based scorers used by ``eval-service-worker``/``eval-async-worker``
   (and the regression suite), the golden/config-driven scorers used by
   ``regression/`` (plus more kept available for reuse), and the
   ``decision_quality`` judge; and

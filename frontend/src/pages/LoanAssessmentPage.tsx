@@ -16,7 +16,13 @@ const DIAGRAMS = [
                     compliance review, credit risk assessment, dynamic pricing, and document generation, with
                     deterministic policy gates and human review checkpoints.
                     This is the BPMN for the overall loans assessment process. It contains the AI Credit Risk Agent as a Call Activity
-                    which calls out to a separate bpmn (loan Assessment)
+                    which calls out to a separate bpmn (loan Assessment).
+                </p>
+                <p>
+                    After the agent, the process forks. One branch runs the optional blocking guardrail Eval (Evaluate
+                    Agent Output), which routes failed runs to human review, and carries on with the loan. The other
+                    branch runs the non-blocking Eval (Eval: Record Agent Output Scores), which scores the run and
+                    records the results without holding up the loan.
                 </p>
             </>
         ),

@@ -15,7 +15,8 @@ function OverviewText() {
                     <ul>
                         <li>Deploy and initiate a bpmn.</li>
                         <li>Observe the agentic ai tracing and metrics</li>
-                        <li>Automatically run evals against configured traces as they appear.</li>
+                        <li>Automatically score every run with a non-blocking Eval Service Task that never holds up the
+                            process.</li>
                         <li>Handle real time guard-rail use-cases with a Service Task and handler.
                         </li>
                     </ul>
@@ -63,7 +64,8 @@ function LandingText() {
                     metrics and tracing coupled with <a href="https://mlflow.org/">MLFlow</a>.
                 </li>
                 <li>Demonstration of real time production level guard-rail evaluation using FLuxnova.
-                    This is demonstrated through the use of an Eval Service Task built into the Fluxnova process
+                    This is demonstrated through the use of a blocking Eval Service Task built into the Fluxnova
+                    process, which routes failed runs to human review.
                 </li>
             </ul>
         </>

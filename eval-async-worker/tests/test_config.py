@@ -3,12 +3,12 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from eval_trace_listener.config import ListenerConfig
-from eval_trace_listener.main import _build_config, parse_args
+from eval_async_worker.config import AsyncWorkerConfig
+from eval_async_worker.main import _build_config, parse_args
 
 
 def test_defaults() -> None:
-    config = ListenerConfig()
+    config = AsyncWorkerConfig()
     assert config.fluxnova_url == "http://localhost:8080/engine-rest"
     assert config.topic == "agent-output-eval-async"
     assert config.lock_duration_ms == 600_000
@@ -22,7 +22,7 @@ def test_defaults() -> None:
 
 
 def test_from_mapping_overrides_and_ignores_unknown() -> None:
-    config = ListenerConfig.from_mapping(
+    config = AsyncWorkerConfig.from_mapping(
         {
             "fluxnova_url": "http://fluxnova-local:8080/engine-rest/",
             "topic": "other-topic",
@@ -41,7 +41,7 @@ def test_from_mapping_overrides_and_ignores_unknown() -> None:
 
 
 def test_from_mapping_none_gives_defaults() -> None:
-    assert ListenerConfig.from_mapping(None) == ListenerConfig()
+    assert AsyncWorkerConfig.from_mapping(None) == AsyncWorkerConfig()
 
 
 def test_from_file(tmp_path: Path) -> None:
@@ -55,21 +55,21 @@ def test_from_file(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    config = ListenerConfig.from_file(path)
+    config = AsyncWorkerConfig.from_file(path)
     assert config.topic == "t"
     assert config.trace_poll_timeout_s == 5.0
 
 
 def test_bundled_config_file_matches_defaults() -> None:
     bundled = Path(__file__).resolve().parents[1] / "config.yaml"
-    assert ListenerConfig.from_file(bundled) == ListenerConfig()
+    assert AsyncWorkerConfig.from_file(bundled) == AsyncWorkerConfig()
 
 
 def test_cli_beats_env_beats_file(monkeypatch, tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     path.write_text("topic: from-file\nsample_rate: 0.1\nexperiment_name: file-exp\n")
-    monkeypatch.setenv("EVAL_LISTENER_TOPIC", "from-env")
-    monkeypatch.setenv("EVAL_LISTENER_SAMPLE_RATE", "0.2")
+    monkeypatch.setenv("EVAL_ASYNC_TOPIC", "from-env")
+    monkeypatch.setenv("EVAL_ASYNC_SAMPLE_RATE", "0.2")
     config = _build_config(parse_args(["--config", str(path), "--sample-rate", "0.3"]))
     assert config.topic == "from-env"
     assert config.sample_rate == 0.3

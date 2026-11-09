@@ -55,8 +55,8 @@ function WorkflowPage() {
       <div className="finos-panel evals-section">
         <p className="sample-preview-label">Evals</p>
         <p className="hint">
-          Auto-eval takes effect immediately for all traces; eval service worker applies to the
-          next run started below.
+          Every run is scored by the non-blocking async eval. The eval service worker guardrail setting
+          applies to the next run started below.
         </p>
         <EvalToggles />
       </div>

@@ -1,10 +1,10 @@
-"""Configuration for the ``eval-trace-listener`` standalone service.
+"""Configuration for the ``eval-async-worker`` standalone service.
 
 The service is the worker for the non-blocking Eval service task
 (``ServiceTask_AsyncEvaluateAgentOutput`` in ``bpmn/LoanApprovalProcess_AI.bpmn``).
 It reads its static settings from a **YAML config file** (see ``config.yaml``).
 Every field has a built-in default, and any of them can be overridden
-per-environment via CLI flags / ``EVAL_LISTENER_*`` environment variables (see
+per-environment via CLI flags / ``EVAL_ASYNC_*`` environment variables (see
 ``main.py``), so container deployments can point at pod-name-based URLs without
 editing the file.
 """
@@ -53,7 +53,7 @@ DEFAULT_CONTROL_PORT = 8092
 
 
 @dataclass
-class ListenerConfig:
+class AsyncWorkerConfig:
     """All settings needed to serve the async Eval topic.
 
     Construct directly (every field has a default), load from a YAML file with
@@ -73,7 +73,7 @@ class ListenerConfig:
     control_port: int = DEFAULT_CONTROL_PORT
 
     @classmethod
-    def from_mapping(cls, raw: dict[str, Any] | None) -> ListenerConfig:
+    def from_mapping(cls, raw: dict[str, Any] | None) -> AsyncWorkerConfig:
         """Build a config from a parsed mapping, filling any absent key from the
         dataclass defaults. Unknown keys are ignored so the file can carry
         forward-looking settings this version doesn't read yet.
@@ -96,7 +96,7 @@ class ListenerConfig:
         )
 
     @classmethod
-    def from_file(cls, path: str | Path) -> ListenerConfig:
+    def from_file(cls, path: str | Path) -> AsyncWorkerConfig:
         """Load configuration from a YAML file (see ``config.yaml``)."""
         text = Path(path).read_text(encoding="utf-8")
         return cls.from_mapping(yaml.safe_load(text))

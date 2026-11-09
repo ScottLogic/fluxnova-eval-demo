@@ -1,4 +1,4 @@
-# eval-trace-listener
+# eval-async-worker
 
 The external-task worker for the **non-blocking Eval service task** in
 `bpmn/LoanApprovalProcess_AI.bpmn`. It scores each agent run with the shared
@@ -25,7 +25,7 @@ the loan decision. The async branch runs even when `skipEvalServiceWorker` is
 | Service               | Topic                     | Role                         | Completes with                |
 |-----------------------|---------------------------|------------------------------|-------------------------------|
 | `eval-service-worker` | `agent-output-eval`       | Blocking guardrail           | `evalPassed`, `evalRationale` |
-| `eval-trace-listener` | `agent-output-eval-async` | Non-blocking production Eval | no variables                  |
+| `eval-async-worker` | `agent-output-eval-async` | Non-blocking production Eval | no variables                  |
 
 ## What it does per task
 
@@ -37,7 +37,7 @@ the loan decision. The async branch runs even when `skipEvalServiceWorker` is
 3. Waits for the run's trace to reach MLflow (`trace_poll_timeout_s`). The task
    fires as soon as the agent finishes, which is usually before the OTel Collector
    has delivered the trace.
-4. Runs `LISTENER_SCORERS` through `mlflow.genai.evaluate`. Each scorer's `Feedback`
+4. Runs `ASYNC_EVAL_SCORERS` through `mlflow.genai.evaluate`. Each scorer's `Feedback`
    is logged onto that trace as an assessment, grouped under one MLflow
    **Evaluation Run**.
 5. Completes the task **with no variables**. The parallel token shares the process
@@ -50,7 +50,7 @@ carries on, but the process instance stays active until the incident is resolved
 
 ## Scorers
 
-`LISTENER_SCORERS` (in `eval_trace_listener.scoring`) is the full
+`ASYNC_EVAL_SCORERS` (in `eval_async_worker.scoring`) is the full
 `fluxnova_mlflow_dataset.DETERMINISTIC_SCORERS` bundle **plus** two LLM judges:
 
 - `decision_quality`: the `Guidelines` judge (definitive, evidence-backed APPROVE/REJECT).
@@ -67,12 +67,13 @@ them to process variables is item 2 in `BLOG_ALIGNMENT.md`.
 > Ollama when `LLM_JUDGE_PROVIDER=ollama`). Local startup passes the API key,
 > provider and container Ollama URL explicitly. See [local-dev](../local-dev/README.md).
 
-## Sample rate (auto-eval toggle)
+## Sample rate
 
-The runtime sample rate is served by `GET`/`PUT /config` on port 8092 (published
-with `EVAL_LISTENER_CONTROL_PORT`). The frontend's auto-eval toggle sets it through
-the UI API: off is `0.0` (tasks complete without scoring), on is `1.0` (every run
-is scored).
+The demo scores every run (`sample_rate: 1.0`), and the UI has no switch for it. To
+score a fraction of runs instead, set `sample_rate` in config, or change it live with
+`GET`/`PUT /config` on port 8092 (published with `EVAL_ASYNC_CONTROL_PORT`), e.g.
+`curl -X PUT localhost:8092/config -d '{"sample_rate": 0.5}'`. Unsampled tasks are
+completed without scoring.
 
 ## Configuration
 
@@ -93,8 +94,8 @@ keys are ignored.
 | `control_host`          | `0.0.0.0`                            | Control endpoint bind host                           |
 | `control_port`          | `8092`                               | Control endpoint port                                |
 
-Any setting can be overridden by an `EVAL_LISTENER_<NAME>` env var (for example
-`EVAL_LISTENER_FLUXNOVA_URL`, `EVAL_LISTENER_TRACE_POLL_TIMEOUT`) or a CLI flag
+Any setting can be overridden by an `EVAL_ASYNC_<NAME>` env var (for example
+`EVAL_ASYNC_FLUXNOVA_URL`, `EVAL_ASYNC_TRACE_POLL_TIMEOUT`) or a CLI flag
 (flag > env > file > default). `FLUXNOVA_USERNAME`/`FLUXNOVA_PASSWORD` are used for
 engine auth when set.
 
@@ -102,19 +103,19 @@ engine auth when set.
 
 ```bash
 # Locally (against a host engine at :8080 and MLflow at :5001)
-eval-trace-listener --config eval-trace-listener/config.yaml
+eval-async-worker --config eval-async-worker/config.yaml
 
 # In Podman (needs fluxnova-local and mlflow-local running)
-cd local-dev/services && ./eval-listener-up.sh     # ./eval-listener-down.sh to stop
-# or via compose:  podman compose --profile eval up -d eval-trace-listener-local
+cd local-dev/services && ./eval-async-up.sh     # ./eval-async-down.sh to stop
+# or via compose:  podman compose --profile eval up -d eval-async-worker-local
 ```
 
-If the listener isn't running, async Eval tasks wait in the engine, and process
+If the eval-async-worker isn't running, async Eval tasks wait in the engine, and process
 instances stay active after the loan branch has finished.
 
 ## Development
 
 ```bash
-pip install -e "./eval-trace-listener[dev]"
-cd eval-trace-listener && python -m pytest -q && python -m ruff check .
+pip install -e "./eval-async-worker[dev]"
+cd eval-async-worker && python -m pytest -q && python -m ruff check .
 ```

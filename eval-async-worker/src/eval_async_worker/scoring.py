@@ -3,13 +3,13 @@
 Takes an MLflow ``Trace`` object straight from the trace store, extracts the
 plain values the scorers need (via
 ``fluxnova_mlflow_dataset.scorer_inputs_from_trace`` — the scorers themselves
-know nothing about tracing) and runs the :data:`LISTENER_SCORERS` bundle against
+know nothing about tracing) and runs the :data:`ASYNC_EVAL_SCORERS` bundle against
 them via ``mlflow.genai.evaluate``. The row still carries the original ``trace``
 so every scorer's ``Feedback`` is logged back onto that *same* real trace as an
 assessment and one MLflow "Evaluation Run" grouping them is registered — no BPMN
 parsing, no Fluxnova REST calls.
 
-:data:`LISTENER_SCORERS` is the shared ``DETERMINISTIC_SCORERS`` plus the two LLM
+:data:`ASYNC_EVAL_SCORERS` is the shared ``DETERMINISTIC_SCORERS`` plus the two LLM
 judges that need only trace-derivable data — ``decision_quality`` (a Guidelines
 judge over the final ``outputs``) and ``evidence_citation`` (over ``outputs`` +
 the extracted ``input_variables``). Both use the shared judge provider
@@ -36,7 +36,7 @@ from fluxnova_mlflow_dataset import (
 # LLM judges whose inputs are all derivable from the trace (decision_quality over
 # outputs, evidence_citation over outputs + input_variables). matches_golden is
 # excluded — it needs a golden expected_output the trace doesn't carry.
-LISTENER_SCORERS: list[Any] = [decision_quality, evidence_citation, *DETERMINISTIC_SCORERS]
+ASYNC_EVAL_SCORERS: list[Any] = [decision_quality, evidence_citation, *DETERMINISTIC_SCORERS]
 
 
 @dataclass
@@ -66,7 +66,7 @@ class ScoringError(Exception):
 def _passed(value: Any) -> bool:
     """Decide whether one scorer's raw ``Feedback`` value counts as a pass.
 
-    Covers every value shape in :data:`LISTENER_SCORERS`: the deterministic
+    Covers every value shape in :data:`ASYNC_EVAL_SCORERS`: the deterministic
     checks report a plain boolean (surfaced as a real ``bool`` or its string
     form depending on the store); ``decision_quality`` reports a categorical
     ``"yes"``/``"no"`` string; the graded scorers (``tool_correctness``,
@@ -82,17 +82,17 @@ def _passed(value: Any) -> bool:
 
 
 def score_trace(trace: Any, scorers: list[Any] | None = None) -> TraceEvalOutcome:
-    """Run the :data:`LISTENER_SCORERS` bundle against ``trace`` and return the outcome.
+    """Run the :data:`ASYNC_EVAL_SCORERS` bundle against ``trace`` and return the outcome.
 
-    ``scorers`` defaults to :data:`LISTENER_SCORERS` (deterministic checks plus
+    ``scorers`` defaults to :data:`ASYNC_EVAL_SCORERS` (deterministic checks plus
     the ``decision_quality`` and ``evidence_citation`` LLM judges) — injectable
     so tests can pass stubs and callers can narrow the set.
 
     Raises :class:`ScoringError` if MLflow produced no ``eval_results`` for the
     trace (rather than surfacing a bare ``KeyError``), so the caller can retry or
-    skip without crashing its poll loop.
+    fail the task without crashing the worker.
     """
-    scorers = LISTENER_SCORERS if scorers is None else scorers
+    scorers = ASYNC_EVAL_SCORERS if scorers is None else scorers
     spans = trace.data.spans
     row = {
         "trace": trace,

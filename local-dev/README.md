@@ -99,14 +99,14 @@ cp local-dev/.env.example local-dev/.env  # first time only; edit the key next
 ```
 
 Select a specific interpreter with `PYTHON=python3.11 ./setup.sh` (or its full
-path). `fluxnova-run --help`, `eval-service-worker --help`, `eval-trace-listener
+path). `fluxnova-run --help`, `eval-service-worker --help`, `eval-async-worker
 --help` and `mlflow-judges --help` verify the editable CLI installation.
 
 After editing `.env`:
 
 ```bash
 ./local-dev/pods-up.sh postgres mlflow fluxnova
-./local-dev/pods-up.sh eval-service eval-listener observability
+./local-dev/pods-up.sh eval-service eval-async observability
 
 set -a
 source local-dev/.env
@@ -116,7 +116,7 @@ fluxnova-run fluxnova-runner/config/loan-assesment.yml --with-mock-workers
 
 Bare `./local-dev/pods-up.sh` starts all seven pods in dependency order. Startup waits
 for PostgreSQL/MLflow/Fluxnova and the dashboard HTTP endpoints; readiness failures
-return non-zero with diagnostics. Worker/listener startup confirms container creation;
+return non-zero with diagnostics. Eval worker startup confirms container creation;
 their actual scoring is part of the local validation walkthrough.
 
 For an older checkout/store, follow the [experiment upgrade](#upgrade-experiments-created-with-container-local-artifact-paths)
@@ -136,7 +136,7 @@ stops automatic exporting of new assignments without removing the variables just
 | Grafana | `http://localhost:3000` | `observability-local:3000` |
 | Demo UI | `http://localhost:8081` | `frontend-local:80` |
 | UI API | `http://localhost:8090/health` | `localhost:8090` from nginx |
-| Listener control | `http://localhost:8092/config` | `eval-listener-local:8092` |
+| Async eval worker control | `http://localhost:8092/config` | `eval-async-local:8092` |
 
 Fluxnova login is `demo` / `demo`; Grafana allows anonymous viewing and uses
 `admin` / `admin` for editing. The provisioned dashboard is **Fluxnova → Fluxnova
@@ -150,14 +150,14 @@ The default startup includes nginx and the UI API in the shared `frontend-local`
 pod/namespace. Open `http://localhost:8081`; nginx proxies `/api/` to the API. The
 workflow page starts the current `LoanApprovalProcess_AI` workflow, while the
 regression page lists/runs the six golden scenarios and displays per-scorer results.
-The auto-eval toggle changes the listener's runtime sample rate. The CLI walkthrough
-below separately exercises the smaller loan-assessment and controlled eval workflows.
+Every run is scored by the non-blocking Eval task (eval-async-worker); there is no UI
+switch for it. The eval service worker toggle sets `skipEvalServiceWorker` for the next run. The CLI walkthrough below
+exercises the standalone agent and then the same loan approval workflow.
 
-Bridge-mode UI API calls use internal engine/MLflow/listener DNS names, independently
-of host `FLUXNOVA_URL`/port settings. `UI_API_FLUXNOVA_URL`, `UI_API_TRACKING_URI` and
-`UI_API_EVAL_LISTENER_URL` override these container endpoints when needed. Host ports
-are `FRONTEND_PORT`, `UI_API_PORT` and `EVAL_LISTENER_CONTROL_PORT`; internal bridge
-ports stay 80, 8090 and 8092. Recreate affected pods to change settings.
+Bridge-mode UI API calls use internal engine/MLflow DNS names, independently
+of host `FLUXNOVA_URL`/port settings. `UI_API_FLUXNOVA_URL` and `UI_API_TRACKING_URI`
+override these container endpoints when needed. Host ports are `FRONTEND_PORT` and
+`UI_API_PORT`; internal bridge ports stay 80 and 8090. Recreate affected pods to change settings.
 
 `REBUILD=1 ./local-dev/pods-up.sh frontend` builds changed sources when creating a new
 pod; remove the existing frontend pod first with `./local-dev/pods-down.sh frontend`.
@@ -180,7 +180,7 @@ python local-dev/mlflow/check_artifacts.py
 Expected: running services, MLflow `3.16.0`, an engine list containing `default`,
 and a generated numeric experiment ID (not a fixed value). The artifact smoke
 command uploads/downloads a small file and prints a `mlflow-artifacts:/...` URI.
-It makes no model calls. The worker/listener containers must remain running;
+It makes no model calls. Both eval worker containers must remain running;
 their first startup builds the images. Logs: `podman logs <container-name>`.
 
 ### 2. Run the loan assessment
@@ -196,12 +196,11 @@ Inspect the completed process in Fluxnova Cockpit (`demo` / `demo`).
 ### 3. Verify traces, assessments and metrics
 
 In MLflow, open the experiment named by `EVAL_SERVICE_EXPERIMENT_NAME` (including
-any `-v2` suffix), then **Traces**. Once the async Eval task has run, find the
-completed trace with `invoke_agent`, `chat` and `execute_tool` spans. Confirm
-`decision_quality`, `evidence_citation` and deterministic assessments appear.
+any `-v2` suffix), then **Traces**. Find the completed trace with `invoke_agent`,
+`chat` and `execute_tool` spans. This standalone run has no Eval tasks, so it has no
+assessments yet; step 4 adds them.
 
 ```bash
-podman logs --tail 80 eval-trace-listener
 curl -fsS "http://localhost:${OTEL_METRICS_PORT:-8889}/metrics" | grep '^gen_ai_'
 ```
 
@@ -211,28 +210,39 @@ Allow an export/scrape cycle. If the workflow completes without traces, inspect
 collector/engine logs and the generated experiment header; HTTP health alone does
 not establish end-to-end telemetry delivery.
 
-### 4. Run the in-process evaluation workflow
+### 4. Run the loan approval workflow with both Eval tasks
 
-In a second terminal, activate `.venv` and export `.env` as in the quick start, then
-leave persistent mock workers running:
+This is the same workflow the UI's Workflow run tab starts. In a second terminal,
+activate `.venv` and export `.env` as in the quick start, then leave persistent mock
+workers running:
 
 ```bash
-fluxnova-run-mock-workers fluxnova-runner/config/loan-assesment-eval.yml
+fluxnova-run-mock-workers fluxnova-runner/config/loan_approval_process_ai.yml
 ```
 
 In the original terminal:
 
 ```bash
-fluxnova-run fluxnova-runner/config/loan-assesment-eval.yml
+fluxnova-run fluxnova-runner/config/loan_approval_process_ai.yml
 podman logs --tail 80 eval-service-worker
+podman logs --tail 80 eval-async-worker
 ```
 
-The runner returns when the agent Call Activity finishes; trace export and judging
-continue asynchronously. In Cockpit, confirm the parent process receives `evalPassed`
-and `evalRationale` and advances through the evaluation gateway. A failed evaluation
-routes to human review; a pass proceeds through reporting/approval review. Waiting
-at a human task is expected. Check that the worker completed the task rather than
-creating an incident, and inspect the corresponding MLflow assessments.
+The runner returns when the agent Call Activity (`AgentTask_CreditRisk`) finishes.
+The process then forks, and trace export and judging continue on both branches:
+
+- **Guardrail** (`eval-service-worker`): in Cockpit, confirm the process receives
+  `evalPassed` and `evalRationale`. A failed evaluation routes to the
+  `Human: Risk Assessment Review` task; a pass carries on through the loan process.
+  Waiting at a human task is expected.
+- **Async Eval** (`eval-async-worker`): the `Eval: Record Agent Output Scores` task
+  completes with no variables and its branch ends at `Eval Recorded`. In MLflow,
+  the run's trace gains `decision_quality`, `evidence_citation` and the deterministic
+  assessments.
+
+Check that both workers completed their tasks rather than creating incidents. The
+older `loan-assesment-eval.yml` workflow still works for the guardrail alone, but it
+has no async Eval task.
 
 The separate mock-worker terminal keeps reporting tools alive after the runner
 returns. Stop it with **Ctrl+C** after checking the process and before regression.
@@ -240,8 +250,8 @@ returns. Stop it with **Ctrl+C** after checking the process and before regressio
 #### Controlled human-review routing
 
 To test the failure gateway, stop the eval worker (`podman stop eval-service-worker`)
-and any host copy, keep the separate mock workers running, and start a new eval
-workflow. Pass the **parent** instance ID printed by the runner to:
+and any host copy, keep the separate mock workers running, and start a new loan
+approval workflow. Pass the **parent** instance ID printed by the runner to:
 
 ```bash
 python -m regression.check_review_route <parent-process-instance-id>
@@ -290,9 +300,9 @@ DEV_NETWORK_MODE=bridge
 # DEV_NETWORK_MODE=host
 ```
 
-In host mode Fluxnova, the collector, the eval worker and observability use the
+In host mode Fluxnova, the collector, both eval workers and observability use the
 **Linux VM's** host network. PostgreSQL and MLflow keep published bridge ports.
-The worker reaches Fluxnova and MLflow at VM-local published ports; Prometheus
+The workers reach Fluxnova and MLflow at VM-local published ports; Prometheus
 scrapes `localhost:8889` using `prometheus-host.yml`. On macOS, VM host-network
 services are not guaranteed to be accessible at Mac `localhost`; use bridge mode.
 The Windows WSL IP fallback remains available when localhost forwarding fails.
@@ -338,7 +348,7 @@ go to the configured experiment regardless of BPMN process key; both evaluation
 services read that same experiment. Regression evaluation runs share the trace
 experiment by default; `MLFLOW_EXPERIMENT_NAME` can select a separate regression
 experiment. Raw regression traces are tagged `source=regression`. Regression runs don't reach the async Eval task, so the
-listener never scores them.
+eval-async-worker never scores them.
 
 PostgreSQL uses the named volume `postgres-local-data` (host bind mounts are
 unsuitable for PGDATA ownership through VM file sharing). Its initialization
@@ -423,7 +433,7 @@ podman compose --profile eval --profile grafana down
 
 Services are named `<container>-local`. The collector's network namespace has the
 `fluxnova-local` DNS alias and publishes Fluxnova's port; the engine shares that
-namespace. MLflow's healthcheck gates collector startup, and the eval worker waits
+namespace. MLflow's healthcheck gates collector startup, and both eval workers wait
 for Compose's explicit engine REST healthcheck (the image has none). `down -v` also deletes named volumes but leaves
 the host artifact directory intact; pod scripts' `--delete-data` clears artifacts too.
 
@@ -435,14 +445,14 @@ AI Gateway endpoint or local model download is needed. The worker package's
 standalone default also uses `openai:/gpt-4.1-mini`; gateway users can still set
 `EVAL_SERVICE_JUDGE_MODEL=gateway:/<endpoint>` explicitly.
 
-Evaluation worker/listener and UI API containers set `MLFLOW_DISABLE_TELEMETRY=true`
+Both eval worker and UI API containers set `MLFLOW_DISABLE_TELEMETRY=true`
 to prevent MLflow diagnostic-telemetry/autolog import-lock deadlocks. This disables
 MLflow's own diagnostic telemetry, not the demo's OTel trace export or assessments.
 Recreate existing pods/containers to apply it; a restart retains old environments.
 
 Decision-quality judging defaults to `gpt-4.1-mini` after repeated calibration
 found false negatives with `gpt-4o-mini` on valid evidence-backed responses.
-`DECISION_QUALITY_MODEL` can override the host/listener semantic judge using a full
+`DECISION_QUALITY_MODEL` can override the host regression and eval-async-worker semantic judge using a full
 MLflow model URI; an explicit `EVAL_SERVICE_JUDGE_MODEL` wins for the worker.
 Recreate/rebuild the evaluation pods after changing these settings. Golden matching
 and evidence-citation scoring use `gpt-4o-mini` independently.
@@ -468,9 +478,9 @@ For native Ollama on a Mac:
    must agree. The startup scripts pass the container base URL to Spring.
 5. Recreate affected pods/containers. Export the updated `.env` before running host
    tools. The regression suite serializes judge calls when Ollama is selected.
-6. Validate container access, using the Python already present in the listener:
+6. Validate container access, using the Python already present in the eval-async-worker:
    ```bash
-   podman exec eval-trace-listener python -c "import os, urllib.request; print(urllib.request.urlopen(os.environ['OLLAMA_API_BASE'] + '/api/version').read().decode())"
+   podman exec eval-async-worker python -c "import os, urllib.request; print(urllib.request.urlopen(os.environ['OLLAMA_API_BASE'] + '/api/version').read().decode())"
    ```
 
 On Windows, set `OLLAMA_HOST` in the user environment and restart Ollama; verify
@@ -498,7 +508,7 @@ mlflow-judges --experiment fluxnova-loanAssessmentEvalProcess stop
 ```
 
 Use an HTTP `--tracking-uri`, not a direct PostgreSQL URI. This gateway setup is
-optional for the default demo's direct worker/listener/regression judges.
+optional for the default demo's direct eval worker and regression judges.
 
 ## Host debugging and rebuilds
 
@@ -507,14 +517,14 @@ JSON-report dependencies). To debug Python services against
 container infrastructure, stop the corresponding service pods first:
 
 ```bash
-./local-dev/pods-down.sh eval-service eval-listener
+./local-dev/pods-down.sh eval-service eval-async
 source .venv/bin/activate
 set -a
 source local-dev/.env
 set +a
 eval-service-worker --fluxnova-url "$FLUXNOVA_URL" --tracking-uri "http://localhost:${MLFLOW_PORT:-5001}"
 # In another terminal with the same activation/environment:
-eval-trace-listener --tracking-uri "http://localhost:${MLFLOW_PORT:-5001}"
+eval-async-worker --fluxnova-url "$FLUXNOVA_URL" --tracking-uri "http://localhost:${MLFLOW_PORT:-5001}"
 ```
 
 In PyCharm/IntelliJ's Python plugin select `.venv/bin/python` (Mac) or
@@ -526,8 +536,8 @@ Editable host changes take effect on the next process start.
 Containers contain source snapshots. To rebuild after Python changes:
 
 ```bash
-./local-dev/pods-down.sh eval-service eval-listener
-REBUILD=1 ./local-dev/pods-up.sh eval-service eval-listener
+./local-dev/pods-down.sh eval-service eval-async
+REBUILD=1 ./local-dev/pods-up.sh eval-service eval-async
 # Compose alternative, from local-dev/: podman compose --profile eval up -d --build
 ```
 
@@ -549,7 +559,7 @@ Run unit suites separately (some suites use same-named helper/test modules):
 python -m pytest fluxnova-runner/tests -q
 python -m pytest fluxnova-mlflow-dataset/tests -q
 python -m pytest eval-service-worker/tests -q
-python -m pytest eval-trace-listener/tests -q
+python -m pytest eval-async-worker/tests -q
 python -m pytest local-dev/tests -q
 python -m pytest ui-api/tests -q
 ```

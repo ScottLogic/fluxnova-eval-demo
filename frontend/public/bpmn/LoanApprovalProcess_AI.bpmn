@@ -153,7 +153,7 @@
     </bpmn:callActivity>
     <bpmn:sequenceFlow id="Flow_1gum3id" sourceRef="Gateway_2" targetRef="AgentTask_CreditRisk" />
     <bpmn:exclusiveGateway id="Gateway_SkipEvalServiceWorker" name="Skip eval service worker?" default="Flow_SkipEval_Run">
-      <bpmn:documentation>Lets a caller bypass the eval-service-worker step per run via the boolean `skipEvalServiceWorker` process variable (see ui-api's evals.py router) — when true, the agent's output goes straight to the risk-approval gateway without being scored by the synchronous decision_quality judge. The always-on eval-trace-listener still scores the run's trace afterwards regardless of this flag.</bpmn:documentation>
+      <bpmn:documentation>Lets a caller bypass the eval-service-worker step per run via the boolean `skipEvalServiceWorker` process variable (see ui-api's evals.py router) — when true, the agent's output goes straight to the risk-approval gateway without being scored by the synchronous decision_quality judge. The non-blocking Eval task on the parallel branch (eval-async-worker) still scores the run regardless of this flag.</bpmn:documentation>
       <bpmn:incoming>Flow_Fork_ToGuardrail</bpmn:incoming>
       <bpmn:outgoing>Flow_SkipEval_Run</bpmn:outgoing>
       <bpmn:outgoing>Flow_SkipEval_Skip</bpmn:outgoing>
@@ -177,7 +177,7 @@
     </bpmn:parallelGateway>
     <bpmn:sequenceFlow id="Flow_Fork_ToGuardrail" sourceRef="Gateway_ForkAsyncEval" targetRef="Gateway_SkipEvalServiceWorker" />
     <bpmn:serviceTask id="ServiceTask_AsyncEvaluateAgentOutput" name="Eval: Record Agent Output Scores" camunda:type="external" camunda:topic="agent-output-eval-async">
-      <bpmn:documentation>Non-blocking production Eval, served by eval-trace-listener. Scores the agent's output and records the results in MLflow, but sets no routing variables, so nothing downstream waits on it. A failure raises an incident on this branch only.</bpmn:documentation>
+      <bpmn:documentation>Non-blocking production Eval, served by eval-async-worker. Scores the agent's output and records the results in MLflow, but sets no routing variables, so nothing downstream waits on it. A failure raises an incident on this branch only.</bpmn:documentation>
       <bpmn:incoming>Flow_Fork_ToAsyncEval</bpmn:incoming>
       <bpmn:outgoing>Flow_AsyncEval_ToEnd</bpmn:outgoing>
     </bpmn:serviceTask>

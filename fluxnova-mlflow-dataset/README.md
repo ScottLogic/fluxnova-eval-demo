@@ -1,7 +1,7 @@
 # fluxnova-mlflow-dataset
 
 A small shared library providing the record-shaping/read/write logic and scorer/judge definitions used by
-the Fluxnova eval services (`eval-service-worker`, `eval-trace-listener`, and the `regression/` suite), plus the
+the Fluxnova eval services (`eval-service-worker`, `eval-async-worker`, and the `regression/` suite), plus the
 `mlflow-judges` CLI for toggling automatic (online) evaluation on/off. See the repo root [`README.md`](../README.md)'s
 "Overview"/"Architecture" sections for how this fits into the wider pipeline.
 
@@ -18,7 +18,7 @@ rather than two copies that could drift apart.
   reads/writes the persistent PostgreSQL-backed dataset, idempotently.
 - **Shared judge/scorer definitions** (`scorers.py`) — the `decision_quality` `Guidelines` judge and a set of
   deterministic, value-based scorers, defined once so the eval services (`eval-service-worker`,
-  `eval-trace-listener`) and the regression suite never disagree on what "good" means.
+  `eval-async-worker`) and the regression suite never disagree on what "good" means.
 
 ## Install
 
@@ -93,7 +93,7 @@ Operators: `==`/`!=`. Values: quoted strings, `true`/`false`, or integers. See t
   anything routed through the MLflow AI Gateway).
 
 `DETERMINISTIC_SCORERS` (`tool_correctness`, `no_tool_errors`, `final_recommendation_format`, and others) are non-LLM checks
-used by `eval-service-worker`, `eval-trace-listener` and the regression suite. They know nothing about tracing:
+used by `eval-service-worker`, `eval-async-worker` and the regression suite. They know nothing about tracing:
 each reads plain values from MLflow's standard `inputs`/`outputs` columns (the canonical shape
 `{"input_variables", "tool_calls": [{"name", "status", "arguments"}], "iterations"}` — see
 `traces.scorer_inputs_from_trace`). Each caller extracts those values from whatever source suits it — the eval

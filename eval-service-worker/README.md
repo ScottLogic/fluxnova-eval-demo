@@ -1,6 +1,6 @@
 # eval-service-worker
 
-A standalone BPMN external-task worker that scores a just-completed agentic subprocess run against the
+The blocking **guardrail** worker: a standalone BPMN external-task worker (topic `agent-output-eval`) that scores a just-completed agentic subprocess run against the
 `decision_quality` MLflow judge plus a set of trace-only deterministic scorers, reading data purely from MLflow's
 trace store, without BPMN parsing or using process variables as scorer inputs.
 The Fluxnova history API is used only to resolve a Call Activity's child instance
@@ -16,7 +16,12 @@ for container startup and expected results.
 the updated agent must put a plain `APPROVE` or `REJECT` on its final line.
 This is the deliberately narrow online set: `decision_quality` is the per-run judge
 (direct OpenAI in the local demo, or an explicitly configured gateway), and the deterministic checks are effectively free. The heavier judges (`evidence_citation`,
-`matches_golden`) are left to the offline `eval-trace-listener` / `regression` suites.
+`matches_golden`) are left to the non-blocking `eval-async-worker` and the `regression` suite.
+
+**Guardrail vs non-blocking Eval.** In `LoanApprovalProcess_AI.bpmn` the process forks after the agent. This worker
+serves the guardrail branch's `ServiceTask_EvaluateAgentOutput`, whose result routes the process. The other branch's
+`ServiceTask_AsyncEvaluateAgentOutput` (topic `agent-output-eval-async`) is served by
+[`eval-async-worker`](../eval-async-worker/README.md), which scores every run without routing it.
 
 **How the scorer inputs are sourced.** All scorers are decoupled from tracing, so the worker builds their plain-value
 inputs *from the trace itself* and passes them in explicitly:
@@ -33,13 +38,17 @@ deterministic scorer pass. Every scorer's `Feedback` is logged back onto the sam
 grouped under one MLflow Evaluation Run (via
 `mlflow.genai.evaluate(data=[{"trace": trace, "inputs": ..., "outputs": ...}], scorers=[...])`), plus a
 lightweight MLflow evaluation-dataset record. The task completes with `evalPassed` (Boolean, driven by all scorers) /
-`evalRationale` (String) output variables, which `loan-assesment-eval.bpmn`'s `ExclusiveGateway_EvalPassed` uses to
-route the flow: on pass → `ServiceTask_GenerateReport` → `Gateway_AssessmentDecision` (approve/reject) with a human
-`UserTask_ApprovalReview`; on fail → `UserTask_ReviewFailedEval`. Confirmed working end-to-end against a live process
-instance.
+`evalRationale` (String) output variables that route the flow:
 
-**Correlating the agent run (Call Activity):** the eval process invokes the loan-assessment agent as a **Call Activity**
-(`CallActivity_LoanAssessmentAgent` → `loanAssessmentProcess`), so the agent — and therefore its trace — runs in a
+- `LoanApprovalProcess_AI.bpmn` (current workflow): `Gateway_13tt7bu` ("Further action required?") sends a pass to the
+  `Risk Approved?` gateway and the rest of the loan process, and a fail to `UserTask_ReviewFailedEval`. The task is
+  skipped entirely when the `skipEvalServiceWorker` variable is `true`.
+- `loan-assesment-eval.bpmn` (older eval workflow): `ExclusiveGateway_EvalPassed` sends a pass to
+  `ServiceTask_GenerateReport` → `Gateway_AssessmentDecision` with a human `UserTask_ApprovalReview`, and a fail to
+  `UserTask_ReviewFailedEval`.
+
+**Correlating the agent run (Call Activity):** both workflows invoke the loan-assessment agent as a **Call Activity**
+(`AgentTask_CreditRisk` or `CallActivity_LoanAssessmentAgent` → `loanAssessmentProcess`), so the agent — and therefore its trace — runs in a
 *child* process instance, while `ServiceTask_EvaluateAgentOutput` fires in the *parent*. The worker resolves the child
 instance for the parent it's handed (via Fluxnova's history API,
 `FluxnovaClient.get_child_instance_id`) and scores the child's trace, falling back to the parent instance id when there

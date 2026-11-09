@@ -16,9 +16,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Per-service scripts live in the services/ subfolder.
 SERVICES_DIR="services"
-ALL_PODS=(postgres mlflow fluxnova frontend eval-service eval-listener observability)
+ALL_PODS=(postgres mlflow fluxnova frontend eval-service eval-async observability)
 # Teardown order: the reverse of pods-up.sh's start order.
-TEARDOWN_ORDER=(observability eval-listener eval-service frontend fluxnova mlflow postgres)
+TEARDOWN_ORDER=(observability eval-async eval-service frontend fluxnova mlflow postgres)
 
 usage() {
   cat <<EOF
@@ -26,7 +26,7 @@ Usage: ./pods-down.sh [--delete-data] [pod ...]
 
 Stops and removes one or more of the local-dev pods via their respective
 services/*-down.sh scripts, always in reverse-dependency order (observability,
-then eval-listener, then eval-service, then frontend, then fluxnova, then mlflow,
+then eval-async, then eval-service, then frontend, then fluxnova, then mlflow,
 then postgres) regardless of the order given on the command line. Idempotent —
 safe to re-run, or run when nothing is up.
 
@@ -44,7 +44,7 @@ Pods:
   fluxnova      Fluxnova engine + OTel Collector (services/fluxnova-down.sh)
   frontend      Frontend UI (services/frontend-down.sh)
   eval-service  Eval-service worker (services/eval-service-down.sh)
-  eval-listener Eval trace listener (services/eval-listener-down.sh)
+  eval-async Non-blocking eval worker (services/eval-async-down.sh)
   observability Prometheus + Grafana (services/observability-down.sh)
 
 Examples:
@@ -64,7 +64,7 @@ for arg in "$@"; do
       exit 0
       ;;
     --delete-data) DELETE_DATA=true ;;
-    postgres|mlflow|fluxnova|frontend|eval-service|eval-listener|observability) selected+=("$arg") ;;
+    postgres|mlflow|fluxnova|frontend|eval-service|eval-async|observability) selected+=("$arg") ;;
     *)
       echo "Unknown argument: '$arg' (expected --delete-data or one of: ${ALL_PODS[*]})" >&2
       usage >&2

@@ -61,7 +61,7 @@ const NODES: Node[] = [
         position: {x: 700, y: 300},
         data: {
             label: 'MLflow',
-            description: 'The MLFlow UI, used to visualise tracing from Fluxnova, Eval runs from the listener and Regression test runs.'
+            description: 'The MLFlow UI, used to visualise tracing from Fluxnova, Eval runs from eval-service-worker and eval-async-worker, and Regression test runs.'
         },
         ...nodeDefaults,
     },
@@ -94,20 +94,20 @@ const NODES: Node[] = [
         ...nodeDefaults,
     },
     {
-        id: 'listener',
+        id: 'async-worker',
         position: {x: 850, y: 0},
         data: {
-            label: 'Eval Trace Listener',
-            description: 'Listens to the MLflow trace store and runs evals against newly completed traces. Is configurable with a sample rate to run against every nth trace.'
+            label: 'eval-async-worker',
+            description: 'Non-blocking async eval worker. Handles the Eval service task on topic agent-output-eval-async on its own branch of the loan process. Scores every run and writes the scores to MLflow without holding up or routing the process.'
         },
         ...nodeDefaults,
     },
     {
-        id: 'worker',
+        id: 'service-worker',
         position: {x: -100, y: 400},
         data: {
-            label: 'Eval Service Worker',
-            description: 'Subscribes to a Fluxnova external-task topic and scores runs against MLflow in real time (See Loan Assessment BPMN).'
+            label: 'eval-service-worker',
+            description: 'Blocking guardrail eval worker. Handles the Eval service task on topic agent-output-eval. Scores the run and returns evalPassed/evalRationale, which route failed runs to human review (See Loan Assessment BPMN).'
         },
         ...nodeDefaults,
     },
@@ -174,7 +174,7 @@ const EDGES: Edge[] = [
         sourceHandle: 'right',
         target: 'grafana',
         targetHandle: 'left',
-        label: 'Forwards Traces', ...edgeDefaults
+        label: 'Exposes Metrics', ...edgeDefaults
     },
     {
         id: 'e-regression-mlflow',
@@ -185,24 +185,32 @@ const EDGES: Edge[] = [
         label: 'Evaluates', ...edgeDefaults
     },
     {
-        id: 'e-listener-mlflow',
-        source: 'mlflow',
-        sourceHandle: 'right',
-        target: 'listener',
-        targetHandle: 'bottom',
-        label: 'Tails Traces', ...edgeDefaults
+        id: 'e-async-worker-fluxnova',
+        source: 'async-worker',
+        sourceHandle: 'top',
+        target: 'fluxnova',
+        targetHandle: 'ttop',
+        label: 'Handles Task', ...edgeDefaults
     },
     {
-        id: 'e-worker-fluxnova',
-        source: 'worker',
+        id: 'e-async-worker-mlflow',
+        source: 'async-worker',
+        sourceHandle: 'right',
+        target: 'mlflow',
+        targetHandle: 'ttop',
+        label: 'Writes Scores', ...edgeDefaults
+    },
+    {
+        id: 'e-service-worker-fluxnova',
+        source: 'service-worker',
         sourceHandle: 'top',
         target: 'fluxnova',
         targetHandle: 'bottom',
         label: 'Handles Task', ...edgeDefaults
     },
     {
-        id: 'e-worker-mlflow',
-        source: 'worker',
+        id: 'e-service-worker-mlflow',
+        source: 'service-worker',
         sourceHandle: 'right',
         target: 'mlflow',
         targetHandle: 'left',

@@ -1,12 +1,12 @@
-# eval-trace-listener configuration (static data for the service).
+# eval-async-worker configuration (static data for the service).
 #
 # The service is the external-task worker for the non-blocking Eval service task
 # (ServiceTask_AsyncEvaluateAgentOutput in bpmn/LoanApprovalProcess_AI.bpmn).
 #
 # Every key is optional — omitted keys fall back to the built-in defaults in
-# eval_trace_listener/config.py. CLI flags / EVAL_LISTENER_* env vars override
+# eval_async_worker/config.py. CLI flags / EVAL_ASYNC_* env vars override
 # anything set here (see main.py), which is how the container deployment points
-# at pod-name-based URLs (local-dev/services/eval-listener-up.sh).
+# at pod-name-based URLs (local-dev/services/eval-async-up.sh).
 
 # Fluxnova engine REST base URL to fetch external tasks from.
 fluxnova_url: http://localhost:8080/engine-rest

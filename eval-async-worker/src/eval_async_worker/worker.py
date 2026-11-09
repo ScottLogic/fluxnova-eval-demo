@@ -9,7 +9,7 @@ reaches ``ServiceTask_AsyncEvaluateAgentOutput`` (topic
         resolve the agent's (Call Activity child) process instance
         roll the sample-rate dice; if not sampled, complete straight away
         wait for that run's trace to land in MLflow
-        score it with LISTENER_SCORERS (assessments logged onto the trace)
+        score it with ASYNC_EVAL_SCORERS (assessments logged onto the trace)
         complete the task with NO variables
 
 Completing with no variables is deliberate: the parallel token shares the
@@ -37,9 +37,9 @@ from camunda.external_task.external_task import ExternalTask
 from camunda.external_task.external_task_worker import ExternalTaskWorker
 from fluxnova_mlflow_dataset import ApiError, FluxnovaClient, MlflowTraceReader, TraceStoreError
 
-from eval_trace_listener.config import ListenerConfig
-from eval_trace_listener.control import SampleRateControl
-from eval_trace_listener.scoring import LISTENER_SCORERS, ScoringError, score_trace
+from eval_async_worker.config import AsyncWorkerConfig
+from eval_async_worker.control import SampleRateControl
+from eval_async_worker.scoring import ASYNC_EVAL_SCORERS, ScoringError, score_trace
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +56,14 @@ class AsyncEvalWorker:
 
     def __init__(
         self,
-        config: ListenerConfig,
+        config: AsyncWorkerConfig,
         client: FluxnovaClient | None = None,
         scorers: list[Any] | None = None,
         sample_rate: SampleRateControl | None = None,
     ) -> None:
         self._config = config
         self._client = client or FluxnovaClient(config.fluxnova_url)
-        self._scorers = LISTENER_SCORERS if scorers is None else scorers
+        self._scorers = ASYNC_EVAL_SCORERS if scorers is None else scorers
         # main.py passes in the same instance it hands to the control HTTP
         # server, so PUT /config changes the rate used here, live.
         self._sample_rate = sample_rate or SampleRateControl(config.sample_rate)
@@ -99,7 +99,7 @@ class AsyncEvalWorker:
         except Exception as exc:  # noqa: BLE001 - report every unexpected failure to Fluxnova
             logger.exception("Async eval failed for %s", instance_id)
             return task.failure(
-                error_message="eval-trace-listener scoring failed",
+                error_message="eval-async-worker scoring failed",
                 error_details=str(exc),
                 max_retries=0,
                 retry_timeout=_RETRY_TIMEOUT_MS,
@@ -174,12 +174,12 @@ class AsyncEvalWorker:
             worker_config["auth_basic"] = {"username": username or "", "password": password or ""}
 
         worker = ExternalTaskWorker(
-            worker_id="eval-trace-listener",
+            worker_id="eval-async-worker",
             base_url=self._config.fluxnova_url,
             config=worker_config,
         )
         logger.info(
-            "eval-trace-listener subscribing to topic %r at %s (sample_rate=%.2f)",
+            "eval-async-worker subscribing to topic %r at %s (sample_rate=%.2f)",
             self._config.topic,
             self._config.fluxnova_url,
             self._sample_rate.get(),
@@ -194,4 +194,4 @@ class AsyncEvalWorker:
         try:
             thread.join()
         except KeyboardInterrupt:
-            logger.info("Shutting down eval-trace-listener.")
+            logger.info("Shutting down eval-async-worker.")

@@ -6,8 +6,8 @@ import pandas as pd
 import pytest
 from _fakes import make_trace
 
-from eval_trace_listener import scoring
-from eval_trace_listener.scoring import ScoringError, score_trace
+from eval_async_worker import scoring
+from eval_async_worker.scoring import ScoringError, score_trace
 
 
 class _FakeScorer:
@@ -75,7 +75,7 @@ def test_score_trace_passes_when_scorer_column_absent(monkeypatch) -> None:
     # A scorer that returns None (not applicable — e.g.
     # no_verify_employment_for_self_employed_applicant for an EMPLOYED applicant)
     # leaves no `/value` column in a single-row eval. Extraction must not KeyError
-    # (which previously crashed the poll loop) and the missing verdict must pass.
+    # (which previously crashed the worker) and the missing verdict must pass.
     scorers = [
         _FakeScorer("required_tools_called"),
         _FakeScorer("no_verify_employment_for_self_employed_applicant"),
@@ -119,26 +119,26 @@ def test_score_trace_raises_scoring_error_when_no_eval_results(monkeypatch) -> N
         score_trace(make_trace("tr-missing"), [_FakeScorer("required_tools_called")])
 
 
-def test_listener_scorers_bundle_includes_llm_judges() -> None:
-    # The default bundle score_trace/TraceListener use must be the deterministic
+def test_async_eval_scorers_bundle_includes_llm_judges() -> None:
+    # The default bundle score_trace/AsyncEvalWorker use must be the deterministic
     # checks plus the two trace-derivable LLM judges — and must NOT include
     # matches_golden (which needs a golden expected_output a bare trace lacks).
-    names = {s.name for s in scoring.LISTENER_SCORERS}
+    names = {s.name for s in scoring.ASYNC_EVAL_SCORERS}
     assert {"decision_quality", "evidence_citation"} <= names
     assert "tool_correctness" in names
     assert "matches_golden" not in names
 
 
-def test_score_trace_defaults_to_listener_scorers(monkeypatch) -> None:
-    # Called with no explicit scorers, score_trace runs the full LISTENER_SCORERS bundle.
+def test_score_trace_defaults_to_async_eval_scorers(monkeypatch) -> None:
+    # Called with no explicit scorers, score_trace runs the full ASYNC_EVAL_SCORERS bundle.
     captured = _patch_evaluate(
         monkeypatch,
-        {s.name + "/value": True for s in scoring.LISTENER_SCORERS}
-        | {s.name + "/rationale": "ok" for s in scoring.LISTENER_SCORERS},
+        {s.name + "/value": True for s in scoring.ASYNC_EVAL_SCORERS}
+        | {s.name + "/rationale": "ok" for s in scoring.ASYNC_EVAL_SCORERS},
     )
     score_trace(make_trace("tr-default"))
     (_data, used_scorers), = captured
-    assert used_scorers is scoring.LISTENER_SCORERS
+    assert used_scorers is scoring.ASYNC_EVAL_SCORERS
 
 
 def test_score_trace_raises_scoring_error_on_empty_eval_results(monkeypatch) -> None:

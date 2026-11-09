@@ -49,7 +49,7 @@ export const TABS: TabDefinition[] = [
     id: 'evals',
     label: 'Evals',
     description:
-      'See which evals are configured for the auto-eval (trace listener) and eval service worker paths.',
+      'See which scorers run in the non-blocking async eval, the blocking eval service worker guardrail and the regression suite.',
     Component: EvalsPage,
   },
   {

@@ -1,10 +1,10 @@
-"""Runtime control surface for the listener's sample rate.
+"""Runtime control surface for the async Eval worker's sample rate.
 
 `AsyncEvalWorker` normally reads its settings once at startup (see `config.py`) —
 but the whole point of a *sample rate* is to be able to dial it up/down while
-the listener keeps running (e.g. from ui-api's evals.py router, driven by the
-frontend's "Auto-eval (listener)" toggle), without restarting the process. `SampleRateControl` is the thread-safe value
-both the poll loop and this tiny HTTP server share; `start_control_server`
+the worker keeps running (e.g. `PUT /config` with `{"sample_rate": 0.5}`),
+without restarting the process. `SampleRateControl` is the thread-safe value
+both the task handler and this tiny HTTP server share; `start_control_server`
 runs the server on a daemon thread so it never blocks the worker.
 
 Deliberately built on the standard library (`http.server`) rather than adding
@@ -29,7 +29,7 @@ def _clamp(value: float) -> float:
 
 
 class SampleRateControl:
-    """Thread-safe holder for the listener's current sample rate (0.0-1.0)."""
+    """Thread-safe holder for the worker's current sample rate (0.0-1.0)."""
 
     def __init__(self, initial: float = 1.0) -> None:
         self._lock = threading.Lock()
@@ -93,7 +93,7 @@ def start_control_server(control: SampleRateControl, host: str, port: int) -> Th
     `run_forever`'s own loop doesn't need to hold a reference to it.
     """
     server = ThreadingHTTPServer((host, port), _make_handler(control))
-    thread = threading.Thread(target=server.serve_forever, name="eval-listener-control", daemon=True)
+    thread = threading.Thread(target=server.serve_forever, name="eval-async-control", daemon=True)
     thread.start()
     logger.info("Sample-rate control endpoint listening on http://%s:%d%s", host, port, _CONFIG_PATH)
     return server

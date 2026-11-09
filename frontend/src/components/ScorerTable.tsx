@@ -25,7 +25,7 @@ function ScorerTable({ scorers }: ScorerTableProps) {
             <th>Scorer</th>
             <th>Type</th>
             <th>Description</th>
-            <th>Auto-eval</th>
+            <th>Async eval</th>
             <th>Eval service worker</th>
             <th>Regression</th>
           </tr>

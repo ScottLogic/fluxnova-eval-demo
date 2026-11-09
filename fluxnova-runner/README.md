@@ -6,7 +6,8 @@ the run (or one named activity within it) completes. See the repo root [`README.
 "Architecture" sections for how this fits into the wider pipeline.
 
 Deploy/start/run concerns only — **no reporting or evaluation**. Once a run completes, its trace is persisted in
-MLflow and the `eval-trace-listener` service (or `eval-service-worker`) scores it; `fluxnova-runner` itself doesn't
+MLflow. Workflows with Eval service tasks (such as `LoanApprovalProcess_AI.bpmn`) are scored by the
+`eval-service-worker` (blocking guardrail) and `eval-async-worker` (non-blocking); `fluxnova-runner` itself doesn't
 read anything back beyond polling for completion.
 
 ## Install

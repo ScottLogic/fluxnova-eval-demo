@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 from fluxnova_mlflow_dataset import ApiError, TraceStoreError
 
-from eval_trace_listener import worker
-from eval_trace_listener.config import ListenerConfig
-from eval_trace_listener.control import SampleRateControl
-from eval_trace_listener.scoring import ScoringError, TraceEvalOutcome
+from eval_async_worker import worker
+from eval_async_worker.config import AsyncWorkerConfig
+from eval_async_worker.control import SampleRateControl
+from eval_async_worker.scoring import ScoringError, TraceEvalOutcome
 
 
 def _task(instance_id: str = "parent-1") -> MagicMock:
@@ -22,7 +22,7 @@ def _worker(child_id: str | None = "child-1", rate: float = 1.0) -> worker.Async
     client = MagicMock()
     client.get_child_instance_id.return_value = child_id
     w = worker.AsyncEvalWorker(
-        ListenerConfig(), client=client, scorers=[], sample_rate=SampleRateControl(rate)
+        AsyncWorkerConfig(), client=client, scorers=[], sample_rate=SampleRateControl(rate)
     )
     w._fetch_trace = MagicMock(return_value="trace")
     w._score = MagicMock(
@@ -113,7 +113,7 @@ def test_run_forever_subscribes_to_async_topic(monkeypatch) -> None:
     monkeypatch.setattr(worker, "ExternalTaskWorker", factory)
     monkeypatch.setattr(worker.threading, "Thread", thread_factory)
 
-    w = worker.AsyncEvalWorker(ListenerConfig(), client=MagicMock())
+    w = worker.AsyncEvalWorker(AsyncWorkerConfig(), client=MagicMock())
     w.run_forever(username="demo", password="demo")
 
     settings = factory.call_args.kwargs["config"]

@@ -6,7 +6,7 @@ import urllib.request
 
 import pytest
 
-from eval_trace_listener.control import SampleRateControl, start_control_server
+from eval_async_worker.control import SampleRateControl, start_control_server
 
 
 def test_sample_rate_control_clamps_to_0_1() -> None:

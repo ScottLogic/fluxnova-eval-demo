@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ui-api"
 version = "0.1.0"
-description = "HTTP API backing the demo UI (frontend/): triggers regression runs, BPMN workflow runs, and eval toggles by wrapping the existing regression/, fluxnova-runner/, eval-trace-listener/ and eval-service-worker/ packages as a library/CLI, so those core folders stay free of UI-only plumbing. See UI_PROPOSAL.md."
+description = "HTTP API backing the demo UI (frontend/): triggers regression runs, BPMN workflow runs, and eval toggles by wrapping the existing regression/, fluxnova-runner/, eval-async-worker/ and eval-service-worker/ packages as a library/CLI, so those core folders stay free of UI-only plumbing. See UI_PROPOSAL.md."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
@@ -13,7 +13,7 @@ dependencies = [
     "requests>=2.32",
     "fluxnova-runner",
     "fluxnova-mlflow-dataset",
-    "eval-trace-listener",
+    "eval-async-worker",
     "eval-service-worker",
 ]
 

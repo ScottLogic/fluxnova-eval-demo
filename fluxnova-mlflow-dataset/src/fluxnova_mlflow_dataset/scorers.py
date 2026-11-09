@@ -172,7 +172,7 @@ def _llm_judge(criteria: str, context: dict[str, Any], model: str = _JUDGE_MODEL
         messages=[{"role": "user", "content": prompt}],
         **json_mode,
         # Without an explicit timeout, a single hung request (observed in
-        # practice: a trace-listener run stuck "RUNNING" in MLflow for 26+
+        # practice: an async-eval run stuck "RUNNING" in MLflow for 26+
         # minutes with no further log output, no CPU activity, and no error —
         # network/auth to the provider both verified fine in isolation) blocks
         # this scorer, and therefore the whole evaluate() call, forever. 60s is
@@ -257,7 +257,7 @@ def matches_golden(outputs: str, expectations: dict) -> Feedback | None:
 
 # ---------------------------------------------------------------------------
 # Deterministic (non-LLM) scorers — used by eval-service-worker,
-# eval-trace-listener and the regression suite.
+# eval-async-worker and the regression suite.
 #
 # These are self-contained: the tool-call/applicant-profile rules below are a
 # hardcoded mirror of `fluxnova-runner/config/loan-assesment-eval.yml`'s
@@ -634,7 +634,7 @@ def requested_amount_passed_to_affordability(inputs) -> Feedback | None:  # noqa
 
 
 # Default bundle: checks needing no captured tool arguments — safe everywhere.
-# Used by eval-service-worker, eval-trace-listener and regression.
+# Used by eval-service-worker, eval-async-worker and regression.
 DETERMINISTIC_SCORERS = [
     tool_correctness,
     no_tool_errors,

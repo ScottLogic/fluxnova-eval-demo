@@ -2,12 +2,12 @@
 
 FastAPI backend for the demo UI (`frontend/`). There's no HTTP API for regression, the BPMN runner, or the eval
 services elsewhere in this repo — to keep those core folders (`regression/`, `fluxnova-runner/`,
-`eval-trace-listener/`, `eval-service-worker/`) purely about *how you'd build this for real* rather than cluttered
+`eval-async-worker/`, `eval-service-worker/`) purely about *how you'd build this for real* rather than cluttered
 with UI-only plumbing, this API lives on its own and wraps them as a library/CLI instead of embedding API code inside
 them. See the [local UI walkthrough](../local-dev/README.md#frontend-and-ui-api).
 
 One router per concern: `regression.py`, `workflow.py`, `evals.py` (all under `src/ui_api/routers/`).
-`evals.py` exposes scorer definitions and the listener sampling toggle.
+`evals.py` exposes scorer definitions.
 
 ## Regression endpoints
 
@@ -53,13 +53,12 @@ root for a source/editable install — the ui-api Docker image sets this explici
 ## Run locally
 
 `./setup.sh` installs UI API into the shared environment. Container startup passes
-internal Fluxnova/MLflow/listener URLs, experiment names and judge-provider settings
+internal Fluxnova/MLflow URLs, experiment names and judge-provider settings
 explicitly; see [networking/configuration](../local-dev/README.md#frontend-and-ui-api).
 Per-test regression results include `scorers` with name/status/value/rationale; their
 replayable gate reports are retained in MLflow under `regression/<scenario>/`.
 
-`GET /api/evals/definitions` lists the shared scorer objects. `GET`/`POST
-/api/evals/auto-eval` reads/sets listener sampling through `UI_API_EVAL_LISTENER_URL`.
+`GET /api/evals/definitions` lists the shared scorer objects.
 
 ```bash
 cd ui-api

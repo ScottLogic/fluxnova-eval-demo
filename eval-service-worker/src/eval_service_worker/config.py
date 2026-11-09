@@ -36,7 +36,7 @@ DEFAULT_PROCESS_KEY = "loanAssessmentEvalProcess"
 DEFAULT_TOPIC = "agent-output-eval"
 
 # MLflow judge model URI — calls OpenAI directly (needs OPENAI_API_KEY in this
-# process's environment), using the same calibrated model as regression/listener.
+# process's environment), using the same calibrated model as regression/eval-async-worker.
 # Was gateway-routed (gateway:/fluxnova-judge-oai), but that endpoint only existed
 # if created by hand on the MLflow server, so a fresh database 404'd every judge
 # call; the earlier Ollama-backed gateway:/fluxnova-judge needed a host-run Ollama

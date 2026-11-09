@@ -2,7 +2,7 @@
 
 All settings are simple hardcoded defaults below, overridable via environment
 variables (see ``main.py``) — mirrors the approach taken by
-eval-service-worker/config.py and eval-trace-listener/config.py.
+eval-service-worker/config.py and eval-async-worker/config.py.
 """
 
 from __future__ import annotations
