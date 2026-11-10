@@ -90,5 +90,19 @@ class TestGetRunNumber:
             assert client.get_run_number("pi-33") == 33
         assert mock_get.call_args_list[1].kwargs["params"] == {
             "processDefinitionKey": "LoanApprovalProcess_AI",
-            "startedBefore": "2026-11-09T11:40:51.119Z",
+            "startedBefore": "2026-11-09T11:40:51.119+0000",
         }
+
+    @pytest.mark.parametrize(
+        "engine_value",
+        ["2026-11-10T10:40:54.956+00:00", "2026-11-10T10:40:54.956Z", "2026-11-10T10:40:54.956+0000"],
+    )
+    def test_normalises_engine_date_formats_for_the_query(self, engine_value):
+        from fluxnova_mlflow_dataset.fluxnova_client import _engine_date
+
+        assert _engine_date(engine_value) == "2026-11-10T10:40:54.956+0000"
+
+    def test_keeps_non_utc_offsets(self):
+        from fluxnova_mlflow_dataset.fluxnova_client import _engine_date
+
+        assert _engine_date("2026-11-10T11:40:54.956+01:00") == "2026-11-10T11:40:54.956+0100"

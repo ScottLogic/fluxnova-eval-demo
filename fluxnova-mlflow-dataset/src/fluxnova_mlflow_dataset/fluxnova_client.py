@@ -6,9 +6,24 @@ BPMN XML and run numbering. It never deploys or starts processes (that's
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import requests
+
+
+def _engine_date(value: str) -> str:
+    """Format a date as the engine's query parameters require.
+
+    The engine returns dates as ``...+00:00`` or ``...Z`` (depending on its
+    serialisation settings), but query parameters such as ``startedBefore`` only
+    accept ``yyyy-MM-dd'T'HH:mm:ss.SSSZ`` with a ``+0000``-style offset.
+    """
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    millis = parsed.microsecond // 1000
+    return f"{parsed:%Y-%m-%dT%H:%M:%S}.{millis:03d}{parsed:%z}"
 
 
 class ApiError(Exception):
@@ -93,7 +108,7 @@ class FluxnovaClient:
             params={
                 "processDefinitionKey": instance["processDefinitionKey"],
                 # Inclusive: counts every run started at or before this one.
-                "startedBefore": instance["startTime"],
+                "startedBefore": _engine_date(instance["startTime"]),
             },
         )
         self._raise_for_status(response, "count process instances")
