@@ -20,16 +20,58 @@ _RUNTIME_ENV_KEYS = {
 }
 
 
+def _is_wsl_launcher(path):
+    # On Windows, C:\Windows\System32\bash.exe (and the WindowsApps alias) start WSL,
+    # which cannot run these scripts with Windows paths. CreateProcess also searches
+    # System32 before PATH, so a bare "bash" would pick WSL even when Git Bash is on PATH.
+    parts = {part.lower() for part in Path(path).parts}
+    return "system32" in parts or "windowsapps" in parts
+
+
+def _find_bash():
+    """Return the Bash the developer scripts target: Git Bash on Windows, system Bash elsewhere."""
+    override = os.environ.get("LOCAL_DEV_TEST_BASH")
+    if override:
+        return override
+    if os.name != "nt":
+        return shutil.which("bash")
+    candidates = []
+    git = shutil.which("git")
+    if git:
+        # <Git>\cmd\git.exe or <Git>\bin\git.exe -> <Git>\bin\bash.exe, the launcher that
+        # puts the MSYS tools (sed, grep, ...) on PATH.
+        candidates.append(Path(git).resolve().parents[1] / "bin" / "bash.exe")
+    for root in (os.environ.get("ProgramW6432"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+        if root:
+            candidates += [Path(root) / "Git/bin/bash.exe", Path(root) / "Programs/Git/bin/bash.exe"]
+    candidates.append(shutil.which("bash"))
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file() and not _is_wsl_launcher(candidate):
+            return str(candidate)
+    return None
+
+
+BASH = _find_bash()
+
+
 @pytest.fixture
 def run_script(tmp_path):
+    if BASH is None:
+        pytest.skip("Git Bash not found; install Git for Windows or set LOCAL_DEV_TEST_BASH")
     local = tmp_path / "checkout with spaces/local-dev"
     shutil.copytree(Path(__file__).parents[1] / "services", local / "services")
     binaries = tmp_path / "bin"
     binaries.mkdir()
     log = tmp_path / "podman.jsonl"
+    # A POSIX shell wrapper runs the recording Python, so the fake works on Windows (Git
+    # Bash cannot use a Windows interpreter path as a shebang) and with spaces in paths.
+    podman_py = tmp_path / "fake_podman.py"
     podman = binaries / "podman"
     podman.write_text(
-        f"#!{sys.executable}\n"
+        f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" "{podman_py.as_posix()}" "$@"\n',
+        newline="\n",
+    )
+    podman_py.write_text(
         "import json, os, sys\n"
         "args = sys.argv[1:]\n"
         "with open(os.environ['PODMAN_TEST_LOG'], 'a') as f: f.write(json.dumps(args) + '\\n')\n"
@@ -60,7 +102,7 @@ def run_script(tmp_path):
     )
     podman.chmod(0o755)
     curl = binaries / "curl"
-    curl.write_text("#!/bin/sh\nexit 0\n")
+    curl.write_text("#!/bin/sh\nexit 0\n", newline="\n")
     curl.chmod(0o755)
 
     def run(name, mode="bridge", extra=None, mlflow_port="15000"):
@@ -83,11 +125,22 @@ def run_script(tmp_path):
         )
         env.update(extra or {})
         result = subprocess.run(
-            ["bash", str(local / f"services/{name}-up.sh")],
+            # Prepend the fakes inside Bash: Git for Windows' bash.exe launcher puts its own
+            # /ucrt64/bin and /usr/bin first, so its real curl would otherwise shadow the fake.
+            # cygpath (Windows only) turns C:\... into /c/...; forward slashes suit both shells.
+            [
+                BASH, "-c",
+                'd="$1"; if command -v cygpath >/dev/null 2>&1; then d="$(cygpath -u "$d")"; fi; '
+                'PATH="$d:$PATH"; export PATH; exec "$BASH" "$2"',
+                "run_script", str(binaries), (local / f"services/{name}-up.sh").as_posix(),
+            ],
             env=env,
             capture_output=True,
             text=True,
-            timeout=20,
+            encoding="utf-8",
+            errors="replace",
+            # Git Bash process startup is slower than native Bash; allow for it.
+            timeout=60,
             check=False,
         )
         commands = [json.loads(line) for line in log.read_text().splitlines()]
