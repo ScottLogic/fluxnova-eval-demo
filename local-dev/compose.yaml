@@ -72,7 +72,7 @@ services:
         aliases: [fluxnova-local]
 
   fluxnova-local:
-    image: ${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0}
+    image: ${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0}
     platform: ${FLUXNOVA_PLATFORM:-linux/amd64}
     container_name: fluxnova
     network_mode: service:otel-collector-local

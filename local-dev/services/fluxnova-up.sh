@@ -2,7 +2,7 @@
 # Fluxnova + collector share a pod namespace; published ports reach the Mac/Windows host.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-FLUXNOVA_IMAGE="${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0}"
+FLUXNOVA_IMAGE="${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0}"
 # Current published engine image is AMD64-only. Other images remain native ARM64.
 FLUXNOVA_PLATFORM="${FLUXNOVA_PLATFORM:-linux/amd64}"
 OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:0.160.0}"

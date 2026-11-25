@@ -62,7 +62,7 @@ Verify Apple Silicon emulation before starting Fluxnova:
 
 ```bash
 podman run --rm --platform linux/amd64 docker.io/library/alpine:3.21 uname -m
-podman pull --platform linux/amd64 ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0
+podman pull --platform linux/amd64 ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0
 ```
 
 Expected: `x86_64` and a successful pull. An `exec format error` means the VM's x86
@@ -342,7 +342,7 @@ host-name resolution rather than overriding it with `--add-host ...:host-gateway
 ## Apple Silicon and Fluxnova image
 
 The public engine image is
-`ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0`. Its manifest is **AMD64-only**,
+`ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0`. Its manifest is **AMD64-only**,
 so the scripts and Compose explicitly set `FLUXNOVA_PLATFORM=linux/amd64` for
 Fluxnova. An Apple Silicon Podman machine must support x86 execution (for example
 AppleHV + Rosetta). See [macOS setup](#macos) for the emulation smoke command.
@@ -350,6 +350,13 @@ AppleHV + Rosetta). See [macOS setup](#macos) for the emulation smoke command.
 The pinned PostgreSQL, MLflow, collector, Prometheus, Grafana and Python base images
 have both Linux ARM64 and AMD64 manifests; evaluation images build for the VM's
 native architecture. They do not need to run under emulation.
+
+Image `2.0.0` is Fluxnova **3.1.1** with the agentic subprocess plugins from the
+`fluxnova-plugins` fork (`1.2.0` was Fluxnova 3.0). Its `org.opencontainers.image.revision`
+and `org.finos.fluxnova.plugins.revision` labels record the engine and plugin commits it was
+built from. When moving an existing setup from `1.2.0`, start from a clean store with
+`./local-dev/pods-down.sh --delete-data` (this also removes MLflow data); upgrading a 3.0
+Fluxnova database in place has not been validated.
 
 The engine is built in the separate `fluxnova-bpm-platform` source repository.
 When a native ARM64/multi-architecture engine image is published, set both
