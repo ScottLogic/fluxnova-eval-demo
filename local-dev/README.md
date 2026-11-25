@@ -45,8 +45,7 @@ podman machine start                 # start an existing machine
 podman info --format '{{.Host.Arch}}'
 ```
 
-For a new Apple Silicon VM, AppleHV supports Rosetta for the AMD64 engine image.
-Install Rosetta if needed (`softwareupdate --install-rosetta`), then initialize once:
+For a new VM, initialize once:
 
 ```bash
 export CONTAINERS_MACHINE_PROVIDER=applehv
@@ -55,18 +54,21 @@ podman machine start
 ```
 
 Use the selected provider environment in subsequent terminals when managing that VM.
-An existing VM can be reused if its x86 execution works. On Intel Macs use the normal
-machine defaults. The resource allocation above is a starting point, not a measured minimum.
+An existing VM can be reused. On Intel Macs use the normal machine defaults. The resource
+allocation above is a starting point, not a measured minimum.
 
-Verify Apple Silicon emulation before starting Fluxnova:
+All demo images, including the Fluxnova engine image from `2.0.0`, are multi-arch, so
+Apple Silicon runs them natively and needs no Rosetta/x86 emulation. Verify the engine pull:
 
 ```bash
-podman run --rm --platform linux/amd64 docker.io/library/alpine:3.21 uname -m
-podman pull --platform linux/amd64 ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0
+podman info --format '{{.Host.Arch}}'     # arm64 on Apple Silicon
+podman pull ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0
+podman image inspect ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0 --format '{{.Architecture}}'
 ```
 
-Expected: `x86_64` and a successful pull. An `exec format error` means the VM's x86
-execution/provider configuration needs attention. Other demo images support native ARM64.
+Expected: the same architecture twice. To run the x86 engine instead (for example to
+compare with an AMD64 host), set `FLUXNOVA_PLATFORM=linux/amd64` in `.env`; that needs
+x86 execution in the VM (AppleHV + Rosetta: `softwareupdate --install-rosetta`).
 
 ### Windows Git Bash
 
@@ -120,8 +122,8 @@ return non-zero with diagnostics. Eval worker startup confirms container creatio
 their actual scoring is part of the local validation walkthrough.
 
 For an older checkout/store, follow the [experiment upgrade](#upgrade-experiments-created-with-container-local-artifact-paths)
-before startup. Keep the `.env.example` image versions, `FLUXNOVA_PLATFORM=linux/amd64`,
-`LLM_JUDGE_PROVIDER=openai` and `EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4.1-mini` for the
+before startup. Keep the `.env.example` image versions, leave `FLUXNOVA_PLATFORM` unset
+(native architecture), `LLM_JUDGE_PROVIDER=openai` and `EVAL_SERVICE_JUDGE_MODEL=openai:/gpt-4.1-mini` for the
 default demo. Export `.env` as shown above in every host-tool terminal; `set +a`
 stops automatic exporting of new assignments without removing the variables just loaded.
 
@@ -342,10 +344,13 @@ host-name resolution rather than overriding it with `--add-host ...:host-gateway
 ## Apple Silicon and Fluxnova image
 
 The public engine image is
-`ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0`. Its manifest is **AMD64-only**,
-so the scripts and Compose explicitly set `FLUXNOVA_PLATFORM=linux/amd64` for
-Fluxnova. An Apple Silicon Podman machine must support x86 execution (for example
-AppleHV + Rosetta). See [macOS setup](#macos) for the emulation smoke command.
+`ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0`, a **multi-arch** image
+(`linux/amd64` and `linux/arm64`). `fluxnova-up.sh` selects the Podman VM's native
+architecture (`podman info` `Host.Arch`) and Compose lets the engine pick it, so Apple
+Silicon runs the engine natively. Set `FLUXNOVA_PLATFORM=linux/amd64` to force the x86
+image under emulation. The ARM64 variant contains the same jars and configuration as the
+AMD64 one and has been smoke-tested (engine boot, REST API, agent plugin registration);
+the full walkthrough has so far been validated on AMD64.
 
 The pinned PostgreSQL, MLflow, collector, Prometheus, Grafana and Python base images
 have both Linux ARM64 and AMD64 manifests; evaluation images build for the VM's
@@ -358,10 +363,8 @@ built from. When moving an existing setup from `1.2.0`, start from a clean store
 `./local-dev/pods-down.sh --delete-data` (this also removes MLflow data); upgrading a 3.0
 Fluxnova database in place has not been validated.
 
-The engine is built in the separate `fluxnova-bpm-platform` source repository.
-When a native ARM64/multi-architecture engine image is published, set both
-`FLUXNOVA_IMAGE` and `FLUXNOVA_PLATFORM=linux/arm64` on Apple Silicon. Publishing that
-external image is a follow-up; this repository provides the emulated-image path.
+The engine is built in the separate `fluxnova-bpm-platform` source repository (branch
+`upgrade-3.1.1` of the `dogle-scottlogic` fork; see its `Fluxnova-build-readme.md`).
 
 ## MLflow experiment initialization and persistence
 

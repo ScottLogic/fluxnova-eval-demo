@@ -76,6 +76,7 @@ def run_script(tmp_path):
         "args = sys.argv[1:]\n"
         "with open(os.environ['PODMAN_TEST_LOG'], 'a') as f: f.write(json.dumps(args) + '\\n')\n"
         "if args[:1] == ['info'] and os.environ.get('STOPPED_MACHINE'): sys.exit(125)\n"
+        "if args[:1] == ['info']: print(os.environ.get('HOST_ARCH', 'amd64'))\n"
         "if args[:2] == ['pod', 'exists']: sys.exit(0 if os.environ.get('EXISTING_POD') else 1)\n"
         "if args[:2] == ['container', 'exists']: sys.exit(1 if os.environ.get('INCOMPLETE_POD') else 0)\n"
         "if args[:2] == ['container', 'inspect']:\n"
@@ -314,6 +315,22 @@ def test_engine_pull_requests_configured_platform(run_script):
         c for c in commands if c[0] == "pull" and "fluxnova-edd-platform" in c[-1]
     )
     assert pull[pull.index("--platform") + 1] == "linux/amd64"
+
+
+def test_engine_defaults_to_native_arm64_on_apple_silicon(run_script):
+    result, commands = run_script("fluxnova", extra={"HOST_ARCH": "arm64", "IMAGE_PLATFORM": "linux/arm64"})
+    assert result.returncode == 0, result.stderr
+    pull = next(c for c in commands if c[0] == "pull" and "fluxnova-edd-platform" in c[-1])
+    assert pull[pull.index("--platform") + 1] == "linux/arm64"
+    engine = next(c for c in commands if c[:1] == ["run"] and "fluxnova" in c)
+    assert engine[engine.index("--platform") + 1] == "linux/arm64"
+
+
+def test_explicit_engine_platform_overrides_native_architecture(run_script):
+    result, commands = run_script("fluxnova", extra={"HOST_ARCH": "arm64", "FLUXNOVA_PLATFORM": "linux/amd64"})
+    assert result.returncode == 0, result.stderr
+    engine = next(c for c in commands if c[:1] == ["run"] and "fluxnova" in c)
+    assert engine[engine.index("--platform") + 1] == "linux/amd64"
 
 
 def test_new_pod_is_cleaned_up_on_port_conflict(run_script):

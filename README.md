@@ -337,8 +337,8 @@ deployed BPMN (for tool display names and the `agent:context` list) over the Flu
 
 Use **macOS Terminal**, **Windows Git Bash**, or a Linux shell. Commands use forward
 slashes on every OS. Install Python 3.11+ and [Podman](https://podman.io/docs/installation)
-with a running VM on macOS/Windows. Apple Silicon also needs x86 execution support
-for the current AMD64-only Fluxnova image; see [platform setup](local-dev/README.md#platform-setup).
+with a running VM on macOS/Windows. All images, including the Fluxnova engine, are
+multi-arch, so Apple Silicon runs natively; see [platform setup](local-dev/README.md#platform-setup).
 
 From the repository root:
 

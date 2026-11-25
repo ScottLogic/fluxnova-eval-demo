@@ -3,8 +3,12 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 FLUXNOVA_IMAGE="${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0}"
-# Current published engine image is AMD64-only. Other images remain native ARM64.
-FLUXNOVA_PLATFORM="${FLUXNOVA_PLATFORM:-linux/amd64}"
+# The engine image is multi-arch (amd64 + arm64): default to the Podman VM's native
+# architecture. Set FLUXNOVA_PLATFORM=linux/amd64 to force the emulated x86 image.
+if [ -z "${FLUXNOVA_PLATFORM:-}" ]; then
+  host_arch="$(podman info --format '{{.Host.Arch}}' 2>/dev/null || true)"
+  FLUXNOVA_PLATFORM="linux/${host_arch:-amd64}"
+fi
 OTEL_COLLECTOR_IMAGE="${OTEL_COLLECTOR_IMAGE:-docker.io/otel/opentelemetry-collector-contrib:0.160.0}"
 
 require_http "http://localhost:${MLFLOW_PORT}/version" mlflow
