@@ -72,8 +72,10 @@ services:
         aliases: [fluxnova-local]
 
   fluxnova-local:
-    image: ${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:1.2.0}
-    platform: ${FLUXNOVA_PLATFORM:-linux/amd64}
+    image: ${FLUXNOVA_IMAGE:-ghcr.io/dogle-scottlogic/fluxnova-edd-platform:2.0.0}
+    # Multi-arch image: unset pulls the host's native architecture; set
+    # FLUXNOVA_PLATFORM=linux/amd64 to force the emulated x86 image.
+    platform: ${FLUXNOVA_PLATFORM:-}
     container_name: fluxnova
     network_mode: service:otel-collector-local
     depends_on:
